@@ -19,7 +19,8 @@ async function loadQuizWithRoundsAndWidgets(id) {
       COALESCE(
         (SELECT json_agg(json_build_object(
           'id', q.id, 'text', q.text, 'type', q.type, 'answer', q.answer,
-          'media_url', q.media_url, 'points', q.points, 'order', rq."order"
+          'media_url', q.media_url, 'points', q.points, 'category', q.category,
+          'options', q.options, 'order', rq."order"
         ) ORDER BY rq."order")
         FROM round_questions rq
         JOIN questions q ON rq.question_id = q.id
@@ -123,20 +124,24 @@ async function createQuiz(req, res) {
 }
 
 async function startQuiz(req, res) {
+  // Creates a new session in 'lobby' status. Admin then explicitly begins/stops/restarts it.
   try {
     const { id } = req.params;
     const client = await db.getClient();
     try {
       await client.query('BEGIN');
-
       const quizResult = await client.query('SELECT * FROM quizzes WHERE id = $1', [id]);
-      if (quizResult.rows.length === 0) {
-        throw new Error('Quiz not found');
-      }
+      if (quizResult.rows.length === 0) throw new Error('Quiz not found');
+
+      // End any prior active sessions for this quiz so /active-session returns the new one
+      await client.query(
+        "UPDATE quiz_sessions SET status = 'finished' WHERE quiz_id = $1 AND status IN ('lobby', 'active')",
+        [id]
+      );
 
       const sessionResult = await client.query(
-        'INSERT INTO quiz_sessions (quiz_id, status) VALUES ($1, $2) RETURNING *',
-        [id, 'active']
+        "INSERT INTO quiz_sessions (quiz_id, status, current_slide_index) VALUES ($1, 'lobby', 0) RETURNING *",
+        [id]
       );
 
       await client.query('COMMIT');
@@ -149,16 +154,53 @@ async function startQuiz(req, res) {
   }
 }
 
-async function endQuiz(req, res) {
+async function setSessionStatus(req, res) {
+  // Generic transition: lobby | active | finished
   try {
     const { sessionId } = req.params;
-    const result = await db.query(
-      'UPDATE quiz_sessions SET status = $1 WHERE id = $2 RETURNING *',
-      ['finished', sessionId]
-    );
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Session not found' });
+    const { status } = req.body;
+    const valid = ['lobby', 'active', 'finished'];
+    if (!valid.includes(status)) {
+      return res.status(400).json({ error: `status must be one of ${valid.join(', ')}` });
     }
+
+    const fields = ['status = $1'];
+    const params = [status];
+    if (status === 'active') {
+      params.push(new Date());
+      fields.push(`started_at = $${params.length}`);
+    }
+    params.push(sessionId);
+
+    const result = await db.query(
+      `UPDATE quiz_sessions SET ${fields.join(', ')} WHERE id = $${params.length} RETURNING *`,
+      params
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Session not found' });
+    res.json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
+async function restartSession(req, res) {
+  // Reset slide index to 0 and put back in lobby; keeps the same session and teams.
+  try {
+    const result = await db.query(
+      "UPDATE quiz_sessions SET status = 'lobby', current_slide_index = 0, started_at = NULL WHERE id = $1 RETURNING *",
+      [req.params.sessionId]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Session not found' });
+    res.json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
+async function getSession(req, res) {
+  try {
+    const result = await db.query('SELECT * FROM quiz_sessions WHERE id = $1', [req.params.sessionId]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Session not found' });
     res.json(result.rows[0]);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -172,5 +214,7 @@ module.exports = {
   getActiveSession,
   createQuiz,
   startQuiz,
-  endQuiz
+  setSessionStatus,
+  restartSession,
+  getSession
 };

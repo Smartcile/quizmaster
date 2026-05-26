@@ -4,7 +4,6 @@ import { api } from './services/api';
 import { buildSlides } from './utils/buildSlides';
 
 function getInitialCode() {
-  // Supports /quiz/CODE, /CODE, or ?code=CODE
   const params = new URLSearchParams(window.location.search);
   if (params.get('code')) return params.get('code').toUpperCase();
   const segments = window.location.pathname.split('/').filter(Boolean);
@@ -19,13 +18,14 @@ function App() {
   const [code, setCode] = useState(getInitialCode());
   const [quiz, setQuiz] = useState(null);
   const [sessionId, setSessionId] = useState(null);
+  const [sessionStatus, setSessionStatus] = useState('lobby');
   const [currentSlide, setCurrentSlide] = useState(0);
+  const [teamsCount, setTeamsCount] = useState(0);
   const [error, setError] = useState(null);
   const [status, setStatus] = useState('idle'); // idle | loading | waiting | ready
   const socket = useWebSocket();
   const slides = useMemo(() => buildSlides(quiz), [quiz]);
 
-  // Fetch quiz + active session when code is set
   useEffect(() => {
     if (!code) return;
     let cancelled = false;
@@ -42,6 +42,7 @@ function App() {
           const session = await api.get(`/quizzes/${quizData.id}/active-session`);
           if (cancelled) return;
           setSessionId(session.id);
+          setSessionStatus(session.status || 'lobby');
           setCurrentSlide(session.current_slide_index || 0);
           setStatus('ready');
         } catch {
@@ -59,13 +60,13 @@ function App() {
     return () => { cancelled = true; };
   }, [code]);
 
-  // If we're waiting for a session, poll every 3s until one appears
   useEffect(() => {
     if (status !== 'waiting' || !quiz) return;
     const interval = setInterval(async () => {
       try {
         const session = await api.get(`/quizzes/${quiz.id}/active-session`);
         setSessionId(session.id);
+        setSessionStatus(session.status || 'lobby');
         setCurrentSlide(session.current_slide_index || 0);
         setStatus('ready');
       } catch {}
@@ -73,16 +74,32 @@ function App() {
     return () => clearInterval(interval);
   }, [status, quiz]);
 
-  // Join the WebSocket room once we have a session
   useEffect(() => {
     if (!socket || !sessionId) return;
     socket.emit('join_quiz', { sessionId, role: 'slideshow' });
 
-    const handler = (data) => {
+    const onSlide = (data) => {
       if (typeof data.slideIndex === 'number') setCurrentSlide(data.slideIndex);
     };
-    socket.on('slide_changed', handler);
-    return () => socket.off('slide_changed', handler);
+    const onStatus = (data) => {
+      setSessionStatus(data.status);
+      if (typeof data.currentSlideIndex === 'number') setCurrentSlide(data.currentSlideIndex);
+    };
+    const onTeamJoin = () => {
+      api.get(`/teams/session/${sessionId}`).then(t => setTeamsCount(t.length)).catch(() => {});
+    };
+    socket.on('slide_changed', onSlide);
+    socket.on('session_status_changed', onStatus);
+    socket.on('team_joined', onTeamJoin);
+
+    // Initial team count
+    api.get(`/teams/session/${sessionId}`).then(t => setTeamsCount(t.length)).catch(() => {});
+
+    return () => {
+      socket.off('slide_changed', onSlide);
+      socket.off('session_status_changed', onStatus);
+      socket.off('team_joined', onTeamJoin);
+    };
   }, [socket, sessionId]);
 
   if (!code) {
@@ -98,7 +115,44 @@ function App() {
       <FullScreenMessage
         title={quiz?.name}
         subtitle={`Code: ${quiz?.code}`}
-        message="Waiting for the quiz master to start the quiz..."
+        message="Waiting for the quiz master to start the session..."
+      />
+    );
+  }
+
+  // LOBBY screen - shown before quiz begins
+  if (sessionStatus === 'lobby') {
+    const joinUrl = `${window.location.protocol}//${window.location.host.replace(/:3002$/, ':3003')}`;
+    return (
+      <div className="slideshow-container">
+        <div className="slide lobby-slide">
+          <div className="lobby-content">
+            <p className="lobby-label">Tonight's Quiz</p>
+            <h1 className="lobby-title">{quiz?.name}</h1>
+            <div className="lobby-code-box">
+              <p className="lobby-code-label">Join Code</p>
+              <p className="lobby-code">{quiz?.code}</p>
+            </div>
+            <p className="lobby-instructions">
+              Teams join at <span className="lobby-url">{joinUrl}</span>
+            </p>
+            <div className="lobby-counter">
+              <span className="counter-number">{teamsCount}</span>
+              <span className="counter-label">team{teamsCount !== 1 ? 's' : ''} joined</span>
+            </div>
+            <p className="lobby-waiting">Waiting for quiz master to begin...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (sessionStatus === 'finished') {
+    return (
+      <FullScreenMessage
+        title="Quiz Complete!"
+        subtitle={quiz?.name}
+        message={`${teamsCount} team${teamsCount !== 1 ? 's' : ''} participated. Thanks for playing!`}
       />
     );
   }
@@ -125,8 +179,8 @@ function CodeEntry({ onSubmit, initialError }) {
   return (
     <div className="code-entry">
       <div className="code-entry-card">
-        <h1>🎯 Quiz Master Slideshow</h1>
-        <p>Enter the quiz code to start the presentation.</p>
+        <h1>🎯 Quiz Master</h1>
+        <p>Slideshow Viewer</p>
         {initialError && <div className="code-entry-error">{initialError}</div>}
         <form onSubmit={submit}>
           <input
@@ -192,6 +246,16 @@ function SlideRenderer({ slide }) {
               {slide.questionType === 'image' && <img src={slide.mediaUrl} alt="Question media" />}
               {slide.questionType === 'video' && <video controls src={slide.mediaUrl} />}
               {slide.questionType === 'audio' && <audio controls src={slide.mediaUrl} />}
+            </div>
+          )}
+          {slide.questionType === 'mcq' && slide.options && slide.options.length > 0 && (
+            <div className="slide-options">
+              {slide.options.map((opt, i) => (
+                <div key={i} className="option">
+                  <span className="option-letter">{String.fromCharCode(65 + i)}</span>
+                  <span className="option-text">{opt}</span>
+                </div>
+              ))}
             </div>
           )}
         </div>

@@ -31,6 +31,7 @@ export function buildSlides(quiz) {
         text: q.text,
         questionType: q.type,
         mediaUrl: q.media_url,
+        options: q.options || [],
         points: q.points
       });
     });

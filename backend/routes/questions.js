@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const {
   getAllQuestions,
+  getCategories,
   getQuestion,
   createQuestion,
   updateQuestion,
@@ -9,6 +10,7 @@ const {
 } = require('../controllers/questionController');
 
 router.get('/', getAllQuestions);
+router.get('/categories', getCategories);
 router.get('/:id', getQuestion);
 router.post('/', createQuestion);
 router.put('/:id', updateQuestion);

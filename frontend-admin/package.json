@@ -11,7 +11,7 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "socket.io-client": "^4.7.2",
-    "react-beautiful-dnd": "^13.1.1"
+    "@hello-pangea/dnd": "^16.6.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.2.0",
