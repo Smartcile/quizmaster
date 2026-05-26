@@ -1,0 +1,112 @@
+# Quiz Master - PUBLIC Domain Deployment (e.g. smartcile.com)
+# Single-domain setup with auto-HTTPS via Caddy + Let's Encrypt
+#
+# Setup:
+#   1. Point your domain's A record to your server IP
+#   2. Open ports 80 and 443 on your firewall
+#   3. Create .env with: DOMAIN=smartcile.com
+#   4. (Optional) Edit config files in ./config/ to customize branding
+#   5. Run: docker-compose -f docker-compose.public.yml up -d
+#
+# All traffic flows through Caddy on ports 80/443.
+# Caddy automatically gets SSL certs from Let's Encrypt.
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:-:80}
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+      - frontend-admin
+      - frontend-slideshow
+      - frontend-quizzer
+    networks:
+      - quiz-network
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: ${DB_USER:-quiz_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-quiz_password}
+      POSTGRES_DB: ${DB_NAME:-quiz_master}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-quiz_user}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - quiz-network
+    restart: unless-stopped
+
+  backend:
+    image: ghcr.io/smartcile/quizmaster/backend:latest
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-quiz_user}
+      DB_PASSWORD: ${DB_PASSWORD:-quiz_password}
+      DB_NAME: ${DB_NAME:-quiz_master}
+      CORS_ORIGIN: https://${DOMAIN:-localhost}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - backend_uploads:/app/uploads
+    networks:
+      - quiz-network
+    restart: unless-stopped
+
+  frontend-admin:
+    image: ghcr.io/smartcile/quizmaster/frontend-admin:latest
+    volumes:
+      # Mount runtime config - edit ./config/admin-config.js to customize
+      - ./config/admin-config.js:/app/dist/config.js:ro
+    depends_on:
+      - backend
+    networks:
+      - quiz-network
+    restart: unless-stopped
+
+  frontend-slideshow:
+    image: ghcr.io/smartcile/quizmaster/frontend-slideshow:latest
+    volumes:
+      - ./config/slideshow-config.js:/app/dist/config.js:ro
+    depends_on:
+      - backend
+    networks:
+      - quiz-network
+    restart: unless-stopped
+
+  frontend-quizzer:
+    image: ghcr.io/smartcile/quizmaster/frontend-quizzer:latest
+    volumes:
+      - ./config/quizzer-config.js:/app/dist/config.js:ro
+    depends_on:
+      - backend
+    networks:
+      - quiz-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  backend_uploads:
+  caddy_data:
+  caddy_config:
+
+networks:
+  quiz-network:
+    driver: bridge
