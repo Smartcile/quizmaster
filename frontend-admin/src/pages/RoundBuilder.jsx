@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { api } from '../services/api';
 
 export default function RoundBuilder() {
   const [rounds, setRounds] = useState([]);
@@ -13,9 +14,7 @@ export default function RoundBuilder() {
 
   const loadRounds = async () => {
     try {
-      const response = await fetch('/api/rounds');
-      const data = await response.json();
-      setRounds(data);
+      setRounds(await api.get('/rounds'));
     } catch (error) {
       console.error('Error loading rounds:', error);
     }
@@ -23,9 +22,7 @@ export default function RoundBuilder() {
 
   const loadQuestions = async () => {
     try {
-      const response = await fetch('/api/questions');
-      const data = await response.json();
-      setQuestions(data);
+      setQuestions(await api.get('/questions'));
     } catch (error) {
       console.error('Error loading questions:', error);
     }
@@ -34,27 +31,15 @@ export default function RoundBuilder() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const payload = {
-        name: form.name,
-        background_color: form.background_color,
-        format: form.format,
-        questions: form.selectedQuestions
-      };
-
-      const url = editingId ? `/api/rounds/${editingId}` : '/api/rounds';
-      const method = editingId ? 'PUT' : 'POST';
-
-      const response = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-
-      if (response.ok) {
-        setForm({ name: '', background_color: '#e8f4f8', format: 'standard', selectedQuestions: [] });
-        setEditingId(null);
-        loadRounds();
+      const payload = { name: form.name, background_color: form.background_color, format: form.format, questions: form.selectedQuestions };
+      if (editingId) {
+        await api.put(`/rounds/${editingId}`, payload);
+      } else {
+        await api.post('/rounds', payload);
       }
+      setForm({ name: '', background_color: '#e8f4f8', format: 'standard', selectedQuestions: [] });
+      setEditingId(null);
+      loadRounds();
     } catch (error) {
       console.error('Error saving round:', error);
     }
@@ -62,7 +47,7 @@ export default function RoundBuilder() {
 
   const handleDelete = async (id) => {
     try {
-      await fetch(`/api/rounds/${id}`, { method: 'DELETE' });
+      await api.delete(`/rounds/${id}`);
       loadRounds();
     } catch (error) {
       console.error('Error deleting round:', error);

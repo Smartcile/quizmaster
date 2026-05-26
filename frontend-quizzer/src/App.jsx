@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useWebSocket } from './hooks/useWebSocket';
 import JoinQuiz from './pages/JoinQuiz';
 import QuizParticipant from './pages/QuizParticipant';
+import { api } from './services/api';
 
 function App() {
   const [page, setPage] = useState('join');
@@ -11,31 +12,16 @@ function App() {
 
   const handleJoin = async (code, teamName, teamSize) => {
     try {
-      const quizResponse = await fetch(`/api/quizzes?code=${code}`);
-      const quizzes = await quizResponse.json();
+      const quizzes = await api.get(`/quizzes?code=${code}`);
 
-      if (quizzes.length === 0) {
+      if (!quizzes.length) {
         alert('Invalid quiz code');
         return;
       }
 
       const quiz = quizzes[0];
-
-      const sessionResponse = await fetch(`/api/quizzes/${quiz.id}/start`, {
-        method: 'POST'
-      });
-      const session = await sessionResponse.json();
-
-      const teamResponse = await fetch('/api/teams/join', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionId: session.id,
-          name: teamName,
-          size: teamSize
-        })
-      });
-      const team = await teamResponse.json();
+      const session = await api.post(`/quizzes/${quiz.id}/start`);
+      const team = await api.post('/teams/join', { sessionId: session.id, name: teamName, size: teamSize });
 
       setSessionData({
         ...session,

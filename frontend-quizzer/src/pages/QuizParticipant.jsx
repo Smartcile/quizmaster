@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { api } from '../services/api';
 
 export default function QuizParticipant({ sessionData, teamId, socket }) {
   const [currentQuestion, setCurrentQuestion] = useState(0);
@@ -46,16 +47,7 @@ export default function QuizParticipant({ sessionData, teamId, socket }) {
     setAnswers(newAnswers);
 
     try {
-      await fetch('/api/answers/submit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          teamId,
-          questionId,
-          roundId: 1,
-          answer
-        })
-      });
+      await api.post('/answers/submit', { teamId, questionId, roundId: 1, answer });
     } catch (error) {
       console.error('Error submitting answer:', error);
     }

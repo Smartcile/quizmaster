@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { api } from './services/api';
 import QuestionManager from './pages/QuestionManager';
 import RoundBuilder from './pages/RoundBuilder';
 import QuizBuilder from './pages/QuizBuilder';
@@ -57,9 +58,7 @@ function Dashboard({ onQuizStart }) {
 
   const loadQuizzes = async () => {
     try {
-      const response = await fetch('/api/quizzes');
-      const data = await response.json();
-      setQuizzes(data);
+      setQuizzes(await api.get('/quizzes'));
     } catch (error) {
       console.error('Error loading quizzes:', error);
     }
@@ -67,8 +66,7 @@ function Dashboard({ onQuizStart }) {
 
   const startQuiz = async (quizId) => {
     try {
-      const response = await fetch(`/api/quizzes/${quizId}/start`, { method: 'POST' });
-      const session = await response.json();
+      const session = await api.post(`/quizzes/${quizId}/start`);
       onQuizStart(session.id);
     } catch (error) {
       console.error('Error starting quiz:', error);

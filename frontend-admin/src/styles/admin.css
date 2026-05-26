@@ -440,6 +440,15 @@ body {
   border-color: #3498db;
 }
 
+.error-banner {
+  background: #e74c3c;
+  color: white;
+  padding: 12px 16px;
+  border-radius: 6px;
+  margin-bottom: 20px;
+  font-weight: 500;
+}
+
 @media (max-width: 1200px) {
   .admin-nav {
     width: 200px;

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { api } from '../services/api';
 
 export default function QuizBuilder() {
   const [quizzes, setQuizzes] = useState([]);
@@ -14,9 +15,7 @@ export default function QuizBuilder() {
 
   const loadQuizzes = async () => {
     try {
-      const response = await fetch('/api/quizzes');
-      const data = await response.json();
-      setQuizzes(data);
+      setQuizzes(await api.get('/quizzes'));
     } catch (error) {
       console.error('Error loading quizzes:', error);
     }
@@ -24,9 +23,7 @@ export default function QuizBuilder() {
 
   const loadRounds = async () => {
     try {
-      const response = await fetch('/api/rounds');
-      const data = await response.json();
-      setRounds(data);
+      setRounds(await api.get('/rounds'));
     } catch (error) {
       console.error('Error loading rounds:', error);
     }
@@ -35,25 +32,11 @@ export default function QuizBuilder() {
   const handleCreateQuiz = async (e) => {
     e.preventDefault();
     try {
-      const payload = {
-        name: form.name,
-        rounds: form.quizRounds,
-        widgets: widgets
-      };
-
-      const response = await fetch('/api/quizzes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-
-      if (response.ok) {
-        const newQuiz = await response.json();
-        alert(`Quiz created! Code: ${newQuiz.code}`);
-        setForm({ name: '', quizRounds: [] });
-        setWidgets([]);
-        loadQuizzes();
-      }
+      const newQuiz = await api.post('/quizzes', { name: form.name, rounds: form.quizRounds, widgets });
+      alert(`Quiz created! Code: ${newQuiz.code}`);
+      setForm({ name: '', quizRounds: [] });
+      setWidgets([]);
+      loadQuizzes();
     } catch (error) {
       console.error('Error creating quiz:', error);
     }
