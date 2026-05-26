@@ -1,0 +1,66 @@
+# Caddy Reverse Proxy for Quiz Master
+# Auto-HTTPS via Let's Encrypt (no manual cert setup needed!)
+#
+# Replace {$DOMAIN} via .env file - e.g. DOMAIN=smartcile.com
+# For local testing, use: DOMAIN=:80 (no HTTPS)
+
+{$DOMAIN} {
+  # Increase upload limit for media files (50 MB)
+  request_body {
+    max_size 50MB
+  }
+
+  # API requests -> backend
+  handle /api/* {
+    reverse_proxy backend:5000
+  }
+
+  # WebSocket -> backend
+  handle /socket.io/* {
+    reverse_proxy backend:5000
+  }
+
+  # Uploaded media -> backend static files
+  handle /uploads/* {
+    reverse_proxy backend:5000
+  }
+
+  # Quizzer Portal: /answer/CODE
+  handle_path /answer/* {
+    rewrite * /
+    reverse_proxy frontend-quizzer:3003
+  }
+  handle /answer {
+    redir /answer/ permanent
+  }
+
+  # Slideshow Viewer: /quiz/CODE
+  handle_path /quiz/* {
+    rewrite * /
+    reverse_proxy frontend-slideshow:3002
+  }
+  handle /quiz {
+    redir /quiz/ permanent
+  }
+
+  # Admin Dashboard: /admin (default)
+  handle /admin/* {
+    uri strip_prefix /admin
+    reverse_proxy frontend-admin:3001
+  }
+  handle /admin {
+    redir /admin/ permanent
+  }
+
+  # Root redirects to admin
+  handle {
+    redir / /admin/ 302
+    reverse_proxy frontend-admin:3001
+  }
+
+  # Logging
+  log {
+    output stdout
+    format console
+  }
+}
