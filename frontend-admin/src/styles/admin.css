@@ -449,6 +449,60 @@ body {
   font-weight: 500;
 }
 
+.active-quiz-banner {
+  margin-top: 30px;
+  padding: 15px;
+  background: #27ae60;
+  color: white;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+.active-quiz-banner p {
+  margin: 4px 0;
+}
+
+.control-meta {
+  color: #7f8c8d;
+  margin: 10px 0 20px;
+  font-size: 0.95rem;
+}
+
+.slide-preview-card {
+  background: #f8f9fa;
+  border: 2px solid #ecf0f1;
+  border-radius: 8px;
+  padding: 30px;
+  min-height: 250px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.slide-preview-card.faded {
+  opacity: 0.6;
+}
+.slide-preview-card h4 {
+  color: #2c3e50;
+  margin-bottom: 10px;
+}
+.slide-preview-card .preview-label {
+  font-size: 0.85rem;
+  color: #95a5a6;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 12px;
+}
+.slide-preview-card .preview-answer {
+  color: #27ae60;
+  font-weight: 600;
+  margin-top: 10px;
+  font-size: 1.1rem;
+}
+.slide-preview-card .preview-media {
+  color: #7f8c8d;
+  font-size: 0.9rem;
+  margin-top: 8px;
+}
+
 @media (max-width: 1200px) {
   .admin-nav {
     width: 200px;
