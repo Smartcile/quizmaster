@@ -101,8 +101,14 @@ CREATE TABLE IF NOT EXISTS brownie_points (
   awarded_at TIMESTAMP DEFAULT NOW()
 );
 
+-- Additive migrations for existing installs
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS category VARCHAR(100);
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS options JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE quiz_sessions ADD COLUMN IF NOT EXISTS started_at TIMESTAMP;
+
 -- Create indexes
 CREATE INDEX IF NOT EXISTS idx_questions_type ON questions(type);
+CREATE INDEX IF NOT EXISTS idx_questions_category ON questions(category);
 CREATE INDEX IF NOT EXISTS idx_rounds_name ON rounds(name);
 CREATE INDEX IF NOT EXISTS idx_quizzes_code ON quizzes(code);
 CREATE INDEX IF NOT EXISTS idx_quiz_sessions_quiz_id ON quiz_sessions(quiz_id);

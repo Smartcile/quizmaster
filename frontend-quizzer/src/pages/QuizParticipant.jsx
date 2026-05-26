@@ -85,19 +85,19 @@ export default function QuizParticipant({ sessionData, teamId, socket }) {
               </div>
             )}
 
-            {question.type === 'mcq' && (
+            {question.type === 'mcq' && Array.isArray(question.options) && question.options.length > 0 && (
               <div className="options">
-                {['A', 'B', 'C', 'D'].map(option => (
-                  <label key={option} className="option-label">
+                {question.options.map((opt, i) => (
+                  <label key={i} className="option-label">
                     <input
                       type="radio"
                       name={`question-${question.id}`}
-                      value={option}
-                      checked={answers[question.id] === option}
+                      value={opt}
+                      checked={answers[question.id] === opt}
                       onChange={(e) => handleAnswerChange(question.id, e.target.value)}
                       disabled={locked}
                     />
-                    <span>{option}. Option</span>
+                    <span>{String.fromCharCode(65 + i)}. {opt}</span>
                   </label>
                 ))}
               </div>

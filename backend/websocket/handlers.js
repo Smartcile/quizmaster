@@ -92,6 +92,18 @@ function setupWebSocketHandlers(io) {
       }
     });
 
+    socket.on('session_status_changed', async (data) => {
+      // Broadcasts a session lifecycle event so slideshow + quizzers update immediately.
+      const { sessionId, status, currentSlideIndex } = data;
+      const roomKey = `quiz-${sessionId}`;
+      io.to(roomKey).emit('session_status_changed', {
+        status,
+        currentSlideIndex: currentSlideIndex ?? 0,
+        timestamp: new Date().toISOString()
+      });
+      console.log(`Session ${sessionId} status -> ${status}`);
+    });
+
     socket.on('answer_locked', async (data) => {
       const { sessionId, roundId } = data;
       const roomKey = `quiz-${sessionId}`;

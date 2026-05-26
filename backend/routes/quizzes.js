@@ -7,7 +7,9 @@ const {
   getActiveSession,
   createQuiz,
   startQuiz,
-  endQuiz
+  setSessionStatus,
+  restartSession,
+  getSession
 } = require('../controllers/quizController');
 
 router.get('/', getAllQuizzes);
@@ -16,6 +18,10 @@ router.get('/:id', getQuiz);
 router.get('/:id/active-session', getActiveSession);
 router.post('/', createQuiz);
 router.post('/:id/start', startQuiz);
-router.post('/:sessionId/end', endQuiz);
+
+// Session lifecycle
+router.get('/sessions/:sessionId', getSession);
+router.put('/sessions/:sessionId/status', setSessionStatus);
+router.post('/sessions/:sessionId/restart', restartSession);
 
 module.exports = router;
