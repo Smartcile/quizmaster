@@ -473,3 +473,233 @@ body {
   font-size: 1.2rem;
   font-weight: 600;
 }
+
+/* ====== Waiting / lobby / finished screens ====== */
+.waiting-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 20px;
+}
+.waiting-card {
+  background: linear-gradient(135deg, rgba(19, 23, 50, 0.95) 0%, rgba(7, 9, 26, 0.95) 100%);
+  border: 1px solid rgba(0, 240, 255, 0.3);
+  border-radius: var(--radius);
+  padding: 50px 40px;
+  text-align: center;
+  max-width: 420px;
+  width: 100%;
+  box-shadow: 0 0 50px rgba(0, 240, 255, 0.2);
+}
+.waiting-card h1 {
+  background: var(--gradient-primary);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 16px;
+  font-size: 2rem;
+  font-weight: 800;
+}
+.waiting-team {
+  color: var(--text-muted);
+  margin-bottom: 24px;
+  font-size: 1.05rem;
+}
+.waiting-team strong { color: var(--neon-green); }
+.waiting-spinner {
+  width: 40px;
+  height: 40px;
+  margin: 0 auto 20px;
+  border: 3px solid rgba(0, 240, 255, 0.2);
+  border-top-color: var(--neon-cyan);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.waiting-status {
+  color: var(--neon-orange);
+  font-style: italic;
+}
+
+.join-error {
+  background: rgba(255, 56, 104, 0.15);
+  border: 1px solid var(--neon-pink);
+  color: var(--neon-pink);
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 20px;
+  font-size: 0.92rem;
+}
+
+/* ====== Inline waiting (between question slides) ====== */
+.waiting-inline {
+  background: rgba(19, 23, 50, 0.85);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 40px 28px;
+  text-align: center;
+}
+.waiting-inline h2 {
+  color: var(--text-primary);
+  margin-bottom: 10px;
+  font-size: 1.4rem;
+}
+.waiting-inline p {
+  color: var(--text-muted);
+}
+
+/* ====== Question meta header ====== */
+.question-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+.question-round { color: var(--neon-cyan); }
+.question-points { color: var(--neon-yellow); }
+
+/* MCQ option visuals updated for new structure */
+.option-label.selected {
+  border-color: var(--neon-cyan);
+  background: rgba(0, 240, 255, 0.1);
+  box-shadow: 0 0 15px rgba(0, 240, 255, 0.3);
+}
+.option-letter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: var(--gradient-primary);
+  border-radius: 50%;
+  color: white;
+  font-weight: 800;
+  font-size: 0.85rem;
+  flex-shrink: 0;
+  box-shadow: 0 0 10px rgba(0, 240, 255, 0.4);
+}
+
+/* ====== Answer reveal card ====== */
+.reveal-card {
+  background: linear-gradient(135deg, rgba(0, 255, 159, 0.08) 0%, rgba(0, 240, 255, 0.08) 100%);
+  border: 1px solid var(--neon-green);
+  border-radius: var(--radius);
+  padding: 28px;
+  box-shadow: 0 0 40px rgba(0, 255, 159, 0.15);
+  text-align: center;
+}
+.reveal-label {
+  color: var(--neon-cyan);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  margin-bottom: 16px;
+}
+.reveal-question {
+  color: var(--text-muted);
+  font-weight: 400;
+  margin-bottom: 24px;
+  font-size: 1.3rem;
+}
+.reveal-your-answer {
+  background: rgba(7, 9, 26, 0.6);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  margin-bottom: 16px;
+}
+.reveal-your-label {
+  display: block;
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 6px;
+}
+.reveal-your-text {
+  color: var(--text-primary);
+  font-size: 1.2rem;
+  font-weight: 500;
+}
+.reveal-correct {
+  margin-bottom: 20px;
+}
+.reveal-correct-label {
+  display: block;
+  color: var(--neon-cyan);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+}
+.reveal-correct-text {
+  color: var(--neon-green);
+  font-size: 2rem;
+  font-weight: 800;
+  text-shadow: 0 0 20px rgba(0, 255, 159, 0.5);
+}
+.reveal-score {
+  display: inline-block;
+  padding: 10px 20px;
+  border-radius: var(--radius-sm);
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+.reveal-score.full { background: var(--neon-green); color: var(--bg-base); }
+.reveal-score.half { background: var(--neon-orange); color: var(--bg-base); }
+.reveal-score.zero { background: var(--neon-pink); color: white; }
+
+/* ====== Round nav buttons (read-only - quiz master controls flow) ====== */
+.round-nav {
+  background: rgba(19, 23, 50, 0.85);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-top: 12px;
+}
+.round-nav-label {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 10px;
+}
+.round-nav-buttons {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.round-nav-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+.round-nav-btn.current {
+  border-color: var(--neon-cyan);
+  color: var(--neon-cyan);
+  box-shadow: 0 0 10px rgba(0, 240, 255, 0.4);
+}
+.round-nav-btn.answered {
+  border-color: var(--neon-green);
+  color: var(--neon-green);
+}
+.round-nav-hint {
+  margin-top: 10px;
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  font-style: italic;
+}

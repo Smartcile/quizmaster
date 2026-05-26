@@ -20,7 +20,8 @@ async function loadQuizWithRoundsAndWidgets(id) {
         (SELECT json_agg(json_build_object(
           'id', q.id, 'text', q.text, 'type', q.type, 'answer', q.answer,
           'media_url', q.media_url, 'points', q.points, 'category', q.category,
-          'options', q.options, 'order', rq."order"
+          'options', q.options, 'difficulty', q.difficulty,
+          'answer_mode', q.answer_mode, 'order', rq."order"
         ) ORDER BY rq."order")
         FROM round_questions rq
         JOIN questions q ON rq.question_id = q.id

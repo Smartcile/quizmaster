@@ -104,6 +104,8 @@ CREATE TABLE IF NOT EXISTS brownie_points (
 -- Additive migrations for existing installs
 ALTER TABLE questions ADD COLUMN IF NOT EXISTS category VARCHAR(100);
 ALTER TABLE questions ADD COLUMN IF NOT EXISTS options JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS difficulty VARCHAR(20) DEFAULT 'medium';
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS answer_mode VARCHAR(20) DEFAULT 'text';
 ALTER TABLE quiz_sessions ADD COLUMN IF NOT EXISTS started_at TIMESTAMP;
 
 -- Create indexes

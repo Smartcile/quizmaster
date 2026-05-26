@@ -271,14 +271,7 @@ function SlideRenderer({ slide }) {
       );
 
     case 'widget':
-      return (
-        <div className="slide-widget">
-          <h2>{(slide.widgetType || '').toUpperCase()}</h2>
-          {slide.widgetType === 'scoreboard' && <p>Scoreboard will appear here</p>}
-          {slide.widgetType === 'rules' && <p>{slide.data?.body || 'Rules go here'}</p>}
-          {slide.widgetType === 'custom' && <p>{slide.data?.body || ''}</p>}
-        </div>
-      );
+      return <WidgetSlide slide={slide} />;
 
     case 'end':
       return (
@@ -291,6 +284,25 @@ function SlideRenderer({ slide }) {
     default:
       return <div className="slide-empty"><p>Unknown slide type: {slide.type}</p></div>;
   }
+}
+
+function WidgetSlide({ slide }) {
+  const data = slide.data || {};
+  const style = {
+    background: data.bg_image ? `url(${data.bg_image}) center/cover` : (data.bg_color || undefined)
+  };
+  return (
+    <div className="slide-widget" style={style}>
+      {data.title && <h2>{data.title}</h2>}
+      {data.image_url && (
+        <div className="widget-image">
+          <img src={data.image_url} alt="" />
+        </div>
+      )}
+      {data.body && <p className="widget-body" style={{ whiteSpace: 'pre-line' }}>{data.body}</p>}
+      {slide.widgetType === 'scoreboard' && !data.title && <h2>Leaderboard</h2>}
+    </div>
+  );
 }
 
 export default App;

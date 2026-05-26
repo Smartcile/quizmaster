@@ -3,16 +3,23 @@ import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { api } from '../services/api';
 
 const WIDGET_TYPES = [
-  { value: 'scoreboard', label: 'Scoreboard' },
-  { value: 'rules', label: 'Rules Slide' },
-  { value: 'custom', label: 'Custom Page' }
+  { value: 'scoreboard', label: 'Scoreboard', icon: '🏆' },
+  { value: 'rules', label: 'Rules Slide', icon: '📋' },
+  { value: 'custom', label: 'Custom Page', icon: '🧩' }
 ];
+
+const DEFAULT_WIDGET_DATA = {
+  scoreboard: { title: 'Leaderboard', bg_color: '#0a0e1f' },
+  rules: { title: 'Rules', body: '1. No phones\n2. No shouting answers\n3. Have fun!', bg_color: '#0a0e1f' },
+  custom: { title: 'Custom Slide', body: '', image_url: '', bg_color: '#0a0e1f', bg_image: '' }
+};
 
 export default function QuizBuilder() {
   const [quizzes, setQuizzes] = useState([]);
   const [rounds, setRounds] = useState([]);
   const [name, setName] = useState('');
-  const [order, setOrder] = useState([]); // [{ kind: 'round'|'widget', id, ... }]
+  const [order, setOrder] = useState([]);
+  const [editingWidget, setEditingWidget] = useState(null);
   const [error, setError] = useState(null);
 
   useEffect(() => { loadAll(); }, []);
@@ -33,7 +40,13 @@ export default function QuizBuilder() {
   }, [rounds, order]);
 
   const addWidget = (type) => {
-    setOrder([...order, { kind: 'widget', id: `widget-${Date.now()}`, type, data: {} }]);
+    const widget = {
+      kind: 'widget',
+      id: `widget-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      type,
+      data: { ...DEFAULT_WIDGET_DATA[type] }
+    };
+    setOrder([...order, widget]);
   };
 
   const onDragEnd = (result) => {
@@ -69,6 +82,12 @@ export default function QuizBuilder() {
   const removeItem = (i) => {
     const next = [...order];
     next.splice(i, 1);
+    setOrder(next);
+  };
+
+  const updateWidget = (i, data) => {
+    const next = [...order];
+    next[i] = { ...next[i], data };
     setOrder(next);
   };
 
@@ -149,7 +168,7 @@ export default function QuizBuilder() {
               <div className="widget-buttons">
                 {WIDGET_TYPES.map(w => (
                   <button key={w.value} onClick={() => addWidget(w.value)} type="button" className="btn btn-secondary btn-sm">
-                    + {w.label}
+                    {w.icon} {w.label}
                   </button>
                 ))}
               </div>
@@ -159,7 +178,7 @@ export default function QuizBuilder() {
           <div className="dnd-panel">
             <div className="dnd-panel-header">
               <h3>Quiz Order ({order.length})</h3>
-              <p className="dnd-hint">Drop here, reorder, drag back to remove</p>
+              <p className="dnd-hint">Drop here, reorder, click widgets to edit</p>
             </div>
 
             <Droppable droppableId="quiz-order">
@@ -172,7 +191,7 @@ export default function QuizBuilder() {
                   {order.length === 0 ? (
                     <p className="dnd-empty">Drop rounds and widgets here to build your quiz.</p>
                   ) : order.map((item, i) => (
-                    <Draggable key={`${item.kind}-${item.id}-${i}`} draggableId={`order-${item.kind}-${item.id}-${i}`} index={i}>
+                    <Draggable key={`${item.kind}-${item.id}`} draggableId={`order-${item.kind}-${item.id}`} index={i}>
                       {(prov, snapshot) => (
                         <div
                           ref={prov.innerRef}
@@ -182,8 +201,11 @@ export default function QuizBuilder() {
                         >
                           <span className="dnd-order">{i + 1}</span>
                           <div className="dnd-item-text">
-                            {item.kind === 'round' ? `🎯 ${item.name}` : `🧩 ${item.type} widget`}
+                            {item.kind === 'round' ? `🎯 ${item.name}` : `${(WIDGET_TYPES.find(w => w.value === item.type) || {}).icon || '🧩'} ${item.data?.title || item.type}`}
                           </div>
+                          {item.kind === 'widget' && (
+                            <button onClick={() => setEditingWidget({ index: i, ...item })} className="btn btn-sm btn-secondary" type="button">Edit</button>
+                          )}
                           <button onClick={() => removeItem(i)} className="btn-close" type="button">×</button>
                         </div>
                       )}
@@ -209,6 +231,96 @@ export default function QuizBuilder() {
           ))}
         </div>
       </div>
+
+      {editingWidget && (
+        <WidgetEditor
+          widget={editingWidget}
+          onSave={(data) => { updateWidget(editingWidget.index, data); setEditingWidget(null); }}
+          onClose={() => setEditingWidget(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function WidgetEditor({ widget, onSave, onClose }) {
+  const [data, setData] = useState(widget.data || {});
+  const update = (k, v) => setData({ ...data, [k]: v });
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal modal-lg" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3>Edit Widget: {widget.type}</h3>
+          <button onClick={onClose} className="btn-close">×</button>
+        </div>
+        <div className="modal-body">
+          <label className="form-label">Title
+            <input type="text" value={data.title || ''} onChange={(e) => update('title', e.target.value)} />
+          </label>
+
+          {(widget.type === 'rules' || widget.type === 'custom') && (
+            <label className="form-label">Body text
+              <textarea
+                rows={6}
+                placeholder="Line by line, supports multiple paragraphs"
+                value={data.body || ''}
+                onChange={(e) => update('body', e.target.value)}
+              />
+            </label>
+          )}
+
+          {widget.type === 'custom' && (
+            <label className="form-label">Image URL (optional)
+              <input
+                type="text"
+                placeholder="https://... or /uploads/..."
+                value={data.image_url || ''}
+                onChange={(e) => update('image_url', e.target.value)}
+              />
+            </label>
+          )}
+
+          <div className="form-row">
+            <label className="form-label">Background color
+              <input
+                type="color"
+                value={data.bg_color || '#0a0e1f'}
+                onChange={(e) => update('bg_color', e.target.value)}
+              />
+            </label>
+            <label className="form-label">Background image URL (optional)
+              <input
+                type="text"
+                placeholder="https://..."
+                value={data.bg_image || ''}
+                onChange={(e) => update('bg_image', e.target.value)}
+              />
+            </label>
+          </div>
+
+          <WidgetPreview type={widget.type} data={data} />
+        </div>
+        <div className="modal-footer">
+          <button onClick={onClose} className="btn btn-secondary">Cancel</button>
+          <button onClick={() => onSave(data)} className="btn btn-primary">Save Widget</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WidgetPreview({ type, data }) {
+  const style = {
+    background: data.bg_image ? `url(${data.bg_image}) center/cover` : (data.bg_color || '#0a0e1f'),
+  };
+  return (
+    <div className="widget-preview" style={style}>
+      <p className="widget-preview-label">Preview</p>
+      {data.title && <h3>{data.title}</h3>}
+      {data.body && <p style={{ whiteSpace: 'pre-line' }}>{data.body}</p>}
+      {data.image_url && <img src={data.image_url} alt="" style={{ maxWidth: '100%', maxHeight: 120, borderRadius: 8 }} />}
+      {type === 'scoreboard' && <p className="widget-preview-hint">Live scoreboard appears here during the quiz</p>}
     </div>
   );
 }

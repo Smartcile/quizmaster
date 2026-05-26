@@ -1,5 +1,7 @@
-import { useState } from 'react';
-import { api } from './services/api';
+import { useState, useEffect } from 'react';
+import { clearToken, setUnauthorizedHandler, verifyAdminToken } from './services/api';
+import Login from './pages/Login';
+import Dashboard from './pages/Dashboard';
 import QuestionManager from './pages/QuestionManager';
 import RoundBuilder from './pages/RoundBuilder';
 import QuizBuilder from './pages/QuizBuilder';
@@ -7,12 +9,33 @@ import AnswerMarking from './pages/AnswerMarking';
 import QuizControl from './pages/QuizControl';
 
 function App() {
+  const [authed, setAuthed] = useState(null); // null = checking, false = login, true = in
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [activeQuiz, setActiveQuiz] = useState(null); // { sessionId, quiz }
+
+  // Boot: verify token if present
+  useEffect(() => {
+    setUnauthorizedHandler(() => setAuthed(false));
+    verifyAdminToken().then(ok => setAuthed(ok));
+  }, []);
+
+  if (authed === null) {
+    return <div className="boot-screen"><div className="boot-spinner" /></div>;
+  }
+
+  if (!authed) {
+    return <Login onSuccess={() => setAuthed(true)} />;
+  }
 
   const handleQuizStart = (sessionId, quiz) => {
     setActiveQuiz({ sessionId, quiz });
     setCurrentPage('control');
+  };
+
+  const handleLogout = () => {
+    clearToken();
+    setActiveQuiz(null);
+    setAuthed(false);
   };
 
   const renderPage = () => {
@@ -28,7 +51,12 @@ function App() {
       case 'control':
         return <QuizControl sessionId={activeQuiz?.sessionId} quiz={activeQuiz?.quiz} />;
       default:
-        return <Dashboard onQuizStart={handleQuizStart} />;
+        return (
+          <Dashboard
+            onQuizStart={handleQuizStart}
+            activeQuizId={activeQuiz?.sessionId}
+          />
+        );
     }
   };
 
@@ -50,65 +78,21 @@ function App() {
             </>
           )}
         </ul>
+
         {activeQuiz && (
           <div className="active-quiz-banner">
             <p>Active: <strong>{activeQuiz.quiz.name}</strong></p>
             <p>Code: <strong>{activeQuiz.quiz.code}</strong></p>
           </div>
         )}
+
+        <button onClick={handleLogout} className="logout-btn" title="Sign out">
+          ⎋ Sign out
+        </button>
       </nav>
       <main className="admin-main">
         {renderPage()}
       </main>
-    </div>
-  );
-}
-
-function Dashboard({ onQuizStart }) {
-  const [quizzes, setQuizzes] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-
-  const loadQuizzes = async () => {
-    try {
-      setQuizzes(await api.get('/quizzes'));
-      setError(null);
-    } catch (err) {
-      setError('Failed to load quizzes: ' + err.message);
-    }
-  };
-
-  const startQuiz = async (quizId) => {
-    setLoading(true);
-    try {
-      const [session, quiz] = await Promise.all([
-        api.post(`/quizzes/${quizId}/start`),
-        api.get(`/quizzes/${quizId}`)
-      ]);
-      onQuizStart(session.id, quiz);
-    } catch (err) {
-      setError('Failed to start quiz: ' + err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="dashboard">
-      <h2>Dashboard</h2>
-      {error && <div className="error-banner">{error}</div>}
-      <button onClick={loadQuizzes} className="btn btn-primary">Load Quizzes</button>
-      <div className="quiz-list">
-        {quizzes.map(quiz => (
-          <div key={quiz.id} className="quiz-card">
-            <h3>{quiz.name}</h3>
-            <p>Code: <strong>{quiz.code}</strong></p>
-            <button onClick={() => startQuiz(quiz.id)} className="btn btn-success" disabled={loading}>
-              {loading ? 'Starting...' : 'Start Quiz'}
-            </button>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }

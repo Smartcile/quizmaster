@@ -1,23 +1,12 @@
-function safeParse(s) { try { return JSON.parse(s); } catch { return {}; } }
-
-// MUST stay in sync with frontend-admin/src/utils/buildSlides.js
+// Mirror of slideshow/admin buildSlides. MUST produce the same indexes.
 export function buildSlides(quiz) {
   if (!quiz) return [];
   const slides = [];
 
-  slides.push({
-    type: 'intro',
-    title: quiz.name,
-    subtitle: `Quiz Code: ${quiz.code}`
-  });
+  slides.push({ type: 'intro', title: quiz.name, subtitle: `Quiz Code: ${quiz.code}` });
 
   (quiz.rounds || []).forEach((round) => {
-    slides.push({
-      type: 'round_intro',
-      roundId: round.id,
-      title: round.name,
-      background: round.background_color
-    });
+    slides.push({ type: 'round_intro', roundId: round.id, title: round.name });
 
     const questions = (round.questions || []).filter(q => q && q.id);
 
@@ -31,6 +20,7 @@ export function buildSlides(quiz) {
         roundName: round.name,
         text: q.text,
         questionType: q.type,
+        answerMode: q.answer_mode || (q.type === 'mcq' ? 'mcq' : 'text'),
         mediaUrl: q.media_url,
         options: q.options || [],
         points: q.points
@@ -52,18 +42,10 @@ export function buildSlides(quiz) {
   });
 
   (quiz.widgets || []).forEach((w) => {
-    slides.push({
-      type: 'widget',
-      widgetType: w.type,
-      data: typeof w.data === 'string' ? safeParse(w.data) : (w.data || {})
-    });
+    slides.push({ type: 'widget', widgetType: w.type, data: w.data || {} });
   });
 
-  slides.push({
-    type: 'end',
-    title: 'Quiz Complete!',
-    subtitle: 'Thanks for playing'
-  });
+  slides.push({ type: 'end', title: 'Quiz Complete!', subtitle: 'Thanks for playing' });
 
   return slides;
 }

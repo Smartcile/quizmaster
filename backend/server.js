@@ -15,6 +15,7 @@ const answerRoutes = require('./routes/answers');
 const uploadRoutes = require('./routes/upload');
 const { setupWebSocketHandlers } = require('./websocket/handlers');
 const { errorHandler } = require('./middleware/errorHandler');
+const { login, requireAdminForWrites } = require('./middleware/auth');
 
 const app = express();
 const httpServer = createServer(app);
@@ -30,9 +31,22 @@ app.use(express.urlencoded({ extended: true }));
 
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-app.use('/api/questions', questionRoutes);
-app.use('/api/rounds', roundRoutes);
-app.use('/api/quizzes', quizRoutes);
+// Auth endpoint - public
+app.post('/api/auth/login', login);
+app.get('/api/auth/verify', (req, res) => {
+  // Token validity check - returns 200 if header is valid, 401 otherwise
+  const { verifyToken } = require('./middleware/auth');
+  verifyToken(req, res, () => res.json({ ok: true }));
+});
+
+// Writes require auth for management endpoints. Reads stay public so the
+// slideshow + quizzer don't need a token.
+app.use('/api/questions', requireAdminForWrites, questionRoutes);
+app.use('/api/rounds', requireAdminForWrites, roundRoutes);
+app.use('/api/quizzes', requireAdminForWrites, quizRoutes);
+
+// Teams + answers + upload: kept public so audience clients can write.
+// (Adjust if you want stricter control.)
 app.use('/api/teams', teamRoutes);
 app.use('/api/answers', answerRoutes);
 app.use('/api/upload', uploadRoutes);

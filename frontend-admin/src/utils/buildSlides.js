@@ -1,3 +1,5 @@
+function safeParse(s) { try { return JSON.parse(s); } catch { return {}; } }
+
 // Build a flat slide list from a quiz - MUST stay in sync with frontend-slideshow's version.
 // Index-based sync means both apps must produce the same slide order from the same quiz data.
 export function buildSlides(quiz) {
@@ -54,7 +56,7 @@ export function buildSlides(quiz) {
     slides.push({
       type: 'widget',
       widgetType: w.type,
-      data: w.data || {}
+      data: typeof w.data === 'string' ? safeParse(w.data) : (w.data || {})
     });
   });
 

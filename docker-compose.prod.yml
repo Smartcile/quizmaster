@@ -32,6 +32,8 @@ services:
       DB_USER: ${DB_USER:-quiz_user}
       DB_PASSWORD: ${DB_PASSWORD:-quiz_password}
       DB_NAME: ${DB_NAME:-quiz_master}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
     # Backend is reached internally via the Docker network from the frontend
     # nginx proxies. No host port needed unless you want direct API access.
     depends_on:
