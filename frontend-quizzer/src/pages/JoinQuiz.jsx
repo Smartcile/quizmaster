@@ -1,0 +1,82 @@
+import { useState } from 'react';
+
+export default function JoinQuiz({ onJoin }) {
+  const [code, setCode] = useState('');
+  const [teamName, setTeamName] = useState('');
+  const [teamSize, setTeamSize] = useState(1);
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!code.trim() || !teamName.trim()) {
+      alert('Please fill in all fields');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await onJoin(code.toUpperCase(), teamName, parseInt(teamSize));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="join-container">
+      <div className="join-card">
+        <div className="join-header">
+          <h1>🎯 Quiz Master</h1>
+          <p>Join a live quiz</p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="join-form">
+          <div className="form-group">
+            <label htmlFor="code">Quiz Code</label>
+            <input
+              id="code"
+              type="text"
+              placeholder="Enter quiz code"
+              value={code}
+              onChange={(e) => setCode(e.target.value.toUpperCase())}
+              maxLength="6"
+              disabled={loading}
+              autoFocus
+              required
+            />
+            <p className="hint">Ask your quiz master for the code</p>
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="teamName">Team Name</label>
+            <input
+              id="teamName"
+              type="text"
+              placeholder="Enter your team name"
+              value={teamName}
+              onChange={(e) => setTeamName(e.target.value)}
+              disabled={loading}
+              required
+            />
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="teamSize">Team Size</label>
+            <input
+              id="teamSize"
+              type="number"
+              min="1"
+              max="10"
+              value={teamSize}
+              onChange={(e) => setTeamSize(e.target.value)}
+              disabled={loading}
+            />
+          </div>
+
+          <button type="submit" className="btn-join" disabled={loading}>
+            {loading ? 'Joining...' : 'Join Quiz'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
