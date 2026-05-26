@@ -1,0 +1,88 @@
+# Quiz Master - Production Deployment (Pre-built Images)
+# No rebuild needed - uses images from GitHub Container Registry
+# Deploy: docker-compose -f docker-compose.prod.yml up -d
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: ${DB_USER:-quiz_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-quiz_password}
+      POSTGRES_DB: ${DB_NAME:-quiz_master}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-quiz_user}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - quiz-network
+    restart: unless-stopped
+
+  backend:
+    image: ghcr.io/smartcile/quizmaster/backend:latest
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-quiz_user}
+      DB_PASSWORD: ${DB_PASSWORD:-quiz_password}
+      DB_NAME: ${DB_NAME:-quiz_master}
+    ports:
+      - "5000:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - backend_uploads:/app/uploads
+    networks:
+      - quiz-network
+    restart: unless-stopped
+
+  frontend-admin:
+    image: ghcr.io/smartcile/quizmaster/frontend-admin:latest
+    ports:
+      - "3001:3001"
+    environment:
+      VITE_API_URL: http://${SERVER_IP:-localhost}:5000/api
+    depends_on:
+      - backend
+    networks:
+      - quiz-network
+    restart: unless-stopped
+
+  frontend-slideshow:
+    image: ghcr.io/smartcile/quizmaster/frontend-slideshow:latest
+    ports:
+      - "3002:3002"
+    environment:
+      VITE_API_URL: http://${SERVER_IP:-localhost}:5000/api
+    depends_on:
+      - backend
+    networks:
+      - quiz-network
+    restart: unless-stopped
+
+  frontend-quizzer:
+    image: ghcr.io/smartcile/quizmaster/frontend-quizzer:latest
+    ports:
+      - "3003:3003"
+    environment:
+      VITE_API_URL: http://${SERVER_IP:-localhost}:5000/api
+    depends_on:
+      - backend
+    networks:
+      - quiz-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  backend_uploads:
+
+networks:
+  quiz-network:
+    driver: bridge
