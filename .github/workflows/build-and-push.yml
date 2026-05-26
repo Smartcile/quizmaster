@@ -4,11 +4,10 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch:  # Allow manual trigger
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository_owner }}/${{ github.event.repository.name }}
 
 jobs:
   build-and-push:
@@ -20,6 +19,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Set lowercase image prefix
+        run: echo "IMAGE_PREFIX=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -38,8 +40,8 @@ jobs:
           file: ./backend/Dockerfile
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/backend:latest
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/backend:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}/backend:latest
+            ${{ env.IMAGE_PREFIX }}/backend:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -50,8 +52,8 @@ jobs:
           file: ./frontend-admin/Dockerfile
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/frontend-admin:latest
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/frontend-admin:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}/frontend-admin:latest
+            ${{ env.IMAGE_PREFIX }}/frontend-admin:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -62,8 +64,8 @@ jobs:
           file: ./frontend-slideshow/Dockerfile
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/frontend-slideshow:latest
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/frontend-slideshow:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}/frontend-slideshow:latest
+            ${{ env.IMAGE_PREFIX }}/frontend-slideshow:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -74,7 +76,7 @@ jobs:
           file: ./frontend-quizzer/Dockerfile
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/frontend-quizzer:latest
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/frontend-quizzer:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}/frontend-quizzer:latest
+            ${{ env.IMAGE_PREFIX }}/frontend-quizzer:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

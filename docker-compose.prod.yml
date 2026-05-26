@@ -1,6 +1,6 @@
 # Quiz Master - Production Deployment (Pre-built Images)
-# No rebuild needed - uses images from GitHub Container Registry
-# Deploy: docker-compose -f docker-compose.prod.yml up -d
+# No rebuild needed - pulls images from GitHub Container Registry
+# Usage: docker-compose -f docker-compose.prod.yml up -d
 
 services:
   postgres:
@@ -47,8 +47,6 @@ services:
     image: ghcr.io/smartcile/quizmaster/frontend-admin:latest
     ports:
       - "3001:3001"
-    environment:
-      VITE_API_URL: http://${SERVER_IP:-localhost}:5000/api
     depends_on:
       - backend
     networks:
@@ -59,8 +57,6 @@ services:
     image: ghcr.io/smartcile/quizmaster/frontend-slideshow:latest
     ports:
       - "3002:3002"
-    environment:
-      VITE_API_URL: http://${SERVER_IP:-localhost}:5000/api
     depends_on:
       - backend
     networks:
@@ -71,8 +67,6 @@ services:
     image: ghcr.io/smartcile/quizmaster/frontend-quizzer:latest
     ports:
       - "3003:3003"
-    environment:
-      VITE_API_URL: http://${SERVER_IP:-localhost}:5000/api
     depends_on:
       - backend
     networks:
