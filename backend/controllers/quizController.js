@@ -10,35 +10,70 @@ async function getAllQuizzes(req, res) {
   }
 }
 
+async function loadQuizWithRoundsAndWidgets(id) {
+  const quizResult = await db.query('SELECT * FROM quizzes WHERE id = $1', [id]);
+  if (quizResult.rows.length === 0) return null;
+
+  const roundsResult = await db.query(`
+    SELECT r.*,
+      COALESCE(
+        (SELECT json_agg(json_build_object(
+          'id', q.id, 'text', q.text, 'type', q.type, 'answer', q.answer,
+          'media_url', q.media_url, 'points', q.points, 'order', rq."order"
+        ) ORDER BY rq."order")
+        FROM round_questions rq
+        JOIN questions q ON rq.question_id = q.id
+        WHERE rq.round_id = r.id),
+        '[]'::json
+      ) as questions
+    FROM quiz_rounds qr
+    JOIN rounds r ON qr.round_id = r.id
+    WHERE qr.quiz_id = $1
+    ORDER BY qr."order"
+  `, [id]);
+
+  const widgetsResult = await db.query(
+    'SELECT * FROM quiz_widgets WHERE quiz_id = $1 ORDER BY "order"',
+    [id]
+  );
+
+  const quiz = quizResult.rows[0];
+  quiz.rounds = roundsResult.rows;
+  quiz.widgets = widgetsResult.rows;
+  return quiz;
+}
+
 async function getQuiz(req, res) {
   try {
+    const quiz = await loadQuizWithRoundsAndWidgets(req.params.id);
+    if (!quiz) return res.status(404).json({ error: 'Quiz not found' });
+    res.json(quiz);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
+async function getQuizByCode(req, res) {
+  try {
+    const codeResult = await db.query('SELECT id FROM quizzes WHERE code = $1', [req.params.code.toUpperCase()]);
+    if (codeResult.rows.length === 0) return res.status(404).json({ error: 'Quiz code not found' });
+    const quiz = await loadQuizWithRoundsAndWidgets(codeResult.rows[0].id);
+    res.json(quiz);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
+async function getActiveSession(req, res) {
+  try {
     const { id } = req.params;
-    const quizResult = await db.query('SELECT * FROM quizzes WHERE id = $1', [id]);
-    if (quizResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Quiz not found' });
-    }
-
-    const roundsResult = await db.query(`
-      SELECT r.*, json_agg(json_build_object('id', q.id, 'text', q.text, 'type', q.type, 'answer', q.answer, 'points', q.points, 'order', rq."order")) as questions
-      FROM quiz_rounds qr
-      JOIN rounds r ON qr.round_id = r.id
-      LEFT JOIN round_questions rq ON r.id = rq.round_id
-      LEFT JOIN questions q ON rq.question_id = q.id
-      WHERE qr.quiz_id = $1
-      GROUP BY r.id, qr."order"
-      ORDER BY qr."order"
-    `, [id]);
-
-    const widgetsResult = await db.query(
-      'SELECT * FROM quiz_widgets WHERE quiz_id = $1 ORDER BY "order"',
+    const result = await db.query(
+      `SELECT * FROM quiz_sessions WHERE quiz_id = $1 AND status = 'active'
+       ORDER BY created_at DESC LIMIT 1`,
       [id]
     );
-
-    const quiz = quizResult.rows[0];
-    quiz.rounds = roundsResult.rows;
-    quiz.widgets = widgetsResult.rows;
-
-    res.json(quiz);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'No active session for this quiz' });
+    res.json(result.rows[0]);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -133,6 +168,8 @@ async function endQuiz(req, res) {
 module.exports = {
   getAllQuizzes,
   getQuiz,
+  getQuizByCode,
+  getActiveSession,
   createQuiz,
   startQuiz,
   endQuiz

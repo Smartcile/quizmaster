@@ -7,19 +7,39 @@ function setupWebSocketHandlers(io) {
     console.log(`Client connected: ${socket.id}`);
 
     socket.on('join_quiz', async (data) => {
-      const { sessionId, teamId, teamName } = data;
+      const { sessionId, teamId, teamName, role } = data;
       const roomKey = `quiz-${sessionId}`;
 
       socket.join(roomKey);
-      quizSessions.set(socket.id, { sessionId, teamId, teamName, roomKey });
+      quizSessions.set(socket.id, { sessionId, teamId, teamName, role, roomKey });
 
-      io.to(roomKey).emit('team_joined', {
-        teamId,
-        teamName,
-        timestamp: new Date().toISOString()
-      });
+      // Send current slide index to newly-joined client so it catches up
+      try {
+        const sessRes = await db.query(
+          'SELECT current_slide_index FROM quiz_sessions WHERE id = $1',
+          [sessionId]
+        );
+        if (sessRes.rows.length > 0) {
+          socket.emit('slide_changed', {
+            slideIndex: sessRes.rows[0].current_slide_index || 0,
+            timestamp: new Date().toISOString()
+          });
+        }
+      } catch (err) {
+        console.error('Error fetching current slide:', err);
+      }
 
-      console.log(`Team ${teamName} joined quiz session ${sessionId}`);
+      // Only announce team joins, not viewers
+      if (teamId && teamName) {
+        io.to(roomKey).emit('team_joined', {
+          teamId,
+          teamName,
+          timestamp: new Date().toISOString()
+        });
+        console.log(`Team ${teamName} joined quiz session ${sessionId}`);
+      } else {
+        console.log(`Viewer (${role || 'unknown'}) joined quiz session ${sessionId}`);
+      }
     });
 
     socket.on('slide_changed', async (data) => {

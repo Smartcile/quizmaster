@@ -156,6 +156,144 @@ html, body {
   border-radius: 8px;
 }
 
+/* Slide types added in v2 */
+.slide-intro {
+  text-align: center;
+}
+.slide-intro h1 {
+  font-size: 4rem;
+  margin-bottom: 20px;
+  color: #2c3e50;
+}
+.slide-intro h3 {
+  font-size: 2rem;
+  color: #7f8c8d;
+}
+
+.slide-round-intro {
+  text-align: center;
+}
+.slide-round-intro .round-label {
+  font-size: 1.5rem;
+  color: #9b59b6;
+  text-transform: uppercase;
+  letter-spacing: 4px;
+  margin-bottom: 20px;
+}
+.slide-round-intro h1 {
+  font-size: 4rem;
+  color: #2c3e50;
+}
+
+.question-header {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  font-size: 1.2rem;
+  color: #7f8c8d;
+  margin-bottom: 30px;
+  padding-bottom: 15px;
+  border-bottom: 2px solid #ecf0f1;
+}
+
+.slide-answer .answer-label {
+  font-size: 1.2rem;
+  opacity: 0.85;
+  margin-bottom: 20px;
+}
+.slide-answer .answer-question {
+  font-size: 1.8rem;
+  font-weight: 400;
+  margin-bottom: 30px;
+  opacity: 0.95;
+}
+.slide-answer .answer-text {
+  font-size: 4rem;
+  font-weight: 700;
+}
+
+/* Code entry screen */
+.code-entry {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+  padding: 20px;
+}
+.code-entry-card {
+  background: white;
+  padding: 50px;
+  border-radius: 16px;
+  text-align: center;
+  max-width: 500px;
+  width: 100%;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+.code-entry-card h1 {
+  color: #2c3e50;
+  margin-bottom: 10px;
+  font-size: 2.5rem;
+}
+.code-entry-card p {
+  color: #7f8c8d;
+  margin-bottom: 30px;
+}
+.code-entry-card form {
+  display: flex;
+  gap: 12px;
+}
+.code-entry-card input {
+  flex: 1;
+  padding: 16px;
+  font-size: 1.4rem;
+  text-align: center;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  border: 2px solid #ecf0f1;
+  border-radius: 8px;
+  font-weight: bold;
+}
+.code-entry-card input:focus {
+  outline: none;
+  border-color: #3498db;
+}
+.code-entry-card button {
+  padding: 16px 28px;
+  background: #3498db;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.code-entry-card button:hover {
+  background: #2980b9;
+}
+.code-entry-error {
+  background: #e74c3c;
+  color: white;
+  padding: 12px;
+  border-radius: 6px;
+  margin-bottom: 20px;
+}
+
+.slide-empty h2 {
+  font-size: 2.5rem;
+  color: #2c3e50;
+  margin-bottom: 15px;
+}
+.slide-empty h3 {
+  font-size: 1.5rem;
+  color: #7f8c8d;
+  margin-bottom: 20px;
+}
+.slide-empty p {
+  font-size: 1.2rem;
+  color: #95a5a6;
+}
+
 @media (max-width: 768px) {
   .slide {
     width: 95%;

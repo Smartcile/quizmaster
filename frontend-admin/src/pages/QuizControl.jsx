@@ -1,111 +1,126 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useWebSocket } from '../hooks/useWebSocket';
+import { buildSlides, slideShortLabel } from '../utils/buildSlides';
 
-export default function QuizControl({ sessionId }) {
-  const [quizData, setQuizData] = useState(null);
+export default function QuizControl({ sessionId, quiz }) {
   const [currentSlide, setCurrentSlide] = useState(0);
-  const [slides, setSlides] = useState([]);
   const socket = useWebSocket();
+  const slides = useMemo(() => buildSlides(quiz), [quiz]);
 
   useEffect(() => {
     if (!sessionId || !socket) return;
+    socket.emit('join_quiz', { sessionId, role: 'admin' });
 
-    const handleSlideChange = (data) => {
-      setCurrentSlide(data.slideIndex);
+    const handler = (data) => {
+      if (typeof data.slideIndex === 'number') setCurrentSlide(data.slideIndex);
     };
-
-    socket.on('slide_changed', handleSlideChange);
-    return () => socket.off('slide_changed', handleSlideChange);
+    socket.on('slide_changed', handler);
+    return () => socket.off('slide_changed', handler);
   }, [sessionId, socket]);
 
   const goToSlide = (index) => {
-    if (slides[index]) {
-      setCurrentSlide(index);
-      if (socket) {
-        socket.emit('slide_changed', {
-          sessionId,
-          slideIndex: index,
-          slideData: slides[index]
-        });
-      }
-    }
+    if (index < 0 || index >= slides.length) return;
+    setCurrentSlide(index);
+    if (socket) socket.emit('slide_changed', { sessionId, slideIndex: index });
   };
 
   const nextSlide = () => goToSlide(currentSlide + 1);
   const prevSlide = () => goToSlide(currentSlide - 1);
 
   const lockAnswers = () => {
-    if (socket) {
-      socket.emit('answer_locked', { sessionId, roundId: currentSlide });
-    }
+    const slide = slides[currentSlide];
+    const roundId = slide?.roundId;
+    if (socket && roundId) socket.emit('answer_locked', { sessionId, roundId });
   };
 
-  const currentSlideData = slides[currentSlide];
-  const nextSlideData = slides[currentSlide + 1];
+  if (!sessionId || !quiz) {
+    return (
+      <div className="quiz-control">
+        <h2>Quiz Control - Presenter View</h2>
+        <p>Go to the Dashboard and click "Start Quiz" to begin.</p>
+      </div>
+    );
+  }
+
+  const current = slides[currentSlide];
+  const next = slides[currentSlide + 1];
 
   return (
     <div className="quiz-control">
-      <h2>Quiz Control - Presenter View</h2>
+      <h2>Quiz Control — {quiz.name}</h2>
+      <p className="control-meta">
+        Code: <strong>{quiz.code}</strong> · Session: {sessionId} ·
+        Slide {currentSlide + 1} / {slides.length}
+      </p>
 
-      {!sessionId ? (
-        <p>Start a quiz to control it</p>
-      ) : (
-        <div className="control-layout">
-          <div className="slides-nav">
-            <h3>Slides ({currentSlide + 1} / {slides.length})</h3>
-            <div className="slide-navigation">
-              <button onClick={prevSlide} disabled={currentSlide === 0} className="btn btn-primary">← Previous</button>
-              <button onClick={nextSlide} disabled={currentSlide >= slides.length - 1} className="btn btn-primary">Next →</button>
-              <button onClick={lockAnswers} className="btn btn-warning">Lock Answers</button>
-            </div>
-          </div>
+      <div className="slide-navigation">
+        <button onClick={prevSlide} disabled={currentSlide === 0} className="btn btn-primary">← Previous</button>
+        <button onClick={nextSlide} disabled={currentSlide >= slides.length - 1} className="btn btn-primary">Next →</button>
+        <button onClick={lockAnswers} disabled={!current?.roundId} className="btn btn-warning">Lock Round Answers</button>
+      </div>
 
-          <div className="presenter-view">
-            <div className="current-slide">
-              <h3>Current Slide</h3>
-              <div className="slide-preview">
-                {currentSlideData ? (
-                  <div>
-                    <h4>{currentSlideData.title || 'Untitled Slide'}</h4>
-                    <p>{currentSlideData.content || 'No content'}</p>
-                  </div>
-                ) : (
-                  <p>No slides</p>
-                )}
-              </div>
-            </div>
-
-            <div className="next-slide">
-              <h3>Next Slide</h3>
-              <div className="slide-preview">
-                {nextSlideData ? (
-                  <div>
-                    <h4>{nextSlideData.title || 'Untitled Slide'}</h4>
-                    <p>{nextSlideData.content || 'No content'}</p>
-                  </div>
-                ) : (
-                  <p>No more slides</p>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="slide-thumbnails">
-            <h3>Slide Overview</h3>
-            <div className="thumbnails">
-              {slides.map((slide, i) => (
-                <button
-                  key={i}
-                  onClick={() => goToSlide(i)}
-                  className={`thumbnail ${i === currentSlide ? 'active' : ''}`}
-                >
-                  {i + 1}
-                </button>
-              ))}
-            </div>
+      <div className="presenter-view">
+        <div className="current-slide">
+          <h3>Now Showing</h3>
+          <div className="slide-preview-card">
+            <SlidePreview slide={current} />
           </div>
         </div>
-      )}
+        <div className="next-slide">
+          <h3>Up Next</h3>
+          <div className="slide-preview-card faded">
+            {next ? <SlidePreview slide={next} /> : <p>End of quiz</p>}
+          </div>
+        </div>
+      </div>
+
+      <div className="slide-thumbnails">
+        <h3>All Slides</h3>
+        <div className="thumbnails">
+          {slides.map((slide, i) => (
+            <button
+              key={i}
+              onClick={() => goToSlide(i)}
+              className={`thumbnail ${i === currentSlide ? 'active' : ''}`}
+              title={slideShortLabel(slide)}
+            >
+              {i + 1}
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   );
+}
+
+function SlidePreview({ slide }) {
+  if (!slide) return <p>No slide</p>;
+  switch (slide.type) {
+    case 'intro':
+      return <div><h4>{slide.title}</h4><p>{slide.subtitle}</p></div>;
+    case 'round_intro':
+      return <div><h4 style={{ color: '#9b59b6' }}>Round Start</h4><p style={{ fontSize: '1.3rem' }}>{slide.title}</p></div>;
+    case 'question':
+      return (
+        <div>
+          <p className="preview-label">{slide.roundName} · Q{slide.questionNumber}/{slide.totalInRound} · {slide.points}pt</p>
+          <h4>{slide.text}</h4>
+          {slide.mediaUrl && <p className="preview-media">📎 {slide.questionType}: {slide.mediaUrl}</p>}
+        </div>
+      );
+    case 'answer':
+      return (
+        <div>
+          <p className="preview-label">{slide.roundName} · Answer to Q{slide.questionNumber}</p>
+          <h4>{slide.text}</h4>
+          <p className="preview-answer">✓ {slide.answer}</p>
+        </div>
+      );
+    case 'widget':
+      return <div><h4>Widget</h4><p>Type: {slide.widgetType}</p></div>;
+    case 'end':
+      return <div><h4>{slide.title}</h4><p>{slide.subtitle}</p></div>;
+    default:
+      return <p>{slide.type}</p>;
+  }
 }
