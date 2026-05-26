@@ -3,10 +3,21 @@ import { api } from '../services/api';
 
 const QUESTION_TYPES = [
   { value: 'text', label: 'Text' },
-  { value: 'mcq', label: 'Multiple Choice' },
   { value: 'image', label: 'Image' },
   { value: 'video', label: 'Video' },
   { value: 'audio', label: 'Audio' }
+];
+
+const ANSWER_MODES = [
+  { value: 'text', label: 'Text answer only' },
+  { value: 'mcq', label: 'Multiple choice only' },
+  { value: 'both', label: 'Both (text + MCQ)' }
+];
+
+const DIFFICULTIES = [
+  { value: 'easy', label: 'Easy', color: '#00ff9f' },
+  { value: 'medium', label: 'Medium', color: '#ffe600' },
+  { value: 'hard', label: 'Hard', color: '#ff3868' }
 ];
 
 const EMPTY_FORM = {
@@ -16,6 +27,8 @@ const EMPTY_FORM = {
   points: 1,
   media_url: '',
   category: '',
+  difficulty: 'medium',
+  answer_mode: 'text',
   options: ['', '', '', '']
 };
 
@@ -24,10 +37,12 @@ export default function QuestionManager() {
   const [categories, setCategories] = useState([]);
   const [search, setSearch] = useState('');
   const [filterCategory, setFilterCategory] = useState('all');
+  const [filterDifficulty, setFilterDifficulty] = useState('all');
   const [form, setForm] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState(null);
   const [error, setError] = useState(null);
   const [csvFile, setCsvFile] = useState(null);
+  const [csvOpen, setCsvOpen] = useState(false);
 
   useEffect(() => { loadAll(); }, []);
 
@@ -45,13 +60,14 @@ export default function QuestionManager() {
   const filtered = useMemo(() => {
     return questions.filter(q => {
       if (filterCategory !== 'all' && q.category !== filterCategory) return false;
+      if (filterDifficulty !== 'all' && (q.difficulty || 'medium') !== filterDifficulty) return false;
       if (search) {
         const s = search.toLowerCase();
         return q.text.toLowerCase().includes(s) || (q.answer || '').toLowerCase().includes(s);
       }
       return true;
     });
-  }, [questions, search, filterCategory]);
+  }, [questions, search, filterCategory, filterDifficulty]);
 
   const selectQuestion = (q) => {
     setEditingId(q.id);
@@ -62,6 +78,8 @@ export default function QuestionManager() {
       points: q.points ?? 1,
       media_url: q.media_url || '',
       category: q.category || '',
+      difficulty: q.difficulty || 'medium',
+      answer_mode: q.answer_mode || (q.type === 'mcq' ? 'mcq' : 'text'),
       options: Array.isArray(q.options) && q.options.length ? [...q.options, '', '', '', ''].slice(0, 4) : ['', '', '', '']
     });
   };
@@ -76,13 +94,10 @@ export default function QuestionManager() {
     try {
       const payload = {
         ...form,
-        options: form.type === 'mcq' ? form.options.filter(o => o.trim()) : []
+        options: (form.answer_mode === 'mcq' || form.answer_mode === 'both') ? form.options.filter(o => o.trim()) : []
       };
-      if (editingId) {
-        await api.put(`/questions/${editingId}`, payload);
-      } else {
-        await api.post('/questions', payload);
-      }
+      if (editingId) await api.put(`/questions/${editingId}`, payload);
+      else await api.post('/questions', payload);
       await loadAll();
       newQuestion();
     } catch (err) {
@@ -109,6 +124,7 @@ export default function QuestionManager() {
       await api.upload('/upload/csv', formData);
       alert('CSV uploaded. Reloading...');
       setCsvFile(null);
+      setCsvOpen(false);
       loadAll();
     } catch (err) {
       setError(err.message);
@@ -121,9 +137,18 @@ export default function QuestionManager() {
     setForm({ ...form, options: opts });
   };
 
+  const showMcq = form.answer_mode === 'mcq' || form.answer_mode === 'both';
+
   return (
     <div className="question-manager">
-      {error && <div className="error-banner" onClick={() => setError(null)}>{error} <span style={{ float: 'right' }}>✕</span></div>}
+      <div className="qm-toolbar">
+        <h2>Question Database</h2>
+        <button onClick={() => setCsvOpen(true)} className="btn btn-secondary btn-sm" title="Import CSV">
+          📁 Import CSV
+        </button>
+      </div>
+
+      {error && <div className="error-banner" onClick={() => setError(null)}>{error} ✕</div>}
 
       <div className="qm-layout">
         <aside className="qm-list">
@@ -135,19 +160,21 @@ export default function QuestionManager() {
           <div className="qm-filters">
             <input
               type="search"
-              placeholder="🔍 Search questions..."
+              placeholder="🔍 Search..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="qm-search"
             />
-            <select
-              value={filterCategory}
-              onChange={(e) => setFilterCategory(e.target.value)}
-              className="qm-category-filter"
-            >
-              <option value="all">All categories</option>
-              {categories.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
+            <div className="qm-filter-row">
+              <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}>
+                <option value="all">All categories</option>
+                {categories.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <select value={filterDifficulty} onChange={(e) => setFilterDifficulty(e.target.value)}>
+                <option value="all">All difficulties</option>
+                {DIFFICULTIES.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+              </select>
+            </div>
           </div>
 
           <div className="qm-question-list">
@@ -161,7 +188,8 @@ export default function QuestionManager() {
               >
                 <div className="qm-question-text">{q.text}</div>
                 <div className="qm-question-meta">
-                  <span className={`qm-tag qm-tag-${q.type}`}>{q.type}</span>
+                  <DifficultyBadge value={q.difficulty || 'medium'} />
+                  <span className={`qm-tag qm-tag-${q.answer_mode || 'text'}`}>{q.answer_mode || 'text'}</span>
                   {q.category && <span className="qm-tag qm-tag-cat">{q.category}</span>}
                   <span className="qm-points">{q.points} pt</span>
                 </div>
@@ -189,10 +217,16 @@ export default function QuestionManager() {
               />
             </label>
 
-            <div className="form-row">
-              <label className="form-label">Type
+            <div className="form-row form-row-3">
+              <label className="form-label">Media type
                 <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
                   {QUESTION_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                </select>
+              </label>
+
+              <label className="form-label">Difficulty
+                <select value={form.difficulty} onChange={(e) => setForm({ ...form, difficulty: e.target.value })}>
+                  {DIFFICULTIES.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
                 </select>
               </label>
 
@@ -204,6 +238,14 @@ export default function QuestionManager() {
                   min="0"
                   step="0.5"
                 />
+              </label>
+            </div>
+
+            <div className="form-row">
+              <label className="form-label">Answer mode
+                <select value={form.answer_mode} onChange={(e) => setForm({ ...form, answer_mode: e.target.value })}>
+                  {ANSWER_MODES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                </select>
               </label>
 
               <label className="form-label">Category
@@ -220,9 +262,9 @@ export default function QuestionManager() {
               </label>
             </div>
 
-            {form.type === 'mcq' ? (
+            {showMcq && (
               <div className="mcq-editor">
-                <label className="form-label">Options (the correct one must match the answer field below)</label>
+                <label className="form-label">Multiple choice options</label>
                 {form.options.map((opt, i) => (
                   <div key={i} className="mcq-option-row">
                     <span className="mcq-letter">{String.fromCharCode(65 + i)}</span>
@@ -234,27 +276,19 @@ export default function QuestionManager() {
                     />
                   </div>
                 ))}
-                <label className="form-label">Correct answer (paste exact text of correct option)
-                  <input
-                    type="text"
-                    placeholder="Paris"
-                    value={form.answer}
-                    onChange={(e) => setForm({ ...form, answer: e.target.value })}
-                    required
-                  />
-                </label>
               </div>
-            ) : (
-              <label className="form-label">Answer
-                <input
-                  type="text"
-                  placeholder="Paris"
-                  value={form.answer}
-                  onChange={(e) => setForm({ ...form, answer: e.target.value })}
-                  required
-                />
-              </label>
             )}
+
+            <label className="form-label">
+              {showMcq ? 'Correct answer (exact text of the correct option)' : 'Answer'}
+              <input
+                type="text"
+                placeholder="Paris"
+                value={form.answer}
+                onChange={(e) => setForm({ ...form, answer: e.target.value })}
+                required
+              />
+            </label>
 
             {['image', 'video', 'audio'].includes(form.type) && (
               <label className="form-label">Media URL
@@ -276,17 +310,34 @@ export default function QuestionManager() {
               )}
             </div>
           </form>
-
-          <div className="qm-import">
-            <h4>Import CSV</h4>
-            <p className="help-text">Columns: question, answer, type, points, media_url, category</p>
-            <div className="csv-upload">
-              <input type="file" accept=".csv" onChange={(e) => setCsvFile(e.target.files[0])} />
-              <button onClick={handleCSVUpload} className="btn btn-secondary" disabled={!csvFile}>Upload CSV</button>
-            </div>
-          </div>
         </section>
       </div>
+
+      {/* CSV Upload Modal */}
+      {csvOpen && (
+        <div className="modal-overlay" onClick={() => setCsvOpen(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Import Questions from CSV</h3>
+              <button onClick={() => setCsvOpen(false)} className="btn-close">×</button>
+            </div>
+            <div className="modal-body">
+              <p className="help-text">Columns: question, answer, type, points, media_url, category, difficulty, answer_mode</p>
+              <input type="file" accept=".csv" onChange={(e) => setCsvFile(e.target.files[0])} />
+              {csvFile && <p className="help-text">📁 {csvFile.name}</p>}
+            </div>
+            <div className="modal-footer">
+              <button onClick={() => setCsvOpen(false)} className="btn btn-secondary">Cancel</button>
+              <button onClick={handleCSVUpload} className="btn btn-primary" disabled={!csvFile}>Upload</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
+}
+
+function DifficultyBadge({ value }) {
+  const d = DIFFICULTIES.find(x => x.value === value) || DIFFICULTIES[1];
+  return <span className={`qm-difficulty qm-difficulty-${value}`}>{d.label}</span>;
 }

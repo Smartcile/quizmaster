@@ -355,18 +355,31 @@ html, body, #root {
 .slide-widget {
   background: linear-gradient(135deg, rgba(184, 41, 255, 0.15) 0%, rgba(255, 0, 225, 0.15) 100%);
   border-radius: var(--radius-lg);
+  padding: 50px;
+  align-items: center;
+  text-align: center;
 }
 .slide-widget h2 {
   font-size: 3rem;
-  color: var(--neon-magenta);
+  color: var(--text-primary);
   text-shadow: 0 0 30px rgba(255, 0, 225, 0.5);
   margin-bottom: 30px;
-  letter-spacing: 4px;
+  letter-spacing: 2px;
 }
-.slide-widget p {
-  font-size: 1.4rem;
+.slide-widget .widget-body {
+  font-size: 1.5rem;
   color: var(--text-primary);
-  max-width: 800px;
+  max-width: 900px;
+  line-height: 1.6;
+}
+.slide-widget .widget-image {
+  margin-bottom: 30px;
+}
+.slide-widget .widget-image img {
+  max-width: 500px;
+  max-height: 350px;
+  border-radius: 16px;
+  box-shadow: 0 0 30px rgba(0, 0, 0, 0.5);
 }
 
 .slide-empty h2 {

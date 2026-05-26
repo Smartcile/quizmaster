@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-export default function JoinQuiz({ onJoin }) {
+export default function JoinQuiz({ onJoin, error }) {
   const [code, setCode] = useState('');
   const [teamName, setTeamName] = useState('');
   const [teamSize, setTeamSize] = useState(1);
@@ -8,11 +8,7 @@ export default function JoinQuiz({ onJoin }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!code.trim() || !teamName.trim()) {
-      alert('Please fill in all fields');
-      return;
-    }
-
+    if (!code.trim() || !teamName.trim()) return;
     setLoading(true);
     try {
       await onJoin(code.toUpperCase(), teamName, parseInt(teamSize));
@@ -29,13 +25,15 @@ export default function JoinQuiz({ onJoin }) {
           <p>Join a live quiz</p>
         </div>
 
+        {error && <div className="join-error">{error}</div>}
+
         <form onSubmit={handleSubmit} className="join-form">
           <div className="form-group">
             <label htmlFor="code">Quiz Code</label>
             <input
               id="code"
               type="text"
-              placeholder="Enter quiz code"
+              placeholder="ABC123"
               value={code}
               onChange={(e) => setCode(e.target.value.toUpperCase())}
               maxLength="6"
@@ -51,7 +49,7 @@ export default function JoinQuiz({ onJoin }) {
             <input
               id="teamName"
               type="text"
-              placeholder="Enter your team name"
+              placeholder="The Quizinators"
               value={teamName}
               onChange={(e) => setTeamName(e.target.value)}
               disabled={loading}

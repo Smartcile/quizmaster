@@ -30,6 +30,8 @@ services:
       DB_USER: ${DB_USER:-quiz_user}
       DB_PASSWORD: ${DB_PASSWORD:-quiz_password}
       DB_NAME: ${DB_NAME:-quiz_master}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
     # Backend is only reached via frontend nginx proxies - no host port needed.
     # Uncomment to expose for direct API testing:
     # ports:

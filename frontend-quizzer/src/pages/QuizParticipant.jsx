@@ -1,175 +1,230 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { api } from '../services/api';
+import { buildSlides } from '../utils/buildSlides';
 
-export default function QuizParticipant({ sessionData, teamId, socket }) {
-  const [currentQuestion, setCurrentQuestion] = useState(0);
-  const [answers, setAnswers] = useState({});
-  const [locked, setLocked] = useState(false);
-  const [questions, setQuestions] = useState([]);
-  const [scores, setScores] = useState({});
+export default function QuizParticipant({ quiz, sessionId, team, currentSlide, socket }) {
+  const [answers, setAnswers] = useState({});      // questionId -> text
+  const [lockedRounds, setLockedRounds] = useState(new Set());
+  const [scores, setScores] = useState({});        // questionId -> points
 
+  const slides = useMemo(() => buildSlides(quiz), [quiz]);
+  const slide = slides[currentSlide];
+
+  // List of question slides in this quiz (for "previous answers in round")
+  const questionsInCurrentRound = useMemo(() => {
+    if (!slide?.roundId) return [];
+    return slides.filter(s => s.type === 'question' && s.roundId === slide.roundId);
+  }, [slides, slide]);
+
+  // Load existing team answers + scores when joining mid-quiz
   useEffect(() => {
-    if (!socket || !sessionData) return;
+    if (!team?.id) return;
+    (async () => {
+      try {
+        const scoresRes = await api.get(`/teams/${team.id}/scores`);
+        if (scoresRes?.scores) {
+          const next = {};
+          scoresRes.scores.forEach(s => {
+            if (s.question_id != null) next[s.question_id] = parseFloat(s.points);
+          });
+          setScores(next);
+        }
+      } catch {}
+    })();
+  }, [team?.id]);
 
-    const handleSlideChange = (data) => {
-      setCurrentQuestion(data.slideIndex);
+  // WebSocket events
+  useEffect(() => {
+    if (!socket) return;
+    const onLocked = (data) => {
+      setLockedRounds(prev => new Set([...prev, data.roundId]));
     };
-
-    const handleAnswerLocked = () => {
-      setLocked(true);
-    };
-
-    const handleAnswerMarked = (data) => {
-      if (data.teamId === teamId) {
-        setScores(prev => ({
-          ...prev,
-          [data.questionId]: data.points
-        }));
+    const onMarked = (data) => {
+      if (data.teamId === team?.id) {
+        setScores(prev => ({ ...prev, [data.questionId]: parseFloat(data.points) }));
       }
     };
-
-    socket.on('slide_changed', handleSlideChange);
-    socket.on('answer_locked', handleAnswerLocked);
-    socket.on('answer_marked', handleAnswerMarked);
-
+    socket.on('answer_locked', onLocked);
+    socket.on('answer_marked', onMarked);
     return () => {
-      socket.off('slide_changed');
-      socket.off('answer_locked');
-      socket.off('answer_marked');
+      socket.off('answer_locked', onLocked);
+      socket.off('answer_marked', onMarked);
     };
-  }, [socket, sessionData, teamId]);
+  }, [socket, team?.id]);
 
-  const handleAnswerChange = async (questionId, answer) => {
-    const newAnswers = {
-      ...answers,
-      [questionId]: answer
-    };
-    setAnswers(newAnswers);
-
-    try {
-      await api.post('/answers/submit', { teamId, questionId, roundId: 1, answer });
-    } catch (error) {
-      console.error('Error submitting answer:', error);
-    }
+  const submitAnswer = async (questionId, value) => {
+    setAnswers(prev => ({ ...prev, [questionId]: value }));
+    if (!socket || !team) return;
+    socket.emit('submit_answer', {
+      sessionId,
+      teamId: team.id,
+      questionId,
+      roundId: slide?.roundId,
+      answer: value
+    });
   };
 
-  const goToQuestion = (index) => {
-    if (index >= 0 && index < questions.length && !locked) {
-      setCurrentQuestion(index);
-    }
+  // Find a question by id from any round
+  const getQuestionById = (qid) => {
+    for (const s of slides) if (s.type === 'question' && s.questionId === qid) return s;
+    return null;
   };
 
-  const question = questions[currentQuestion];
-  const score = scores[question?.id];
+  const isLockedFor = (roundId) => lockedRounds.has(roundId);
+
+  // Render based on slide type
+  const renderSlide = () => {
+    if (!slide) return <WaitingMessage text="Loading..." />;
+
+    if (slide.type === 'intro' || slide.type === 'round_intro') {
+      return <WaitingMessage text={slide.type === 'intro' ? `Welcome to ${slide.title}` : `Next round: ${slide.title}`} subtext="The quiz master will reveal the question shortly." />;
+    }
+
+    if (slide.type === 'question') {
+      return <QuestionView slide={slide} answer={answers[slide.questionId] || ''} score={scores[slide.questionId]} locked={isLockedFor(slide.roundId)} onChange={(v) => submitAnswer(slide.questionId, v)} />;
+    }
+
+    if (slide.type === 'answer') {
+      const q = getQuestionById(slide.questionId);
+      const myScore = scores[slide.questionId];
+      return (
+        <div className="reveal-card">
+          <p className="reveal-label">{slide.roundName} · Question {slide.questionNumber}</p>
+          <h2 className="reveal-question">{slide.text}</h2>
+          {q && answers[slide.questionId] && (
+            <div className="reveal-your-answer">
+              <span className="reveal-your-label">Your answer:</span>
+              <span className="reveal-your-text">{answers[slide.questionId]}</span>
+            </div>
+          )}
+          <div className="reveal-correct">
+            <span className="reveal-correct-label">Correct:</span>
+            <span className="reveal-correct-text">{slide.answer}</span>
+          </div>
+          {myScore !== undefined && (
+            <div className={`reveal-score ${myScore === 1 ? 'full' : myScore === 0.5 ? 'half' : 'zero'}`}>
+              {myScore} pt{myScore !== 1 ? 's' : ''}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    if (slide.type === 'widget') {
+      return <WaitingMessage text={`Coming up: ${slide.widgetType}`} />;
+    }
+
+    if (slide.type === 'end') {
+      return <WaitingMessage text="Quiz Complete!" subtext="Thanks for playing." />;
+    }
+
+    return <WaitingMessage text="..." />;
+  };
 
   return (
     <div className="quiz-participant">
       <div className="quiz-header">
-        <h1>Quiz in Progress</h1>
-        <div className="progress-bar">
-          <div className="progress" style={{ width: `${((currentQuestion + 1) / questions.length) * 100}%` }}></div>
-        </div>
-        <p>Question {currentQuestion + 1} of {questions.length}</p>
+        <h1>{quiz?.name}</h1>
+        <p>Team <strong>{team?.name}</strong></p>
       </div>
 
       <div className="quiz-content">
-        {question ? (
-          <div className="question-card">
-            <h2>{question.text}</h2>
-
-            {question.media_url && (
-              <div className="media-container">
-                {question.type === 'image' && <img src={question.media_url} alt="Question media" />}
-                {question.type === 'video' && <video controls src={question.media_url}></video>}
-                {question.type === 'audio' && <audio controls src={question.media_url}></audio>}
-              </div>
-            )}
-
-            {question.type === 'mcq' && Array.isArray(question.options) && question.options.length > 0 && (
-              <div className="options">
-                {question.options.map((opt, i) => (
-                  <label key={i} className="option-label">
-                    <input
-                      type="radio"
-                      name={`question-${question.id}`}
-                      value={opt}
-                      checked={answers[question.id] === opt}
-                      onChange={(e) => handleAnswerChange(question.id, e.target.value)}
-                      disabled={locked}
-                    />
-                    <span>{String.fromCharCode(65 + i)}. {opt}</span>
-                  </label>
-                ))}
-              </div>
-            )}
-
-            {question.type === 'text' && (
-              <input
-                type="text"
-                placeholder="Type your answer..."
-                value={answers[question.id] || ''}
-                onChange={(e) => handleAnswerChange(question.id, e.target.value)}
-                disabled={locked}
-                className="answer-input"
-              />
-            )}
-
-            {locked && score !== undefined && (
-              <div className={`score-badge score-${score === 1 ? 'full' : score === 0.5 ? 'half' : 'zero'}`}>
-                <p>Points: {score}</p>
-              </div>
-            )}
-
-            {locked && score === undefined && (
-              <div className="score-badge score-pending">
-                <p>Awaiting marking...</p>
-              </div>
-            )}
-          </div>
-        ) : (
-          <p>Loading question...</p>
-        )}
+        {renderSlide()}
       </div>
 
-      <div className="quiz-navigation">
-        <button
-          onClick={() => goToQuestion(currentQuestion - 1)}
-          disabled={currentQuestion === 0 || locked}
-          className="nav-btn"
-        >
-          ← Previous
-        </button>
-
-        <div className="question-list">
-          {questions.map((q, i) => (
-            <button
-              key={i}
-              onClick={() => goToQuestion(i)}
-              className={`question-btn ${i === currentQuestion ? 'active' : ''} ${scores[q.id] !== undefined ? 'answered' : ''}`}
-              disabled={locked}
-              title={`Question ${i + 1}`}
-            >
-              {i + 1}
-            </button>
-          ))}
-        </div>
-
-        <button
-          onClick={() => goToQuestion(currentQuestion + 1)}
-          disabled={currentQuestion === questions.length - 1 || locked}
-          className="nav-btn"
-        >
-          Next →
-        </button>
-      </div>
-
-      {locked && (
-        <div className="locked-overlay">
-          <div className="locked-message">
-            <p>This round has been locked. Waiting for final results...</p>
+      {/* Allow flipping back through this round's questions when the round isn't yet locked */}
+      {slide?.type === 'question' && questionsInCurrentRound.length > 1 && !isLockedFor(slide.roundId) && (
+        <div className="round-nav">
+          <p className="round-nav-label">Round questions:</p>
+          <div className="round-nav-buttons">
+            {questionsInCurrentRound.map((q) => {
+              const isCurrent = q.questionId === slide.questionId;
+              const isAnswered = !!answers[q.questionId];
+              return (
+                <div
+                  key={q.questionId}
+                  className={`round-nav-btn ${isCurrent ? 'current' : ''} ${isAnswered ? 'answered' : ''}`}
+                  title={q.text}
+                >
+                  Q{q.questionNumber}
+                </div>
+              );
+            })}
           </div>
+          <p className="round-nav-hint">The quiz master controls which question is shown. You can answer as they progress.</p>
         </div>
       )}
+    </div>
+  );
+}
+
+function QuestionView({ slide, answer, score, locked, onChange }) {
+  const mode = slide.answerMode || 'text';
+  const showText = mode === 'text' || mode === 'both';
+  const showMcq = (mode === 'mcq' || mode === 'both') && Array.isArray(slide.options) && slide.options.length > 0;
+
+  return (
+    <div className="question-card">
+      <div className="question-meta">
+        <span className="question-round">{slide.roundName}</span>
+        <span className="question-num">Q{slide.questionNumber}/{slide.totalInRound}</span>
+        <span className="question-points">{slide.points} pt</span>
+      </div>
+
+      <h2>{slide.text}</h2>
+
+      {slide.mediaUrl && (
+        <div className="media-container">
+          {slide.questionType === 'image' && <img src={slide.mediaUrl} alt="Question" />}
+          {slide.questionType === 'video' && <video controls src={slide.mediaUrl} />}
+          {slide.questionType === 'audio' && <audio controls src={slide.mediaUrl} />}
+        </div>
+      )}
+
+      {showMcq && (
+        <div className="options">
+          {slide.options.map((opt, i) => (
+            <label key={i} className={`option-label ${answer === opt ? 'selected' : ''}`}>
+              <input
+                type="radio"
+                name={`q-${slide.questionId}`}
+                value={opt}
+                checked={answer === opt}
+                onChange={(e) => onChange(e.target.value)}
+                disabled={locked}
+              />
+              <span className="option-letter">{String.fromCharCode(65 + i)}</span>
+              <span>{opt}</span>
+            </label>
+          ))}
+        </div>
+      )}
+
+      {showText && (
+        <input
+          type="text"
+          className="answer-input"
+          placeholder={showMcq ? 'Or type your answer...' : 'Type your answer...'}
+          value={answer}
+          onChange={(e) => onChange(e.target.value)}
+          disabled={locked}
+        />
+      )}
+
+      {locked && (
+        <div className={`score-badge ${score === 1 ? 'score-full' : score === 0.5 ? 'score-half' : score === 0 ? 'score-zero' : 'score-pending'}`}>
+          {score !== undefined ? `${score} pt awarded` : 'Locked — awaiting marking'}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WaitingMessage({ text, subtext }) {
+  return (
+    <div className="waiting-inline">
+      <h2>{text}</h2>
+      {subtext && <p>{subtext}</p>}
     </div>
   );
 }
