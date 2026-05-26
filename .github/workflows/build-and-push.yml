@@ -36,47 +36,47 @@ jobs:
       - name: Build and push Backend image
         uses: docker/build-push-action@v5
         with:
-          context: .
+          context: ./backend
           file: ./backend/Dockerfile
           push: true
           tags: |
             ${{ env.IMAGE_PREFIX }}/backend:latest
             ${{ env.IMAGE_PREFIX }}/backend:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
 
       - name: Build and push Admin Frontend image
         uses: docker/build-push-action@v5
         with:
-          context: .
+          context: ./frontend-admin
           file: ./frontend-admin/Dockerfile
           push: true
           tags: |
             ${{ env.IMAGE_PREFIX }}/frontend-admin:latest
             ${{ env.IMAGE_PREFIX }}/frontend-admin:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=frontend-admin
+          cache-to: type=gha,mode=max,scope=frontend-admin
 
       - name: Build and push Slideshow Frontend image
         uses: docker/build-push-action@v5
         with:
-          context: .
+          context: ./frontend-slideshow
           file: ./frontend-slideshow/Dockerfile
           push: true
           tags: |
             ${{ env.IMAGE_PREFIX }}/frontend-slideshow:latest
             ${{ env.IMAGE_PREFIX }}/frontend-slideshow:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=frontend-slideshow
+          cache-to: type=gha,mode=max,scope=frontend-slideshow
 
       - name: Build and push Quizzer Frontend image
         uses: docker/build-push-action@v5
         with:
-          context: .
+          context: ./frontend-quizzer
           file: ./frontend-quizzer/Dockerfile
           push: true
           tags: |
             ${{ env.IMAGE_PREFIX }}/frontend-quizzer:latest
             ${{ env.IMAGE_PREFIX }}/frontend-quizzer:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=frontend-quizzer
+          cache-to: type=gha,mode=max,scope=frontend-quizzer
