@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add *)",
+      "Bash(git commit -m 'fix: Use dynamic hostname for API calls instead of hardcoded localhost *)",
+      "Bash(git push *)"
+    ]
+  }
+}

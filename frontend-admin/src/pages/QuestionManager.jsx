@@ -1,47 +1,42 @@
 import { useState, useEffect } from 'react';
+import { api } from '../services/api';
 
 export default function QuestionManager() {
   const [questions, setQuestions] = useState([]);
   const [form, setForm] = useState({ text: '', answer: '', type: 'text', points: 1, media_url: '' });
   const [csvFile, setCsvFile] = useState(null);
+  const [error, setError] = useState(null);
 
-  useEffect(() => {
-    loadQuestions();
-  }, []);
+  useEffect(() => { loadQuestions(); }, []);
 
   const loadQuestions = async () => {
     try {
-      const response = await fetch('/api/questions');
-      const data = await response.json();
+      const data = await api.get('/questions');
       setQuestions(data);
-    } catch (error) {
-      console.error('Error loading questions:', error);
+      setError(null);
+    } catch (err) {
+      setError('Failed to load questions: ' + err.message);
     }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const response = await fetch('/api/questions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form)
-      });
-      if (response.ok) {
-        setForm({ text: '', answer: '', type: 'text', points: 1, media_url: '' });
-        loadQuestions();
-      }
-    } catch (error) {
-      console.error('Error creating question:', error);
+      await api.post('/questions', form);
+      setForm({ text: '', answer: '', type: 'text', points: 1, media_url: '' });
+      setError(null);
+      loadQuestions();
+    } catch (err) {
+      setError('Failed to save question: ' + err.message);
     }
   };
 
   const handleDelete = async (id) => {
     try {
-      await fetch(`/api/questions/${id}`, { method: 'DELETE' });
+      await api.delete(`/questions/${id}`);
       loadQuestions();
-    } catch (error) {
-      console.error('Error deleting question:', error);
+    } catch (err) {
+      setError('Failed to delete question: ' + err.message);
     }
   };
 
@@ -50,22 +45,20 @@ export default function QuestionManager() {
     const formData = new FormData();
     formData.append('file', csvFile);
     try {
-      const response = await fetch('/api/upload/csv', {
-        method: 'POST',
-        body: formData
-      });
-      if (response.ok) {
-        alert('CSV uploaded successfully');
-        setCsvFile(null);
-      }
-    } catch (error) {
-      console.error('Error uploading CSV:', error);
+      await api.upload('/upload/csv', formData);
+      alert('CSV uploaded successfully');
+      setCsvFile(null);
+      loadQuestions();
+    } catch (err) {
+      setError('Failed to upload CSV: ' + err.message);
     }
   };
 
   return (
     <div className="question-manager">
       <h2>Question Manager</h2>
+
+      {error && <div className="error-banner">{error}</div>}
 
       <div className="panel">
         <h3>Add Question</h3>
@@ -99,7 +92,7 @@ export default function QuestionManager() {
             min="1"
           />
           <input
-            type="url"
+            type="text"
             placeholder="Media URL (optional)"
             value={form.media_url}
             onChange={(e) => setForm({ ...form, media_url: e.target.value })}
@@ -111,11 +104,7 @@ export default function QuestionManager() {
       <div className="panel">
         <h3>Import from CSV</h3>
         <div className="csv-upload">
-          <input
-            type="file"
-            accept=".csv"
-            onChange={(e) => setCsvFile(e.target.files[0])}
-          />
+          <input type="file" accept=".csv" onChange={(e) => setCsvFile(e.target.files[0])} />
           <button onClick={handleCSVUpload} className="btn btn-secondary">Upload CSV</button>
         </div>
         <p className="help-text">CSV format: question, answer, type, points, media_url</p>
