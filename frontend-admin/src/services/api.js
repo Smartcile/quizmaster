@@ -1,16 +1,7 @@
-// Reads runtime config from window.APP_CONFIG (set in /public/config.js)
-// Falls back to dynamic hostname for local development.
+// API calls always use /api on the same host - works for localhost, IP, and domain.
+// The frontend container's nginx proxies /api -> backend:5000 internally.
 
-function getApiBase() {
-  const cfg = (typeof window !== 'undefined' && window.APP_CONFIG) || {};
-  if (cfg.API_URL) {
-    // Absolute URL (https://smartcile.com/api) or relative path (/api)
-    return cfg.API_URL.endsWith('/') ? cfg.API_URL.slice(0, -1) : cfg.API_URL;
-  }
-  return `${window.location.protocol}//${window.location.hostname}:5000/api`;
-}
-
-const API_BASE = getApiBase();
+const API_BASE = '/api';
 
 async function request(path, options = {}) {
   const response = await fetch(`${API_BASE}${path}`, {

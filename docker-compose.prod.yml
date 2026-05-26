@@ -1,5 +1,7 @@
-# Quiz Master - Production Deployment (Pre-built Images)
-# No rebuild needed - pulls images from GitHub Container Registry
+# Quiz Master - Production Deployment (Pre-built Images, No Rebuild)
+# Each frontend container includes nginx that proxies /api to the backend.
+# Access via any hostname (localhost, IP, or Cloudflare domain) - it just works.
+#
 # Usage: docker-compose -f docker-compose.prod.yml up -d
 
 services:
@@ -9,8 +11,6 @@ services:
       POSTGRES_USER: ${DB_USER:-quiz_user}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-quiz_password}
       POSTGRES_DB: ${DB_NAME:-quiz_master}
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -32,8 +32,8 @@ services:
       DB_USER: ${DB_USER:-quiz_user}
       DB_PASSWORD: ${DB_PASSWORD:-quiz_password}
       DB_NAME: ${DB_NAME:-quiz_master}
-    ports:
-      - "5000:5000"
+    # Backend is reached internally via the Docker network from the frontend
+    # nginx proxies. No host port needed unless you want direct API access.
     depends_on:
       postgres:
         condition: service_healthy
@@ -46,7 +46,7 @@ services:
   frontend-admin:
     image: ghcr.io/smartcile/quizmaster/frontend-admin:latest
     ports:
-      - "3001:3001"
+      - "${ADMIN_PORT:-3001}:80"
     depends_on:
       - backend
     networks:
@@ -56,7 +56,7 @@ services:
   frontend-slideshow:
     image: ghcr.io/smartcile/quizmaster/frontend-slideshow:latest
     ports:
-      - "3002:3002"
+      - "${SLIDESHOW_PORT:-3002}:80"
     depends_on:
       - backend
     networks:
@@ -66,7 +66,7 @@ services:
   frontend-quizzer:
     image: ghcr.io/smartcile/quizmaster/frontend-quizzer:latest
     ports:
-      - "3003:3003"
+      - "${QUIZZER_PORT:-3003}:80"
     depends_on:
       - backend
     networks:
