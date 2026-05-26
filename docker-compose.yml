@@ -6,8 +6,6 @@ services:
       POSTGRES_USER: ${DB_USER:-quiz_user}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-quiz_password}
       POSTGRES_DB: ${DB_NAME:-quiz_master}
-    ports:
-      - "${DB_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -17,6 +15,7 @@ services:
       retries: 5
     networks:
       - quiz-network
+    restart: unless-stopped
 
   backend:
     build:
@@ -31,13 +30,15 @@ services:
       DB_USER: ${DB_USER:-quiz_user}
       DB_PASSWORD: ${DB_PASSWORD:-quiz_password}
       DB_NAME: ${DB_NAME:-quiz_master}
-    ports:
-      - "5000:5000"
+    # Backend is only reached via frontend nginx proxies - no host port needed.
+    # Uncomment to expose for direct API testing:
+    # ports:
+    #   - "5000:5000"
     depends_on:
       postgres:
         condition: service_healthy
     volumes:
-      - ./backend/uploads:/app/uploads
+      - backend_uploads:/app/uploads
     networks:
       - quiz-network
     restart: unless-stopped
@@ -48,9 +49,7 @@ services:
       dockerfile: Dockerfile
     container_name: quiz-master-admin
     ports:
-      - "3001:3001"
-    environment:
-      VITE_API_URL: http://localhost:5000/api
+      - "${ADMIN_PORT:-3001}:80"
     depends_on:
       - backend
     networks:
@@ -63,9 +62,7 @@ services:
       dockerfile: Dockerfile
     container_name: quiz-master-slideshow
     ports:
-      - "3002:3002"
-    environment:
-      VITE_API_URL: http://localhost:5000/api
+      - "${SLIDESHOW_PORT:-3002}:80"
     depends_on:
       - backend
     networks:
@@ -78,9 +75,7 @@ services:
       dockerfile: Dockerfile
     container_name: quiz-master-quizzer
     ports:
-      - "3003:3003"
-    environment:
-      VITE_API_URL: http://localhost:5000/api
+      - "${QUIZZER_PORT:-3003}:80"
     depends_on:
       - backend
     networks:
@@ -89,6 +84,7 @@ services:
 
 volumes:
   postgres_data:
+  backend_uploads:
 
 networks:
   quiz-network:

@@ -1,23 +1,15 @@
 import { useEffect, useRef } from 'react';
 import io from 'socket.io-client';
 
-function getSocketUrl() {
-  const cfg = (typeof window !== 'undefined' && window.APP_CONFIG) || {};
-  if (cfg.WS_URL) return cfg.WS_URL;
-  // If API_URL is a relative path (/api), use same origin for WebSocket
-  if (cfg.API_URL && cfg.API_URL.startsWith('/')) return window.location.origin;
-  return `${window.location.protocol}//${window.location.hostname}:5000`;
-}
-
+// Connect to same origin - nginx proxies /socket.io to backend container
 export function useWebSocket() {
   const socketRef = useRef(null);
 
   useEffect(() => {
-    const socket = io(getSocketUrl(), {
+    const socket = io(window.location.origin, {
       path: '/socket.io',
       reconnection: true,
       reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
       reconnectionAttempts: 5,
       transports: ['websocket', 'polling']
     });

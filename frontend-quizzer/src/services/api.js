@@ -1,10 +1,4 @@
-function getApiBase() {
-  const cfg = (typeof window !== 'undefined' && window.APP_CONFIG) || {};
-  if (cfg.API_URL) return cfg.API_URL.endsWith('/') ? cfg.API_URL.slice(0, -1) : cfg.API_URL;
-  return `${window.location.protocol}//${window.location.hostname}:5000/api`;
-}
-
-const API_BASE = getApiBase();
+const API_BASE = '/api';
 
 async function request(path, options = {}) {
   const response = await fetch(`${API_BASE}${path}`, {
