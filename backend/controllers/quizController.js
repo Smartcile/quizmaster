@@ -314,6 +314,100 @@ async function reorderQuiz(req, res) {
   }
 }
 
+// ── Delete a quiz (blocks if a session is active) ────────────────────────────
+async function deleteQuiz(req, res) {
+  try {
+    const { id } = req.params;
+    const client = await db.getClient();
+    try {
+      await client.query('BEGIN');
+
+      // Prevent deleting a quiz that has a running session
+      const sessions = await client.query(
+        "SELECT id FROM quiz_sessions WHERE quiz_id = $1 AND status IN ('lobby', 'active')",
+        [id]
+      );
+      if (sessions.rows.length > 0) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'Cannot delete a quiz with an active session. End the session first.' });
+      }
+
+      await client.query('DELETE FROM quiz_rounds  WHERE quiz_id = $1', [id]);
+      await client.query('DELETE FROM quiz_widgets WHERE quiz_id = $1', [id]);
+      const result = await client.query('DELETE FROM quizzes WHERE id = $1 RETURNING id', [id]);
+      if (result.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Quiz not found' });
+      }
+
+      await client.query('COMMIT');
+      res.json({ ok: true });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
+// ── Full update: rename + replace rounds + replace widgets ────────────────────
+// Body: { name, rounds: [roundId, ...], widgets: [{ type, data }, ...] }
+async function updateQuiz(req, res) {
+  try {
+    const { id } = req.params;
+    const { name, rounds, widgets } = req.body;
+
+    const client = await db.getClient();
+    try {
+      await client.query('BEGIN');
+
+      const quizResult = await client.query(
+        'UPDATE quizzes SET name = $1 WHERE id = $2 RETURNING *',
+        [name, id]
+      );
+      if (quizResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Quiz not found' });
+      }
+
+      // Replace round associations
+      await client.query('DELETE FROM quiz_rounds WHERE quiz_id = $1', [id]);
+      if (Array.isArray(rounds) && rounds.length > 0) {
+        for (let i = 0; i < rounds.length; i++) {
+          await client.query(
+            'INSERT INTO quiz_rounds (quiz_id, round_id, "order") VALUES ($1, $2, $3)',
+            [id, rounds[i], i + 1]
+          );
+        }
+      }
+
+      // Replace widget associations
+      await client.query('DELETE FROM quiz_widgets WHERE quiz_id = $1', [id]);
+      if (Array.isArray(widgets) && widgets.length > 0) {
+        for (let i = 0; i < widgets.length; i++) {
+          await client.query(
+            'INSERT INTO quiz_widgets (quiz_id, type, data, "order") VALUES ($1, $2, $3, $4)',
+            [id, widgets[i].type, JSON.stringify(widgets[i].data || {}), i + 1]
+          );
+        }
+      }
+
+      await client.query('COMMIT');
+      res.json(quizResult.rows[0]);
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
 module.exports = {
   getAllQuizzes,
   getQuiz,
@@ -325,5 +419,7 @@ module.exports = {
   setSessionSlide,
   restartSession,
   getSession,
-  reorderQuiz
+  reorderQuiz,
+  deleteQuiz,
+  updateQuiz
 };

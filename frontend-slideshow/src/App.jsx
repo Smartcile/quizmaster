@@ -23,8 +23,14 @@ function App() {
   const [teamsCount, setTeamsCount] = useState(0);
   const [error, setError] = useState(null);
   const [status, setStatus] = useState('idle'); // idle | loading | waiting | ready
+  const [portalConfig, setPortalConfig] = useState(null);
   const socket = useWebSocket();
   const slides = useMemo(() => buildSlides(quiz), [quiz]);
+
+  // Load portal URL config once so the lobby screen shows the correct quizzer URL
+  useEffect(() => {
+    api.get('/config').then(c => setPortalConfig(c)).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!code) return;
@@ -137,7 +143,8 @@ function App() {
 
   // LOBBY screen - shown before quiz begins
   if (sessionStatus === 'lobby') {
-    const joinUrl = `${window.location.protocol}//${window.location.host.replace(/:3002$/, ':3003')}`;
+    const joinUrl = portalConfig?.quizzerUrl ||
+      `${window.location.protocol}//${window.location.host.replace(/:3002$/, ':3003')}`;
     return (
       <div className="slideshow-container">
         <div className="slide lobby-slide">

@@ -2769,3 +2769,25 @@ input[type="checkbox"] {
   color: var(--text-dim);
   padding: 8px 0;
 }
+
+/* ── Quiz card action buttons row ── */
+.quiz-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* Edit mode highlight on the builder panel */
+.panel-editing {
+  border: 1px solid rgba(184, 41, 255, 0.5) !important;
+  box-shadow: 0 0 0 1px rgba(184, 41, 255, 0.25), var(--shadow-glow-soft);
+}
+
+/* Edit mode highlight on the quiz card being edited */
+.quiz-card-editing {
+  border-color: rgba(184, 41, 255, 0.5) !important;
+  background: rgba(184, 41, 255, 0.04) !important;
+}

@@ -45,3 +45,9 @@ logs/
 # Temporary files
 tmp/
 temp/
+
+# Vite cache
+.vite/
+
+# Claude Code local settings (permissions are machine-specific)
+.claude/settings.local.json

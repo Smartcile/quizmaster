@@ -61,18 +61,36 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Public config endpoint — lets frontends know the canonical URLs for each portal.
+// Set QUIZZER_URL / SLIDESHOW_URL / ADMIN_URL in .env to override the default
+// port-replacement fallback used in the UI.
+app.get('/api/config', (req, res) => {
+  res.json({
+    quizzerUrl:   process.env.QUIZZER_URL   || null,
+    slideshowUrl: process.env.SLIDESHOW_URL || null,
+    adminUrl:     process.env.ADMIN_URL     || null,
+  });
+});
+
 setupWebSocketHandlers(io);
 
 app.use(errorHandler);
 
-db.initializeDatabase().then(() => {
-  httpServer.listen(PORT, () => {
-    console.log(`Backend server running on http://localhost:${PORT}`);
-    console.log(`WebSocket server ready on port ${PORT}`);
+// Always start the HTTP server. If the DB is not yet reachable (e.g. running
+// outside Docker without postgres), log a warning and let pg-pool retry on the
+// first real query. Once postgres comes up the pool connects automatically.
+// Inside Docker the postgres health-check ensures it is ready before this starts.
+db.initializeDatabase()
+  .catch(err => {
+    console.error('⚠️  DB not reachable on startup — server starting anyway.');
+    console.error('   Set DB_HOST=localhost (or start the postgres container) to fix.');
+    console.error('  ', err.message);
+  })
+  .finally(() => {
+    httpServer.listen(PORT, () => {
+      console.log(`Backend server running on http://localhost:${PORT}`);
+      console.log(`WebSocket server ready on port ${PORT}`);
+    });
   });
-}).catch(err => {
-  console.error('Failed to initialize database:', err);
-  process.exit(1);
-});
 
 module.exports = { app, io };

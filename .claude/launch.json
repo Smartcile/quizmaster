@@ -1,0 +1,29 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "backend",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["backend/server.js"],
+      "port": 5000
+    },
+    {
+      "name": "admin",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "frontend-admin", "run", "dev"],
+      "port": 3001
+    },
+    {
+      "name": "slideshow",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "frontend-slideshow", "run", "dev"],
+      "port": 3002
+    },
+    {
+      "name": "quizzer",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "frontend-quizzer", "run", "dev"],
+      "port": 3003
+    }
+  ]
+}

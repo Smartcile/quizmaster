@@ -7,8 +7,14 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd }) {
   const [currentSlide, setCurrentSlide] = useState(0);
   const [sessionStatus, setSessionStatus] = useState('lobby');
   const [teamsCount, setTeamsCount] = useState(0);
+  const [portalConfig, setPortalConfig] = useState(null);
   const socket = useWebSocket();
   const slides = useMemo(() => buildSlides(quiz), [quiz]);
+
+  // ── Load portal URL config once ──────────────────────────────────────────
+  useEffect(() => {
+    api.get('/config').then(c => setPortalConfig(c)).catch(() => {});
+  }, []);
 
   // ── Initial state from REST ──────────────────────────────────────────────
   useEffect(() => {
@@ -201,7 +207,10 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd }) {
           <h3>Lobby</h3>
           <p>
             The slideshow is showing the join screen. Teams visit{' '}
-            <code>{window.location.protocol}//{window.location.host.replace(/:\d+$/, ':3003')}</code>{' '}
+            <code>
+              {portalConfig?.quizzerUrl ||
+                `${window.location.protocol}//${window.location.host.replace(/:\d+$/, ':3003')}`}
+            </code>{' '}
             and enter code <strong>{quiz.code}</strong>.
           </p>
           <p>When ready, click <strong>Begin Quiz</strong> to start the presentation.</p>
