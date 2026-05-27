@@ -34,6 +34,11 @@ function App() {
     setCurrentPage('control');
   };
 
+  const handleSessionEnd = () => {
+    setActiveQuiz(null);
+    setCurrentPage('dashboard');
+  };
+
   const handleLogout = () => {
     clearToken();
     setActiveQuiz(null);
@@ -51,7 +56,7 @@ function App() {
       case 'marking':
         return <AnswerMarking sessionId={activeQuiz?.sessionId} />;
       case 'control':
-        return <QuizControl sessionId={activeQuiz?.sessionId} quiz={activeQuiz?.quiz} />;
+        return <QuizControl sessionId={activeQuiz?.sessionId} quiz={activeQuiz?.quiz} onSessionEnd={handleSessionEnd} />;
       case 'slides':
         return <SlideEditor />;
       case 'masters':
