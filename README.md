@@ -141,17 +141,21 @@ Or a single domain with path-based routing — set up rules in your reverse prox
 - Background color picker for the round's slideshow theme
 
 ### Quiz Builder (drag-and-drop)
-- Left palette: available rounds + widget add buttons
-- Right panel: assembled quiz order (rounds and widgets mixed freely)
+- Left palette: clickable round chips to add to the run-order; widget add buttons
+- Right panel: assembled quiz run-order with compact PowerPoint-style tiles
+- Each tile shows a human-readable label: round name + question count, or widget name + type
+- Drag tiles to reorder — new order persists to DB on drop (`@dnd-kit`)
 - **Widget Editor** modal — edit title, body text, image, background color/image for each custom slide
 - Three widget types: Scoreboard, Rules, Custom Page
 
 ### Session Lifecycle
 - **Start Quiz** creates a session in **lobby** status — slideshow shows the big join code, teams start joining
+- Teams can join during lobby phase (not just after Begin Quiz)
 - Admin sees: live team counter, **▶ Begin Quiz** to go live
 - **Active** state — Next/Previous slide nav, Lock Round Answers, slide thumbnails
 - **⏸ Back to Lobby** / **↺ Restart Session** / **⏹ End Quiz** controls
 - Restart keeps the same teams but resets to slide 0
+- All surfaces recover automatically after a network hiccup — WebSocket auto-rejoins and the server replays authoritative state (slide index, session status, locked rounds)
 
 ### Slideshow Viewer
 - Auto-detects quiz code from URL (`/quiz/CODE`, `/?code=CODE`) or shows entry screen
@@ -165,6 +169,7 @@ Or a single domain with path-based routing — set up rules in your reverse prox
 - Renders the current slide as: question (with text input / MCQ / both), waiting message, or answer reveal (showing their answer, correct answer, points awarded)
 - Answers auto-save as teams type
 - When a round is locked, inputs disable and the score badge appears once marked
+- **Page refresh recovery** — team identity is stored in sessionStorage; refreshing the page silently rejoins the same session without re-entering the form
 - Mobile-first responsive design
 
 ### Admin Dashboard (metrics + live session)
@@ -279,8 +284,9 @@ quizmaster/
 ├── backend/                   # Express + Socket.io API
 │   ├── server.js
 │   ├── schema.sql             # DB schema with auto-migrations
+│   ├── sockets.js             # IO singleton (avoids circular require)
 │   ├── middleware/auth.js     # JWT login + token verification
-│   ├── controllers/           # Question / round / quiz / team / answer logic
+│   ├── controllers/           # Question / round / quiz / team / answer / master / slide logic
 │   ├── routes/
 │   ├── websocket/handlers.js  # Slide changes, answer locks, marking
 │   ├── utils/                 # Code generator, seed script
@@ -289,11 +295,13 @@ quizmaster/
 │   ├── nginx.conf             # Reverse-proxies /api → backend
 │   ├── src/
 │   │   ├── pages/             # Login, Dashboard, QuestionManager, RoundBuilder,
-│   │   │                      # QuizBuilder, QuizControl, AnswerMarking
-│   │   ├── components/
+│   │   │                      # QuizBuilder, QuizControl, AnswerMarking,
+│   │   │                      # MasterEditor, SlideEditor
+│   │   ├── components/        # Shared components (ImagePicker, …)
 │   │   ├── services/api.js    # Token-aware HTTP client
 │   │   ├── hooks/useWebSocket.js
-│   │   ├── utils/buildSlides.js  # Shared slide-list logic
+│   │   ├── utils/buildSlides.js  # Shared slide-list logic (keep in sync!)
+│   │   ├── utils/autoShrink.js   # Auto-scaling text helper
 │   │   └── styles/admin.css   # Neon dark theme
 │   └── Dockerfile             # Multi-stage: node build → nginx serve
 ├── frontend-slideshow/        # React presentation (same pattern)
@@ -317,6 +325,7 @@ Recent additions to `questions`:
 
 Recent additions to `quiz_sessions`:
 - `started_at TIMESTAMP` — when the session went active
+- `locked_round_ids JSONB` — persists which rounds have had answers locked; replayed to rejoining clients via `session_state` WebSocket event
 
 ---
 
@@ -327,3 +336,5 @@ Recent additions to `quiz_sessions`:
 - **Backups**: Media uploads (image/video/audio for questions) are stored in the `backend_uploads` Docker volume — back this up alongside the database.
 - **First-time login**: Default admin password is `admin` — change it via the `ADMIN_PASSWORD` env var before exposing the dashboard to anyone.
 - **Schema migrations**: Adding new columns is safe (uses `IF NOT EXISTS`). Removing or renaming would require a manual migration.
+- **WebSocket reconnection**: All three surfaces auto-rejoin their room on every `connect` event. The server responds with a `session_state` event that carries the current slide index, session status, and locked round IDs — so a brief network drop is invisible to participants.
+- **Drag-and-drop library**: The admin quiz builder uses `@dnd-kit` (`@dnd-kit/core`, `@dnd-kit/sortable`). Requires `DndContext`, `SortableContext`, and `useSortable` — does not require `StrictMode` workarounds.
