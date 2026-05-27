@@ -60,7 +60,9 @@ function App() {
         return;
       }
 
-      // 3) Register the team for THIS session (don't start a new one)
+      // 3) Register the team for THIS session.
+      // The server does find-or-create by name, so re-joining with the same
+      // team name reattaches to the original team and all its answers.
       const teamData = await api.post('/teams/join', {
         sessionId: session.id,
         name: teamName,
@@ -76,6 +78,11 @@ function App() {
 
       // Persist identity so a page refresh rejoins automatically
       sessionStorage.setItem('quizTeam', JSON.stringify({ teamId: teamData.id, quizCode: code }));
+
+      if (teamData.rejoined) {
+        // Soft notice — keeps the user oriented if they thought they'd lost progress
+        console.info(`Reconnected to existing team "${teamData.name}"`);
+      }
     } catch (err) {
       setError(err.message || 'Failed to join quiz');
     }

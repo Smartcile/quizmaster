@@ -17,10 +17,12 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
     return slides.filter(s => s.type === 'question' && s.roundId === slide.roundId);
   }, [slides, slide]);
 
-  // When the admin moves to a different round, reset local navigation
+  // Follow the quiz master: whenever the host advances the slide, snap the
+  // quizzer back to the host's view. The team may still navigate to other
+  // questions in the round afterward — but a host slide change always wins.
   useEffect(() => {
     setViewingQuestionId(null);
-  }, [slide?.roundId]);
+  }, [currentSlide]);
 
   // The question slide to display — guest may have navigated away from admin's question
   const activeSlide = useMemo(() => {
@@ -57,18 +59,27 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
     const onLocked = (data) => {
       setLockedRounds(prev => new Set([...prev, data.roundId]));
     };
+    const onUnlocked = (data) => {
+      setLockedRounds(prev => {
+        const next = new Set(prev);
+        next.delete(data.roundId);
+        return next;
+      });
+    };
     const onMarked = (data) => {
       if (data.teamId === team?.id) {
         setScores(prev => ({ ...prev, [data.questionId]: parseFloat(data.points) }));
       }
     };
-    socket.on('session_state',  onSessionState);
-    socket.on('answer_locked',  onLocked);
-    socket.on('answer_marked',  onMarked);
+    socket.on('session_state',   onSessionState);
+    socket.on('answer_locked',   onLocked);
+    socket.on('answer_unlocked', onUnlocked);
+    socket.on('answer_marked',   onMarked);
     return () => {
-      socket.off('session_state',  onSessionState);
-      socket.off('answer_locked',  onLocked);
-      socket.off('answer_marked',  onMarked);
+      socket.off('session_state',   onSessionState);
+      socket.off('answer_locked',   onLocked);
+      socket.off('answer_unlocked', onUnlocked);
+      socket.off('answer_marked',   onMarked);
     };
   }, [socket, team?.id]);
 
@@ -110,6 +121,39 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
           locked={isLockedFor(activeSlide.roundId)}
           onChange={(v) => submitAnswer(activeSlide.questionId, v)}
         />
+      );
+    }
+
+    if (slide.type === 'mark_answers') {
+      const roundQuestions = slides.filter(s => s.type === 'question' && s.roundId === slide.roundId);
+      const locked = isLockedFor(slide.roundId);
+      return (
+        <div className="mark-answers-review">
+          <p className="mark-label">{slide.roundName}</p>
+          <h2>{locked ? 'Round Locked' : 'Review Your Answers'}</h2>
+          <p className="mark-hint">
+            {locked
+              ? 'Your answers are locked in. Answers will be revealed next.'
+              : 'Tap any question to edit your answer before it locks.'}
+          </p>
+          <div className="mark-review-list">
+            {roundQuestions.map((q) => {
+              const ans = answers[q.questionId];
+              return (
+                <button
+                  key={q.questionId}
+                  className={`mark-review-item ${ans ? 'answered' : 'unanswered'}`}
+                  onClick={() => !locked && setViewingQuestionId(q.questionId)}
+                  disabled={locked}
+                >
+                  <span className="mark-review-q">Q{q.questionNumber}</span>
+                  <span className="mark-review-text">{q.text}</span>
+                  <span className="mark-review-ans">{ans || '(no answer)'}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
       );
     }
 

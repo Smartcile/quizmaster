@@ -12,7 +12,13 @@ async function getAllQuizzes(req, res) {
 }
 
 async function loadQuizWithRoundsAndWidgets(id) {
-  const quizResult = await db.query('SELECT * FROM quizzes WHERE id = $1', [id]);
+  const quizResult = await db.query(
+    `SELECT q.*, sm.name AS master_name, sm.templates AS master_templates
+     FROM quizzes q
+     LEFT JOIN slide_masters sm ON sm.id = q.master_id
+     WHERE q.id = $1`,
+    [id]
+  );
   if (quizResult.rows.length === 0) return null;
 
   const roundsResult = await db.query(`
@@ -87,7 +93,7 @@ async function getActiveSession(req, res) {
 
 async function createQuiz(req, res) {
   try {
-    const { name, rounds, widgets } = req.body;
+    const { name, rounds, widgets, master_id } = req.body;
     const code = generateQuizCode();
 
     const client = await db.getClient();
@@ -95,8 +101,8 @@ async function createQuiz(req, res) {
       await client.query('BEGIN');
 
       const quizResult = await client.query(
-        'INSERT INTO quizzes (name, code) VALUES ($1, $2) RETURNING *',
-        [name, code]
+        'INSERT INTO quizzes (name, code, master_id) VALUES ($1, $2, $3) RETURNING *',
+        [name, code, master_id || null]
       );
       const quizId = quizResult.rows[0].id;
 
@@ -358,15 +364,15 @@ async function deleteQuiz(req, res) {
 async function updateQuiz(req, res) {
   try {
     const { id } = req.params;
-    const { name, rounds, widgets } = req.body;
+    const { name, rounds, widgets, master_id } = req.body;
 
     const client = await db.getClient();
     try {
       await client.query('BEGIN');
 
       const quizResult = await client.query(
-        'UPDATE quizzes SET name = $1 WHERE id = $2 RETURNING *',
-        [name, id]
+        'UPDATE quizzes SET name = $1, master_id = $2 WHERE id = $3 RETURNING *',
+        [name, master_id || null, id]
       );
       if (quizResult.rows.length === 0) {
         await client.query('ROLLBACK');

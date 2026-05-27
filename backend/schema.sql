@@ -216,3 +216,48 @@ CREATE INDEX IF NOT EXISTS idx_questions_format   ON questions(question_format);
 -- round_questions: per-question format override for 'both'-format questions.
 -- Stores the mode chosen for this specific round; does not modify the source question.
 ALTER TABLE round_questions ADD COLUMN IF NOT EXISTS question_format_override VARCHAR(20);
+
+-- ============================================================
+-- Categories — promoted from a derived list to a managed table
+-- ============================================================
+CREATE TABLE IF NOT EXISTS categories (
+  id          SERIAL PRIMARY KEY,
+  name        VARCHAR(100) NOT NULL UNIQUE,
+  sort_order  INT NOT NULL DEFAULT 0,
+  created_at  TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_categories_sort ON categories(sort_order, name);
+
+-- Seed a sensible default list. ON CONFLICT keeps this idempotent across
+-- container restarts, and admins can rename or delete any of these later.
+INSERT INTO categories (name, sort_order) VALUES
+  ('General Knowledge', 10),
+  ('History',           20),
+  ('Geography',         30),
+  ('Science',           40),
+  ('Nature',            50),
+  ('Music',             60),
+  ('Movies',            70),
+  ('TV',                80),
+  ('Sport',             90),
+  ('Literature',        100),
+  ('Food & Drink',      110),
+  ('Pop Culture',       120),
+  ('Technology',        130),
+  ('Art',               140)
+ON CONFLICT (name) DO NOTHING;
+
+-- ============================================================
+-- Masters & Slides merge — additive migrations
+-- ============================================================
+
+-- Store per-slide-type content templates inside each master.
+-- Shape: { "intro": { title, subtitle }, "round_intro": { label },
+--          "mark_answers": { heading, subtitle }, "end": { title, subtitle },
+--          "scoreboard": { title, bgColor }, "rules": { title, body, bgColor },
+--          "custom": [{ id, name, title, body, imageUrl, bgColor }, ...] }
+ALTER TABLE slide_masters ADD COLUMN IF NOT EXISTS templates JSONB NOT NULL DEFAULT '{}';
+
+-- Allow a quiz to declare which master theme it uses.
+-- The QuizBuilder presents custom pages from that master as available widgets.
+ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS master_id INT REFERENCES slide_masters(id) ON DELETE SET NULL;

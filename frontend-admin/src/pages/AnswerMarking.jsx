@@ -23,19 +23,45 @@ export default function AnswerMarking({ sessionId }) {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // Refresh whenever any answer is marked (from this page or the socket handler)
+  // Apply a single mark to local state immediately — no full reload required.
+  const applyMarkLocal = useCallback((teamId, questionId, points) => {
+    setData(prev => {
+      if (!prev) return prev;
+      const scores = Array.isArray(prev.scores) ? [...prev.scores] : [];
+      const idx = scores.findIndex(s => s.team_id === teamId && s.question_id === questionId);
+      const row = { team_id: teamId, question_id: questionId, points_awarded: points };
+      if (idx >= 0) scores[idx] = row;
+      else          scores.push(row);
+      return { ...prev, scores };
+    });
+  }, []);
+
+  // Apply broadcasted marks immediately too (avoids full network reload).
   useEffect(() => {
     if (!socket) return;
-    socket.on('answer_marked', loadData);
-    return () => socket.off('answer_marked', loadData);
-  }, [socket, loadData]);
+    const onMarked = (m) => {
+      if (m && m.teamId != null && m.questionId != null && m.points != null) {
+        applyMarkLocal(parseInt(m.teamId), parseInt(m.questionId), parseFloat(m.points));
+      }
+    };
+    const onSubmitted = () => loadData();  // refresh answer text when a team submits
+    socket.on('answer_marked',     onMarked);
+    socket.on('answer_submitted',  onSubmitted);
+    return () => {
+      socket.off('answer_marked',    onMarked);
+      socket.off('answer_submitted', onSubmitted);
+    };
+  }, [socket, applyMarkLocal, loadData]);
 
   const mark = async (teamId, questionId, points) => {
+    // Optimistic update — admin sees the score change the instant they click.
+    applyMarkLocal(teamId, questionId, points);
     try {
       await api.post('/answers/mark', { teamId, questionId, points, sessionId });
-      // loadData triggered by the answer_marked broadcast from the server
     } catch (err) {
       console.error('Marking failed:', err);
+      // Re-sync from server on failure so we don't leave stale optimistic state.
+      loadData();
     }
   };
 
@@ -90,7 +116,7 @@ export default function AnswerMarking({ sessionId }) {
             <option value="all">All Rounds</option>
             {rounds.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
           </select>
-          <button onClick={downloadCSV} className="btn btn-secondary btn-sm">↓ Download CSV</button>
+          <button onClick={downloadCSV} className="btn btn-primary btn-sm">↓ Download CSV</button>
           <button onClick={loadData}   className="btn btn-secondary btn-sm" disabled={loading}>↻ Refresh</button>
         </div>
       </div>

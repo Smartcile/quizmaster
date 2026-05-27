@@ -103,11 +103,43 @@ function setupWebSocketHandlers(io) {
       console.log(`Session ${sessionId}: round ${roundId} locked`);
     });
 
+    // ── answer_unlocked ──────────────────────────────────────────────────────
+    // Inverse of answer_locked — removes the round from locked_round_ids and
+    // broadcasts so quizzers re-enable their answer inputs for that round.
+    socket.on('answer_unlocked', async (data) => {
+      const { sessionId, roundId } = data;
+      const roomKey = `quiz-${sessionId}`;
+
+      try {
+        // Remove roundId from the JSONB array (idempotent — no-op if absent)
+        await db.query(
+          `UPDATE quiz_sessions
+           SET locked_round_ids = COALESCE(
+             (SELECT jsonb_agg(elem) FROM jsonb_array_elements(locked_round_ids) elem
+              WHERE elem <> to_jsonb($1::int)),
+             '[]'::jsonb
+           )
+           WHERE id = $2`,
+          [roundId, sessionId]
+        );
+      } catch (err) {
+        console.error('answer_unlocked: DB error:', err);
+      }
+
+      io.to(roomKey).emit('answer_unlocked', {
+        roundId,
+        timestamp: new Date().toISOString()
+      });
+
+      console.log(`Session ${sessionId}: round ${roundId} unlocked`);
+    });
+
     // ── submit_answer ────────────────────────────────────────────────────────
     socket.on('submit_answer', async (data) => {
       const { sessionId, teamId, questionId, roundId, answer } = data;
       const roomKey = `quiz-${sessionId}`;
 
+      let autoMarked = null;
       try {
         const existing = await db.query(
           'SELECT id FROM answers WHERE team_id = $1 AND question_id = $2',
@@ -126,11 +158,43 @@ function setupWebSocketHandlers(io) {
           );
         }
 
+        // Auto-mark: if no score yet and the submitted answer matches the
+        // correct answer (fuzzy compare), award 1 point. Admin overrides
+        // afterward via the marking page are never stomped because we skip
+        // when a score row already exists.
+        const scoreExists = await db.query(
+          'SELECT id FROM scores WHERE team_id = $1 AND question_id = $2',
+          [teamId, questionId]
+        );
+        if (!scoreExists.rows.length) {
+          const qr = await db.query('SELECT answer FROM questions WHERE id = $1', [questionId]);
+          if (qr.rows.length) {
+            const norm = s => String(s ?? '').toLowerCase().trim().replace(/\s+/g, ' ').replace(/^the\s+/, '');
+            if (norm(answer) === norm(qr.rows[0].answer)) {
+              await db.query(
+                'INSERT INTO scores (team_id, question_id, points_awarded) VALUES ($1, $2, 1)',
+                [teamId, questionId]
+              );
+              autoMarked = 1;
+            }
+          }
+        }
+
         io.to(roomKey).emit('answer_submitted', {
           teamId,
           questionId,
           timestamp: new Date().toISOString()
         });
+
+        if (autoMarked != null) {
+          io.to(roomKey).emit('answer_marked', {
+            teamId,
+            questionId,
+            points: autoMarked,
+            autoMarked: true,
+            timestamp: new Date().toISOString()
+          });
+        }
       } catch (err) {
         console.error('submit_answer: error:', err);
       }

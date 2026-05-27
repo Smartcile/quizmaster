@@ -183,7 +183,7 @@ function App() {
   return (
     <div className="slideshow-container">
       <div className="slide" style={slide?.background ? { background: slide.background } : undefined}>
-        <SlideRenderer slide={slide} />
+        <SlideRenderer slide={slide} sessionId={sessionId} socket={socket} />
       </div>
       <div className="slide-counter">
         {currentSlide + 1} / {slides.length}
@@ -234,7 +234,7 @@ function FullScreenMessage({ title, subtitle, message }) {
   );
 }
 
-function SlideRenderer({ slide }) {
+function SlideRenderer({ slide, sessionId, socket }) {
   if (!slide) return <div className="slide-empty"><h2>End of quiz</h2></div>;
 
   switch (slide.type) {
@@ -283,6 +283,18 @@ function SlideRenderer({ slide }) {
         </div>
       );
 
+    case 'mark_answers':
+      return (
+        <div className="slide-mark-answers">
+          <p className="mark-label">{slide.roundName}</p>
+          <h1>Mark Your Answers</h1>
+          <p className="mark-subtitle">
+            Final chance to submit — {slide.totalInRound} question{slide.totalInRound !== 1 ? 's' : ''} in this round.
+          </p>
+          <p className="mark-hint">Answers will be revealed shortly.</p>
+        </div>
+      );
+
     case 'answer':
       return (
         <div className="slide-answer">
@@ -293,7 +305,7 @@ function SlideRenderer({ slide }) {
       );
 
     case 'widget':
-      return <WidgetSlide slide={slide} />;
+      return <WidgetSlide slide={slide} sessionId={sessionId} socket={socket} />;
 
     case 'end':
       return (
@@ -308,7 +320,11 @@ function SlideRenderer({ slide }) {
   }
 }
 
-function WidgetSlide({ slide }) {
+function WidgetSlide({ slide, sessionId, socket }) {
+  if (slide.widgetType === 'scoreboard') {
+    return <ScoreboardWidget slide={slide} sessionId={sessionId} socket={socket} />;
+  }
+
   const data = slide.data || {};
   const style = {
     background: data.bg_image ? `url(${data.bg_image}) center/cover` : (data.bg_color || undefined)
@@ -322,7 +338,65 @@ function WidgetSlide({ slide }) {
         </div>
       )}
       {data.body && <p className="widget-body" style={{ whiteSpace: 'pre-line' }}>{data.body}</p>}
-      {slide.widgetType === 'scoreboard' && !data.title && <h2>Leaderboard</h2>}
+    </div>
+  );
+}
+
+// Live scoreboard: fetches team totals on mount, then re-fetches on
+// answer_marked / team_joined / brownie events so the leaderboard stays current
+// while it's on screen.
+function ScoreboardWidget({ slide, sessionId, socket }) {
+  const data = slide.data || {};
+  const [rows, setRows] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+
+  const refresh = () => {
+    if (!sessionId) return;
+    api.get(`/teams/session/${sessionId}/scoreboard`)
+      .then(r => { setRows(Array.isArray(r) ? r : []); setLoaded(true); })
+      .catch(() => setLoaded(true));
+  };
+
+  useEffect(() => {
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (!socket) return;
+    const onAnyScore = () => refresh();
+    socket.on('answer_marked', onAnyScore);
+    socket.on('team_joined',   onAnyScore);
+    return () => {
+      socket.off('answer_marked', onAnyScore);
+      socket.off('team_joined',   onAnyScore);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [socket, sessionId]);
+
+  const style = {
+    background: data.bg_image ? `url(${data.bg_image}) center/cover` : (data.bg_color || undefined)
+  };
+
+  return (
+    <div className="slide-widget slide-scoreboard" style={style}>
+      <h2>{data.title || 'Leaderboard'}</h2>
+
+      {!loaded ? (
+        <p className="scoreboard-loading">Loading scores…</p>
+      ) : rows.length === 0 ? (
+        <p className="scoreboard-empty">No teams have scored yet.</p>
+      ) : (
+        <ol className="scoreboard-list">
+          {rows.map((t, i) => (
+            <li key={t.id} className={`scoreboard-row rank-${i + 1}`}>
+              <span className="scoreboard-rank">{i + 1}</span>
+              <span className="scoreboard-name">{t.name}</span>
+              <span className="scoreboard-score">{Number(t.total).toFixed(t.total % 1 === 0 ? 0 : 1)}</span>
+            </li>
+          ))}
+        </ol>
+      )}
     </div>
   );
 }

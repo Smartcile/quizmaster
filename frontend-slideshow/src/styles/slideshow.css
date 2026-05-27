@@ -382,6 +382,117 @@ html, body, #root {
   box-shadow: 0 0 30px rgba(0, 0, 0, 0.5);
 }
 
+/* ── Mark Your Answers slide ───────────────────────────────────────── */
+.slide-mark-answers {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 18px;
+  padding: 60px;
+  background: linear-gradient(135deg, rgba(255, 157, 0, 0.18), rgba(255, 0, 110, 0.12));
+  border-radius: var(--radius-lg);
+  width: 100%;
+  height: 100%;
+}
+.slide-mark-answers h1 {
+  font-size: 4rem;
+  margin: 0;
+  text-shadow: 0 0 40px rgba(255, 157, 0, 0.6);
+}
+.slide-mark-answers .mark-label {
+  font-size: 1.3rem;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  color: var(--neon-orange, #ff9d00);
+  margin: 0;
+}
+.slide-mark-answers .mark-subtitle {
+  font-size: 1.7rem;
+  color: var(--text-primary);
+  margin: 0;
+}
+.slide-mark-answers .mark-hint {
+  font-size: 1.1rem;
+  color: var(--text-secondary, #aaa);
+  margin: 0;
+  font-style: italic;
+}
+
+/* ── Scoreboard widget ─────────────────────────────────────────────── */
+.slide-scoreboard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 24px;
+  padding: 40px 60px;
+}
+.slide-scoreboard h2 {
+  margin: 0;
+}
+.scoreboard-loading,
+.scoreboard-empty {
+  font-size: 1.5rem;
+  color: var(--text-secondary, #bbb);
+  font-style: italic;
+}
+.scoreboard-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  width: 100%;
+  max-width: 800px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.scoreboard-row {
+  display: grid;
+  grid-template-columns: 60px 1fr auto;
+  gap: 20px;
+  align-items: center;
+  padding: 14px 24px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  color: var(--text-primary);
+  font-size: 1.6rem;
+}
+.scoreboard-row.rank-1 {
+  background: linear-gradient(135deg, rgba(255, 230, 0, 0.25), rgba(255, 157, 0, 0.15));
+  border-color: rgba(255, 230, 0, 0.5);
+  box-shadow: 0 0 25px rgba(255, 230, 0, 0.25);
+}
+.scoreboard-row.rank-2 {
+  background: linear-gradient(135deg, rgba(200, 200, 220, 0.2), rgba(150, 150, 170, 0.1));
+  border-color: rgba(200, 200, 220, 0.4);
+}
+.scoreboard-row.rank-3 {
+  background: linear-gradient(135deg, rgba(205, 127, 50, 0.2), rgba(150, 90, 30, 0.1));
+  border-color: rgba(205, 127, 50, 0.4);
+}
+.scoreboard-rank {
+  font-size: 1.8rem;
+  font-weight: 700;
+  text-align: center;
+  color: var(--neon-cyan);
+}
+.scoreboard-row.rank-1 .scoreboard-rank { color: #ffe600; }
+.scoreboard-row.rank-2 .scoreboard-rank { color: #d0d0e0; }
+.scoreboard-row.rank-3 .scoreboard-rank { color: #cd7f32; }
+
+.scoreboard-name {
+  font-weight: 600;
+}
+.scoreboard-score {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: var(--neon-green, #00ff9f);
+  text-shadow: 0 0 12px rgba(0, 255, 159, 0.5);
+}
+
 .slide-empty h2 {
   font-size: 2.5rem;
   color: var(--text-primary);
