@@ -3,7 +3,7 @@ import { useWebSocket } from '../hooks/useWebSocket';
 import { buildSlides, slideShortLabel } from '../utils/buildSlides';
 import { api } from '../services/api';
 
-export default function QuizControl({ sessionId, quiz }) {
+export default function QuizControl({ sessionId, quiz, onSessionEnd }) {
   const [currentSlide, setCurrentSlide] = useState(0);
   const [sessionStatus, setSessionStatus] = useState('lobby');
   const [teamsCount, setTeamsCount] = useState(0);
@@ -148,7 +148,10 @@ export default function QuizControl({ sessionId, quiz }) {
           </>
         )}
         {sessionStatus === 'finished' && (
-          <button onClick={restart} className="btn btn-primary">↺ Restart from Beginning</button>
+          <>
+            <button onClick={restart}        className="btn btn-primary">↺ Restart from Beginning</button>
+            <button onClick={onSessionEnd}   className="btn btn-secondary">✕ Close Session</button>
+          </>
         )}
       </div>
 
@@ -196,7 +199,11 @@ export default function QuizControl({ sessionId, quiz }) {
       {sessionStatus === 'lobby' && (
         <div className="lobby-help">
           <h3>Lobby</h3>
-          <p>The slideshow is showing the join screen. Teams can join at <code>/answer/{quiz.code}</code>.</p>
+          <p>
+            The slideshow is showing the join screen. Teams visit{' '}
+            <code>{window.location.protocol}//{window.location.host.replace(/:\d+$/, ':3003')}</code>{' '}
+            and enter code <strong>{quiz.code}</strong>.
+          </p>
           <p>When ready, click <strong>Begin Quiz</strong> to start the presentation.</p>
         </div>
       )}

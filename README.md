@@ -109,14 +109,55 @@ Write endpoints (POST/PUT/DELETE on questions/rounds/quizzes) require a valid ad
 
 ## Using a Domain (Cloudflare)
 
-In Cloudflare, point your domain (or subdomains) at your server IP and forward a public port to one of the host ports. The application requires no extra configuration — API calls use the same host/port the page was loaded from.
+### Why direct Cloudflare proxy doesn't work with private IPs
 
-Example three-subdomain mapping:
-- `admin.smartcile.com:443` → `server:3001`
-- `quiz.smartcile.com:443` → `server:3002`
-- `answer.smartcile.com:443` → `server:3003`
+Cloudflare's orange-cloud (proxied) mode routes traffic through their edge servers. Those servers **cannot reach private LAN addresses** like `192.168.1.x`. Additionally, Cloudflare only proxy-supports a [limited set of ports](https://developers.cloudflare.com/fundamentals/reference/network-ports/) (80, 443, 8080, 8443 etc.) — ports 3001/3002/3003 are not in that list, so Cloudflare will refuse to proxy them even for public IPs.
 
-Or a single domain with path-based routing — set up rules in your reverse proxy to send `/admin` → `3001`, `/quiz` → `3002`, `/answer` → `3003`.
+### Recommended: Cloudflare Tunnel
+
+[Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) (`cloudflared`) creates an **outbound** encrypted tunnel from your machine to Cloudflare. No router port-forwarding, no public IP, no firewall rules needed.
+
+**One-time setup:**
+
+1. Install `cloudflared` on the host machine (or run it as a Docker container).
+2. Authenticate: `cloudflared tunnel login`
+3. Create a tunnel: `cloudflared tunnel create quizmaster`
+4. Create a config file `~/.cloudflared/config.yml`:
+
+```yaml
+tunnel: <your-tunnel-id>
+credentials-file: /root/.cloudflared/<your-tunnel-id>.json
+
+ingress:
+  - hostname: admin.yourdomain.com
+    service: http://localhost:3001
+  - hostname: quiz.yourdomain.com
+    service: http://localhost:3002
+  - hostname: answer.yourdomain.com
+    service: http://localhost:3003
+  - service: http_status:404
+```
+
+5. Add DNS records: `cloudflared tunnel route dns quizmaster admin.yourdomain.com` (repeat for quiz and answer subdomains).
+6. Run the tunnel: `cloudflared tunnel run quizmaster`
+
+WebSockets work through Cloudflare Tunnel automatically — no extra configuration.
+
+### Alternative: Router port-forwarding
+
+If you have a static public IP and can configure your router:
+1. Forward external port `80` → `192.168.1.100:3001` (or use 443 with SSL).
+2. In Cloudflare, set the DNS record to your **public** IP and use **DNS-only** (grey cloud) mode, or enable **Full (strict) SSL** if using 443.
+3. Note: only one of the three frontends can use port 80/443 this way unless you add a reverse proxy (e.g. Caddy/Traefik) in front that routes subdomains to different ports.
+
+### Standard three-subdomain mapping (public server)
+
+For a server with a public IP where all three ports are reachable:
+- `admin.yourdomain.com` → `server:3001`
+- `quiz.yourdomain.com` → `server:3002`
+- `answer.yourdomain.com` → `server:3003`
+
+API calls automatically use the same hostname the page was served from — no rebuild or reconfiguration required.
 
 ---
 
