@@ -37,6 +37,15 @@ export function buildSlides(quiz) {
       });
     });
 
+    if (questions.length > 0) {
+      slides.push({
+        type: 'mark_answers',
+        roundId: round.id,
+        roundName: round.name,
+        totalInRound: questions.length
+      });
+    }
+
     questions.forEach((q, i) => {
       slides.push({
         type: 'answer',

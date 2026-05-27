@@ -38,6 +38,18 @@ export function buildSlides(quiz) {
       });
     });
 
+    // Mark-answers slide — sits between the round's last question and its
+    // first answer reveal. Quizzers can still submit until the admin advances
+    // past it (which auto-locks the round).
+    if (questions.length > 0) {
+      slides.push({
+        type: 'mark_answers',
+        roundId: round.id,
+        roundName: round.name,
+        totalInRound: questions.length
+      });
+    }
+
     questions.forEach((q, i) => {
       slides.push({
         type: 'answer',
@@ -75,6 +87,7 @@ export function slideShortLabel(slide) {
     case 'intro': return 'Title';
     case 'round_intro': return `Round: ${slide.title}`;
     case 'question': return `Q${slide.questionNumber} — ${slide.roundName}`;
+    case 'mark_answers': return `Mark Answers — ${slide.roundName}`;
     case 'answer': return `Answer Q${slide.questionNumber} — ${slide.roundName}`;
     case 'widget': return `Widget: ${slide.widgetType}`;
     case 'end': return 'End';

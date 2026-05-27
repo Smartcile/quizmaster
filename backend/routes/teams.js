@@ -4,11 +4,13 @@ const {
   joinQuiz,
   getTeamsBySession,
   getTeamScores,
-  getTeamById
+  getTeamById,
+  getSessionScoreboard
 } = require('../controllers/teamController');
 
 router.post('/join', joinQuiz);
 router.get('/session/:sessionId', getTeamsBySession);
+router.get('/session/:sessionId/scoreboard', getSessionScoreboard);
 router.get('/:teamId/scores', getTeamScores);
 router.get('/:teamId', getTeamById);
 

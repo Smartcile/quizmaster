@@ -730,3 +730,74 @@ body {
   font-size: 0.78rem;
   font-style: italic;
 }
+
+/* ── Mark Your Answers review (between questions and reveal) ───────── */
+.mark-answers-review {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px 16px;
+}
+.mark-answers-review h2 {
+  margin: 0;
+  color: var(--neon-orange, #ff9d00);
+  font-size: 1.6rem;
+}
+.mark-answers-review .mark-label {
+  margin: 0;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  font-size: 0.8rem;
+}
+.mark-answers-review .mark-hint {
+  margin: 0 0 8px;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+}
+.mark-review-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mark-review-item {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--neon-cyan);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: grid;
+  grid-template-columns: 40px 1fr;
+  grid-template-rows: auto auto;
+  gap: 4px 10px;
+  text-align: left;
+  color: var(--text-primary, #fff);
+  cursor: pointer;
+  font: inherit;
+}
+.mark-review-item.unanswered {
+  border-left-color: var(--neon-orange, #ff9d00);
+  opacity: 0.85;
+}
+.mark-review-item:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+.mark-review-q {
+  grid-row: 1 / span 2;
+  align-self: center;
+  font-weight: 700;
+  color: var(--neon-cyan);
+}
+.mark-review-text {
+  font-size: 0.9rem;
+}
+.mark-review-ans {
+  grid-column: 2;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  font-style: italic;
+}
+.mark-review-item.unanswered .mark-review-ans {
+  color: var(--neon-orange, #ff9d00);
+}

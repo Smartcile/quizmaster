@@ -15,6 +15,7 @@ const answerRoutes = require('./routes/answers');
 const uploadRoutes = require('./routes/upload');
 const mastersRoutes = require('./routes/masters');
 const slidesRoutes = require('./routes/slides');
+const categoriesRoutes = require('./routes/categories');
 const { setupWebSocketHandlers } = require('./websocket/handlers');
 const { errorHandler } = require('./middleware/errorHandler');
 const { login, requireAdminForWrites } = require('./middleware/auth');
@@ -50,6 +51,7 @@ app.use('/api/rounds', requireAdminForWrites, roundRoutes);
 app.use('/api/quizzes', requireAdminForWrites, quizRoutes);
 app.use('/api/masters', requireAdminForWrites, mastersRoutes);
 app.use('/api/slides', requireAdminForWrites, slidesRoutes);
+app.use('/api/categories', requireAdminForWrites, categoriesRoutes);
 
 // Teams + answers + upload: kept public so audience clients can write.
 // (Adjust if you want stricter control.)

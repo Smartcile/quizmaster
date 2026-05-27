@@ -55,6 +55,7 @@ export default function JoinQuiz({ onJoin, error }) {
               disabled={loading}
               required
             />
+            <p className="hint">Lost your connection? Enter the same team name to pick up where you left off.</p>
           </div>
 
           <div className="form-group">

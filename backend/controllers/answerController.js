@@ -1,26 +1,86 @@
 const db = require('../config/database');
 const { getIo } = require('../sockets');
 
+// Normalise an answer for fuzzy matching: trim, lowercase, collapse internal
+// whitespace, strip leading "the ". Pub-quiz forgiving but not perfect.
+function normalizeAnswer(s) {
+  return String(s ?? '')
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/^the\s+/, '');
+}
+
+// Insert score=1 for (teamId, questionId) if (a) the answer matches the
+// question's correct answer and (b) no score row exists yet — admin
+// overrides are never stomped. Returns the points if a score was applied.
+async function maybeAutoMark(client, teamId, questionId, answerText) {
+  const existing = await client.query(
+    'SELECT id FROM scores WHERE team_id = $1 AND question_id = $2',
+    [teamId, questionId]
+  );
+  if (existing.rows.length > 0) return null;
+
+  const qres = await client.query('SELECT answer FROM questions WHERE id = $1', [questionId]);
+  if (!qres.rows.length) return null;
+
+  if (normalizeAnswer(answerText) !== normalizeAnswer(qres.rows[0].answer)) return null;
+
+  const ins = await client.query(
+    'INSERT INTO scores (team_id, question_id, points_awarded) VALUES ($1, $2, 1) RETURNING points_awarded',
+    [teamId, questionId]
+  );
+  return parseFloat(ins.rows[0].points_awarded);
+}
+
 async function submitAnswer(req, res) {
   try {
-    const { teamId, roundId, questionId, answerText } = req.body;
+    const { teamId, roundId, questionId, answerText, sessionId } = req.body;
 
-    const existing = await db.query(
-      'SELECT id FROM answers WHERE team_id = $1 AND question_id = $2',
-      [teamId, questionId]
-    );
-
+    const client = await db.getClient();
     let result;
-    if (existing.rows.length > 0) {
-      result = await db.query(
-        'UPDATE answers SET answer_text = $1 WHERE team_id = $2 AND question_id = $3 RETURNING *',
-        [answerText, teamId, questionId]
+    let autoMarked = null;
+    try {
+      await client.query('BEGIN');
+
+      const existing = await client.query(
+        'SELECT id FROM answers WHERE team_id = $1 AND question_id = $2',
+        [teamId, questionId]
       );
-    } else {
-      result = await db.query(
-        'INSERT INTO answers (team_id, round_id, question_id, answer_text) VALUES ($1, $2, $3, $4) RETURNING *',
-        [teamId, roundId, questionId, answerText]
-      );
+
+      if (existing.rows.length > 0) {
+        result = await client.query(
+          'UPDATE answers SET answer_text = $1 WHERE team_id = $2 AND question_id = $3 RETURNING *',
+          [answerText, teamId, questionId]
+        );
+      } else {
+        result = await client.query(
+          'INSERT INTO answers (team_id, round_id, question_id, answer_text) VALUES ($1, $2, $3, $4) RETURNING *',
+          [teamId, roundId, questionId, answerText]
+        );
+      }
+
+      autoMarked = await maybeAutoMark(client, teamId, questionId, answerText);
+
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      client.release();
+      throw err;
+    }
+    client.release();
+
+    if (autoMarked != null && sessionId) {
+      const io = getIo();
+      if (io) {
+        io.to(`quiz-${sessionId}`).emit('answer_marked', {
+          teamId:     parseInt(teamId),
+          questionId: parseInt(questionId),
+          points:     autoMarked,
+          autoMarked: true,
+          timestamp:  new Date().toISOString()
+        });
+      }
     }
 
     res.status(201).json(result.rows[0]);
@@ -109,6 +169,8 @@ async function markAnswer(req, res) {
 // ── getSessionAnswers ────────────────────────────────────────────────────────
 // Returns all rounds, questions, teams, answers and scores for a session in one
 // call so the marking UI can render without a waterfall of requests.
+// Also backfills auto-marks for any (team, question) where the answer matches
+// the correct answer and no score row exists yet — keeps legacy data current.
 async function getSessionAnswers(req, res) {
   try {
     const { sessionId } = req.params;
@@ -119,6 +181,24 @@ async function getSessionAnswers(req, res) {
     );
     if (!sessResult.rows.length) return res.status(404).json({ error: 'Session not found' });
     const quizId = sessResult.rows[0].quiz_id;
+
+    // Backfill auto-marks for this session's answers (idempotent, ON CONFLICT-free
+    // via NOT EXISTS).
+    await db.query(`
+      INSERT INTO scores (team_id, question_id, points_awarded)
+      SELECT a.team_id, a.question_id, 1
+      FROM answers a
+      JOIN teams t       ON a.team_id = t.id
+      JOIN questions q   ON a.question_id = q.id
+      WHERE t.quiz_session_id = $1
+        AND a.answer_text IS NOT NULL
+        AND LOWER(REGEXP_REPLACE(REGEXP_REPLACE(TRIM(a.answer_text), '\\s+', ' ', 'g'), '^the\\s+', ''))
+            = LOWER(REGEXP_REPLACE(REGEXP_REPLACE(TRIM(q.answer),       '\\s+', ' ', 'g'), '^the\\s+', ''))
+        AND NOT EXISTS (
+          SELECT 1 FROM scores s
+          WHERE s.team_id = a.team_id AND s.question_id = a.question_id
+        )
+    `, [sessionId]);
 
     const roundsResult = await db.query(`
       SELECT r.id, r.name, qr."order"

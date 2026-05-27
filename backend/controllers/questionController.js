@@ -37,11 +37,22 @@ async function getAllQuestions(req, res) {
 }
 
 async function getCategories(req, res) {
+  // Return the union of (a) the managed categories table and (b) any legacy
+  // categories that still appear on questions but aren't in the table. Keeps
+  // the QuestionManager dropdown showing every category currently in use.
   try {
-    const result = await db.query(
-      `SELECT DISTINCT category FROM questions WHERE category IS NOT NULL AND category <> '' ORDER BY category`
-    );
-    res.json(result.rows.map(r => r.category));
+    const result = await db.query(`
+      SELECT name FROM (
+        SELECT name, sort_order, 0 AS legacy FROM categories
+        UNION
+        SELECT DISTINCT q.category AS name, 9999 AS sort_order, 1 AS legacy
+        FROM questions q
+        WHERE q.category IS NOT NULL AND q.category <> ''
+          AND NOT EXISTS (SELECT 1 FROM categories c WHERE c.name = q.category)
+      ) all_cats
+      ORDER BY sort_order, name
+    `);
+    res.json(result.rows.map(r => r.name));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -117,6 +128,46 @@ async function updateQuestion(req, res) {
   }
 }
 
+// ── exportQuestionsCSV ─────────────────────────────────────────────────────
+// GET /api/questions/export
+// Streams the entire question bank as a CSV file. Columns match the import
+// format so the same file can be re-imported via the CSV importer.
+async function exportQuestionsCSV(req, res) {
+  try {
+    const result = await db.query(
+      `SELECT text, answer, type, points, media_url, category, difficulty,
+              answer_mode, question_format, approved, options
+       FROM questions
+       ORDER BY category NULLS LAST, created_at`
+    );
+
+    const headers = [
+      'question', 'answer', 'type', 'points', 'media_url',
+      'category', 'difficulty', 'answer_mode', 'question_format',
+      'approved', 'options'
+    ];
+    const escape = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const lines = [headers.join(',')];
+    for (const row of result.rows) {
+      lines.push([
+        row.text, row.answer, row.type, row.points, row.media_url,
+        row.category, row.difficulty, row.answer_mode, row.question_format,
+        row.approved ? 'true' : 'false',
+        // Options is a JSONB array — serialise to a single CSV cell as "a|b|c"
+        Array.isArray(row.options) ? row.options.join('|') : ''
+      ].map(escape).join(','));
+    }
+    const csv = lines.join('\r\n');
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition',
+      `attachment; filename="quiz-master-questions.csv"`);
+    res.send(csv);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
 async function deleteQuestion(req, res) {
   try {
     const result = await db.query('DELETE FROM questions WHERE id = $1 RETURNING *', [req.params.id]);
@@ -134,5 +185,6 @@ module.exports = {
   getQuestion,
   createQuestion,
   updateQuestion,
-  deleteQuestion
+  deleteQuestion,
+  exportQuestionsCSV
 };

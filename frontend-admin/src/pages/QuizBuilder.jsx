@@ -106,6 +106,8 @@ function OrgTile({ item, index }) {
 export default function QuizBuilder() {
   const [quizzes, setQuizzes]       = useState([]);
   const [allRounds, setAllRounds]   = useState([]);
+  const [masters, setMasters]       = useState([]);
+  const [selectedMasterId, setSelectedMasterId] = useState('');
   const [name, setName]             = useState('');
   const [orderItems, setOrderItems] = useState([]);   // items in new-quiz / edit-quiz order panel
   const [editingWidget, setEditingWidget] = useState(null);
@@ -123,11 +125,19 @@ export default function QuizBuilder() {
 
   const loadAll = async () => {
     try {
-      const [qz, rs] = await Promise.all([api.get('/quizzes'), api.get('/rounds')]);
+      const [qz, rs, ms] = await Promise.all([api.get('/quizzes'), api.get('/rounds'), api.get('/masters')]);
       setQuizzes(qz);
       setAllRounds(rs);
+      setMasters(ms);
     } catch (err) { setError(err.message); }
   };
+
+  // Custom pages from the selected master become additional widget options
+  const masterCustomPages = useMemo(() => {
+    if (!selectedMasterId) return [];
+    const m = masters.find(m => String(m.id) === String(selectedMasterId));
+    return Array.isArray(m?.templates?.custom) ? m.templates.custom : [];
+  }, [selectedMasterId, masters]);
 
   // Rounds not yet in the order panel
   const availableRounds = useMemo(() => {
@@ -155,6 +165,21 @@ export default function QuizBuilder() {
     }]);
   };
 
+  // Add a master's custom page as a 'custom' widget pre-filled with its data
+  const addMasterCustomPage = (page) => {
+    setOrderItems(prev => [...prev, {
+      uid:  `w-${Date.now()}`,
+      kind: 'widget',
+      type: 'custom',
+      data: {
+        title:     page.title || '',
+        body:      page.body  || '',
+        image_url: page.imageUrl || '',
+        bg_color:  page.bgColor  || '#0a0e1f',
+      },
+    }]);
+  };
+
   const removeItem = (uid) => setOrderItems(prev => prev.filter(i => i.uid !== uid));
 
   const updateWidgetData = (uid, data) =>
@@ -174,17 +199,19 @@ export default function QuizBuilder() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const rounds  = orderItems.filter(i => i.kind === 'round').map(i => i.roundId);
-      const widgets = orderItems.filter(i => i.kind === 'widget').map(i => ({ type: i.type, data: i.data || {} }));
+      const rounds    = orderItems.filter(i => i.kind === 'round').map(i => i.roundId);
+      const widgets   = orderItems.filter(i => i.kind === 'widget').map(i => ({ type: i.type, data: i.data || {} }));
+      const master_id = selectedMasterId ? parseInt(selectedMasterId) : null;
       if (editingQuiz) {
-        await api.put(`/quizzes/${editingQuiz.id}`, { name, rounds, widgets });
+        await api.put(`/quizzes/${editingQuiz.id}`, { name, rounds, widgets, master_id });
         setEditingQuiz(null);
       } else {
-        const newQuiz = await api.post('/quizzes', { name, rounds, widgets });
+        const newQuiz = await api.post('/quizzes', { name, rounds, widgets, master_id });
         alert(`Quiz created! Code: ${newQuiz.code}`);
       }
       setName('');
       setOrderItems([]);
+      setSelectedMasterId('');
       loadAll();
     } catch (err) { setError(err.message); }
   };
@@ -193,6 +220,7 @@ export default function QuizBuilder() {
     setEditingQuiz(null);
     setName('');
     setOrderItems([]);
+    setSelectedMasterId('');
   };
 
   // ── Load existing quiz into the builder form ──────────────────────────────
@@ -214,6 +242,7 @@ export default function QuizBuilder() {
       }));
       setEditingQuiz({ id: quiz.id });
       setName(quiz.name);
+      setSelectedMasterId(quiz.master_id ? String(quiz.master_id) : '');
       setOrderItems([...roundItems, ...widgetItems]);
       // Close the organizer panel if open for this quiz
       if (organizingId === quizId) { setOrganizingId(null); setOrganizedData(null); }
@@ -282,6 +311,15 @@ export default function QuizBuilder() {
               onChange={e => setName(e.target.value)}
               required
             />
+            <select
+              className="builder-master-sel"
+              value={selectedMasterId}
+              onChange={e => setSelectedMasterId(e.target.value)}
+              title="Master theme (optional)"
+            >
+              <option value="">— No master theme —</option>
+              {masters.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
             {editingQuiz && (
               <button type="button" className="btn btn-secondary" onClick={cancelEdit}>
                 Cancel
@@ -341,6 +379,24 @@ export default function QuizBuilder() {
                   </button>
                 ))}
               </div>
+              {masterCustomPages.length > 0 && (
+                <div className="master-custom-pages">
+                  <p className="master-custom-label">From master theme:</p>
+                  <div className="widget-buttons">
+                    {masterCustomPages.map(page => (
+                      <button
+                        key={page.id}
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => addMasterCustomPage(page)}
+                        title={page.body || page.title}
+                      >
+                        🧩 {page.name || page.title}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

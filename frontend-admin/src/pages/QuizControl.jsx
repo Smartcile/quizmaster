@@ -6,10 +6,12 @@ import { api } from '../services/api';
 export default function QuizControl({ sessionId, quiz, onSessionEnd }) {
   const [currentSlide, setCurrentSlide] = useState(0);
   const [sessionStatus, setSessionStatus] = useState('lobby');
-  const [teamsCount, setTeamsCount] = useState(0);
+  const [teams, setTeams] = useState([]);
+  const [lockedRounds, setLockedRounds] = useState(new Set());
   const [portalConfig, setPortalConfig] = useState(null);
   const socket = useWebSocket();
   const slides = useMemo(() => buildSlides(quiz), [quiz]);
+  const teamsCount = teams.length;
 
   // ── Load portal URL config once ──────────────────────────────────────────
   useEffect(() => {
@@ -22,9 +24,11 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd }) {
     api.get(`/quizzes/sessions/${sessionId}`).then(s => {
       setSessionStatus(s.status);
       setCurrentSlide(s.current_slide_index || 0);
+      const locked = Array.isArray(s.locked_round_ids) ? s.locked_round_ids : [];
+      setLockedRounds(new Set(locked));
     }).catch(() => {});
 
-    api.get(`/teams/session/${sessionId}`).then(t => setTeamsCount(t.length)).catch(() => {});
+    api.get(`/teams/session/${sessionId}`).then(setTeams).catch(() => {});
   }, [sessionId]);
 
   // ── WebSocket subscriptions + auto-rejoin ────────────────────────────────
@@ -38,6 +42,7 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd }) {
     const onSessionState = (data) => {
       if (typeof data.slideIndex === 'number') setCurrentSlide(data.slideIndex);
       if (data.status) setSessionStatus(data.status);
+      if (Array.isArray(data.lockedRoundIds)) setLockedRounds(new Set(data.lockedRoundIds));
     };
 
     const onSlide = (data) => {
@@ -50,7 +55,18 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd }) {
     };
 
     const onTeamJoin = () => {
-      api.get(`/teams/session/${sessionId}`).then(t => setTeamsCount(t.length)).catch(() => {});
+      api.get(`/teams/session/${sessionId}`).then(setTeams).catch(() => {});
+    };
+
+    const onLocked = (data) => {
+      setLockedRounds(prev => new Set([...prev, data.roundId]));
+    };
+    const onUnlocked = (data) => {
+      setLockedRounds(prev => {
+        const next = new Set(prev);
+        next.delete(data.roundId);
+        return next;
+      });
     };
 
     socket.on('connect',                rejoin);
@@ -58,6 +74,8 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd }) {
     socket.on('slide_changed',          onSlide);
     socket.on('session_status_changed', onStatus);
     socket.on('team_joined',            onTeamJoin);
+    socket.on('answer_locked',          onLocked);
+    socket.on('answer_unlocked',        onUnlocked);
 
     // If socket is already connected when the effect runs, join immediately
     if (socket.connected) rejoin();
@@ -68,19 +86,30 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd }) {
       socket.off('slide_changed',          onSlide);
       socket.off('session_status_changed', onStatus);
       socket.off('team_joined',            onTeamJoin);
+      socket.off('answer_locked',          onLocked);
+      socket.off('answer_unlocked',        onUnlocked);
     };
   }, [sessionId, socket]);
 
   // ── Slide advance via REST (guaranteed DB write + broadcast) ────────────
   // Falls back to WS emit if the REST call fails so the show can go on.
+  // Auto-locks a round's answers when the host crosses into its first answer
+  // slide, so quizzers can't keep tweaking submissions while reveals play.
   const goToSlide = async (index) => {
     if (index < 0 || index >= slides.length) return;
+    const target = slides[index];
+
     setCurrentSlide(index); // optimistic
     try {
       await api.put(`/quizzes/sessions/${sessionId}/slide`, { slideIndex: index });
     } catch {
       // REST failed — fall back to WebSocket path
       if (socket) socket.emit('slide_changed', { sessionId, slideIndex: index });
+    }
+
+    // Auto-lock: entering an answer slide for a round that isn't already locked
+    if (target?.type === 'answer' && target.roundId && socket && !lockedRounds.has(target.roundId)) {
+      socket.emit('answer_locked', { sessionId, roundId: target.roundId });
     }
   };
 
@@ -113,6 +142,24 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd }) {
     }
   };
 
+  const unlockAnswers = () => {
+    const slide = slides[currentSlide];
+    if (socket && slide?.roundId) {
+      socket.emit('answer_unlocked', { sessionId, roundId: slide.roundId });
+    }
+  };
+
+  const closeSession = async () => {
+    if (!confirm('Close this session? Teams will be disconnected and the session will be ended.')) return;
+    try {
+      await api.put(`/quizzes/sessions/${sessionId}/status`, { status: 'finished' });
+    } catch (err) {
+      // Surface but still return to dashboard
+      console.error('Failed to set finished:', err);
+    }
+    if (onSessionEnd) onSessionEnd();
+  };
+
   if (!sessionId || !quiz) {
     return (
       <div className="quiz-control">
@@ -142,9 +189,14 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd }) {
 
       <div className="lifecycle-buttons">
         {sessionStatus === 'lobby' && (
-          <button onClick={() => changeStatus('active')} className="btn btn-success btn-lg">
-            ▶ Begin Quiz
-          </button>
+          <>
+            <button onClick={() => changeStatus('active')} className="btn btn-success btn-lg">
+              ▶ Begin Quiz
+            </button>
+            <button onClick={closeSession} className="btn btn-danger">
+              ✕ Close Session
+            </button>
+          </>
         )}
         {sessionStatus === 'active' && (
           <>
@@ -166,7 +218,11 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd }) {
           <div className="slide-navigation">
             <button onClick={() => goToSlide(currentSlide - 1)} disabled={currentSlide === 0}                    className="btn btn-primary">← Previous</button>
             <button onClick={() => goToSlide(currentSlide + 1)} disabled={currentSlide >= slides.length - 1}     className="btn btn-primary">Next →</button>
-            <button onClick={lockAnswers}                        disabled={!current?.roundId}                     className="btn btn-warning">🔒 Lock Round Answers</button>
+            {current?.roundId && lockedRounds.has(current.roundId) ? (
+              <button onClick={unlockAnswers} className="btn btn-success">🔓 Unlock Round Answers</button>
+            ) : (
+              <button onClick={lockAnswers} disabled={!current?.roundId} className="btn btn-warning">🔒 Lock Round Answers</button>
+            )}
           </div>
 
           <div className="presenter-view">
@@ -205,15 +261,45 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd }) {
       {sessionStatus === 'lobby' && (
         <div className="lobby-help">
           <h3>Lobby</h3>
-          <p>
-            The slideshow is showing the join screen. Teams visit{' '}
+          <p className="lobby-join-instructions">
+            Teams visit{' '}
             <code>
               {portalConfig?.quizzerUrl ||
                 `${window.location.protocol}//${window.location.host.replace(/:\d+$/, ':3003')}`}
             </code>{' '}
-            and enter code <strong>{quiz.code}</strong>.
+            and enter code <strong>{quiz.code}</strong>. Click <strong>Begin Quiz</strong> when ready.
           </p>
-          <p>When ready, click <strong>Begin Quiz</strong> to start the presentation.</p>
+
+          <div className="lobby-teams-panel">
+            <div className="lobby-teams-header">
+              <h4>Joined teams</h4>
+              <span className="lobby-teams-count">
+                {teamsCount} team{teamsCount !== 1 ? 's' : ''}
+              </span>
+            </div>
+
+            {teamsCount === 0 ? (
+              <p className="lobby-teams-empty">No teams have joined yet — waiting for first join…</p>
+            ) : (
+              <ul className="lobby-teams-list">
+                {teams.map((t) => (
+                  <li key={t.id} className="lobby-team-item">
+                    <span className="lobby-team-name">{t.name}</span>
+                    {t.size != null && (
+                      <span className="lobby-team-size">
+                        {t.size} player{t.size !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                    {t.created_at && (
+                      <span className="lobby-team-joined">
+                        joined {new Date(t.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -233,6 +319,14 @@ function SlidePreview({ slide }) {
           <p className="preview-label">{slide.roundName} · Q{slide.questionNumber}/{slide.totalInRound} · {slide.points}pt</p>
           <h4>{slide.text}</h4>
           {slide.mediaUrl && <p className="preview-media">📎 {slide.questionType}: {slide.mediaUrl}</p>}
+        </div>
+      );
+    case 'mark_answers':
+      return (
+        <div>
+          <p className="preview-label" style={{ color: '#ffb347' }}>✦ Mark Your Answers ✦</p>
+          <h4>{slide.roundName}</h4>
+          <p>Final submission window. Advance to lock the round and start revealing answers.</p>
         </div>
       );
     case 'answer':

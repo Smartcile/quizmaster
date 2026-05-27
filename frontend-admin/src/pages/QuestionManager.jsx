@@ -52,18 +52,36 @@ export default function QuestionManager() {
   const [error, setError] = useState(null);
   const [csvFile, setCsvFile] = useState(null);
   const [csvOpen, setCsvOpen] = useState(false);
+  const [catManagerOpen, setCatManagerOpen] = useState(false);
+  const [managedCategories, setManagedCategories] = useState([]);
 
   useEffect(() => { loadAll(); }, []);
 
   const loadAll = async () => {
     try {
-      const [qs, cats] = await Promise.all([api.get('/questions'), api.get('/questions/categories')]);
+      const [qs, cats, managed] = await Promise.all([
+        api.get('/questions'),
+        api.get('/questions/categories'),
+        api.get('/categories').catch(() => [])
+      ]);
       setQuestions(qs);
       setCategories(cats);
+      setManagedCategories(managed);
       setError(null);
     } catch (err) {
       setError(err.message);
     }
+  };
+
+  const reloadCategories = async () => {
+    try {
+      const [cats, managed] = await Promise.all([
+        api.get('/questions/categories'),
+        api.get('/categories').catch(() => [])
+      ]);
+      setCategories(cats);
+      setManagedCategories(managed);
+    } catch (err) { /* swallow */ }
   };
 
   const filtered = useMemo(() => {
@@ -156,9 +174,21 @@ export default function QuestionManager() {
     <div className="question-manager">
       <div className="qm-toolbar">
         <h2>Question Database</h2>
-        <button onClick={() => setCsvOpen(true)} className="btn btn-secondary btn-sm" title="Import CSV">
-          📁 Import CSV
-        </button>
+        <div className="qm-toolbar-actions">
+          <button
+            onClick={() => window.open('/api/questions/export', '_blank')}
+            className="btn btn-primary btn-sm"
+            title="Download all questions as CSV"
+          >
+            ↓ Download CSV
+          </button>
+          <button onClick={() => setCsvOpen(true)} className="btn btn-secondary btn-sm" title="Import CSV">
+            📁 Import CSV
+          </button>
+          <button onClick={() => setCatManagerOpen(true)} className="btn btn-secondary btn-sm" title="Manage categories">
+            🏷 Categories
+          </button>
+        </div>
       </div>
 
       {error && <div className="error-banner" onClick={() => setError(null)}>{error} ✕</div>}
@@ -369,6 +399,118 @@ export default function QuestionManager() {
           </div>
         </div>
       )}
+
+      {catManagerOpen && (
+        <CategoriesModal
+          categories={managedCategories}
+          onClose={() => setCatManagerOpen(false)}
+          onChanged={reloadCategories}
+          onError={setError}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Manage Categories modal ─────────────────────────────────────────────────
+// Lists managed categories with inline rename + delete, plus an add form at
+// the top. Renaming updates every question that referenced the old name.
+// Deleting clears the category from any questions that referenced it (the
+// questions themselves are kept).
+function CategoriesModal({ categories, onClose, onChanged, onError }) {
+  const [newName, setNewName] = useState('');
+  const [editingId, setEditingId] = useState(null);
+  const [editingName, setEditingName] = useState('');
+
+  const add = async (e) => {
+    e.preventDefault();
+    const name = newName.trim();
+    if (!name) return;
+    try {
+      await api.post('/categories', { name });
+      setNewName('');
+      onChanged();
+    } catch (err) { onError(err.message); }
+  };
+
+  const beginEdit = (cat) => {
+    setEditingId(cat.id);
+    setEditingName(cat.name);
+  };
+
+  const saveEdit = async (cat) => {
+    const name = editingName.trim();
+    if (!name || name === cat.name) { setEditingId(null); return; }
+    try {
+      await api.put(`/categories/${cat.id}`, { name });
+      setEditingId(null);
+      onChanged();
+    } catch (err) { onError(err.message); }
+  };
+
+  const remove = async (cat) => {
+    if (!confirm(`Delete category "${cat.name}"?\n\nQuestions using this category will not be deleted — they'll just lose this category label.`)) return;
+    try {
+      await api.delete(`/categories/${cat.id}`);
+      onChanged();
+    } catch (err) { onError(err.message); }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3>Manage Categories</h3>
+          <button onClick={onClose} className="btn-close">×</button>
+        </div>
+
+        <div className="modal-body">
+          <form onSubmit={add} className="cat-add-form">
+            <input
+              type="text"
+              placeholder="New category name…"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+            />
+            <button type="submit" className="btn btn-primary btn-sm" disabled={!newName.trim()}>
+              + Add
+            </button>
+          </form>
+
+          {categories.length === 0 ? (
+            <p className="help-text">No categories yet.</p>
+          ) : (
+            <ul className="cat-list">
+              {categories.map((cat) => (
+                <li key={cat.id} className="cat-row">
+                  {editingId === cat.id ? (
+                    <>
+                      <input
+                        type="text"
+                        value={editingName}
+                        onChange={(e) => setEditingName(e.target.value)}
+                        autoFocus
+                      />
+                      <button onClick={() => saveEdit(cat)} className="btn btn-primary btn-sm">Save</button>
+                      <button onClick={() => setEditingId(null)} className="btn btn-secondary btn-sm">Cancel</button>
+                    </>
+                  ) : (
+                    <>
+                      <span className="cat-name">{cat.name}</span>
+                      <button onClick={() => beginEdit(cat)} className="btn btn-secondary btn-sm">Rename</button>
+                      <button onClick={() => remove(cat)} className="btn btn-danger btn-sm">Delete</button>
+                    </>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="modal-footer">
+          <button onClick={onClose} className="btn btn-secondary">Close</button>
+        </div>
+      </div>
     </div>
   );
 }
