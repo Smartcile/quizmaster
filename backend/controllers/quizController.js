@@ -11,6 +11,11 @@ async function getAllQuizzes(req, res) {
   }
 }
 
+// ── Core loader used by getQuiz, getQuizByCode, and websocket handlers ────────
+// Returns quiz with:
+//   quiz.items  — unified ordered array of { kind:'round'|'widget', ...fields }
+//   quiz.rounds — legacy array of round rows (for backward compat)
+//   quiz.widgets — legacy array of widget rows (for backward compat)
 async function loadQuizWithRoundsAndWidgets(id) {
   const quizResult = await db.query(
     `SELECT q.*, sm.name AS master_name, sm.templates AS master_templates
@@ -22,7 +27,7 @@ async function loadQuizWithRoundsAndWidgets(id) {
   if (quizResult.rows.length === 0) return null;
 
   const roundsResult = await db.query(`
-    SELECT r.*,
+    SELECT r.*, qr.position,
       COALESCE(
         (SELECT json_agg(json_build_object(
           'id', q.id, 'text', q.text, 'type', q.type, 'answer', q.answer,
@@ -38,17 +43,34 @@ async function loadQuizWithRoundsAndWidgets(id) {
     FROM quiz_rounds qr
     JOIN rounds r ON qr.round_id = r.id
     WHERE qr.quiz_id = $1
-    ORDER BY qr."order"
+    ORDER BY COALESCE(qr.position, qr."order")
   `, [id]);
 
   const widgetsResult = await db.query(
-    'SELECT * FROM quiz_widgets WHERE quiz_id = $1 ORDER BY "order"',
+    'SELECT * FROM quiz_widgets WHERE quiz_id = $1 ORDER BY COALESCE(position, "order")',
     [id]
   );
 
   const quiz = quizResult.rows[0];
-  quiz.rounds = roundsResult.rows;
+
+  // Build unified items list
+  const roundItems  = roundsResult.rows.map(r => ({ kind: 'round',  ...r }));
+  const widgetItems = widgetsResult.rows.map(w => ({ kind: 'widget', ...w }));
+  const allItems    = [...roundItems, ...widgetItems];
+
+  const hasPositions = allItems.some(i => i.position !== null);
+  if (hasPositions) {
+    // New interleaved ordering: sort by global position
+    quiz.items = allItems.sort((a, b) => (a.position ?? 999999) - (b.position ?? 999999));
+  } else {
+    // Legacy ordering: all rounds first (in round order), then all widgets
+    quiz.items = allItems; // already sorted by individual ORDER BY COALESCE above
+  }
+
+  // Keep legacy arrays for any code that still reads quiz.rounds / quiz.widgets
+  quiz.rounds  = roundsResult.rows;
   quiz.widgets = widgetsResult.rows;
+
   return quiz;
 }
 
@@ -76,8 +98,6 @@ async function getQuizByCode(req, res) {
 async function getActiveSession(req, res) {
   try {
     const { id } = req.params;
-    // Return any session that is not yet finished — includes lobby (waiting for teams)
-    // and active (quiz in progress). Clients use the returned status to decide how to render.
     const result = await db.query(
       `SELECT * FROM quiz_sessions
        WHERE quiz_id = $1 AND status IN ('lobby', 'active')
@@ -91,9 +111,19 @@ async function getActiveSession(req, res) {
   }
 }
 
+// ── Shared helper: build ordered list from either new 'items' or legacy payload ─
+// Returns [{ kind, roundId?, type?, data? }, ...] with position = array index.
+function normaliseOrderList(items, rounds, widgets) {
+  if (Array.isArray(items)) return items;
+  return [
+    ...(Array.isArray(rounds)  ? rounds.map(id => ({ kind: 'round',  roundId: id })) : []),
+    ...(Array.isArray(widgets) ? widgets.map(w  => ({ kind: 'widget', ...w }))        : [])
+  ];
+}
+
 async function createQuiz(req, res) {
   try {
-    const { name, rounds, widgets, master_id } = req.body;
+    const { name, items, rounds, widgets, master_id } = req.body;
     const code = generateQuizCode();
 
     const client = await db.getClient();
@@ -106,20 +136,20 @@ async function createQuiz(req, res) {
       );
       const quizId = quizResult.rows[0].id;
 
-      if (rounds && rounds.length > 0) {
-        for (let i = 0; i < rounds.length; i++) {
-          await client.query(
-            'INSERT INTO quiz_rounds (quiz_id, round_id, "order") VALUES ($1, $2, $3)',
-            [quizId, rounds[i], i + 1]
-          );
-        }
-      }
+      const orderList = normaliseOrderList(items, rounds, widgets);
+      let roundOrder = 1, widgetOrder = 1;
 
-      if (widgets && widgets.length > 0) {
-        for (let i = 0; i < widgets.length; i++) {
+      for (let i = 0; i < orderList.length; i++) {
+        const item = orderList[i];
+        if (item.kind === 'round') {
           await client.query(
-            'INSERT INTO quiz_widgets (quiz_id, type, data, "order") VALUES ($1, $2, $3, $4)',
-            [quizId, widgets[i].type, JSON.stringify(widgets[i].data || {}), i + 1]
+            'INSERT INTO quiz_rounds (quiz_id, round_id, "order", position) VALUES ($1, $2, $3, $4)',
+            [quizId, item.roundId, roundOrder++, i]
+          );
+        } else if (item.kind === 'widget') {
+          await client.query(
+            'INSERT INTO quiz_widgets (quiz_id, type, data, "order", position) VALUES ($1, $2, $3, $4, $5)',
+            [quizId, item.type, JSON.stringify(item.data || {}), widgetOrder++, i]
           );
         }
       }
@@ -135,7 +165,6 @@ async function createQuiz(req, res) {
 }
 
 async function startQuiz(req, res) {
-  // Creates a new session in 'lobby' status. Admin then explicitly begins/stops/restarts it.
   try {
     const { id } = req.params;
     const client = await db.getClient();
@@ -144,7 +173,6 @@ async function startQuiz(req, res) {
       const quizResult = await client.query('SELECT * FROM quizzes WHERE id = $1', [id]);
       if (quizResult.rows.length === 0) throw new Error('Quiz not found');
 
-      // End any prior active sessions for this quiz so /active-session returns the new one
       await client.query(
         "UPDATE quiz_sessions SET status = 'finished' WHERE quiz_id = $1 AND status IN ('lobby', 'active')",
         [id]
@@ -166,9 +194,6 @@ async function startQuiz(req, res) {
 }
 
 async function setSessionStatus(req, res) {
-  // Generic transition: lobby | active | finished
-  // After updating the DB this handler broadcasts session_status_changed to all
-  // clients in the session room — the admin no longer needs to do this via socket.
   try {
     const { sessionId } = req.params;
     const { status } = req.body;
@@ -191,7 +216,6 @@ async function setSessionStatus(req, res) {
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Session not found' });
 
-    // Authoritative broadcast — DB written first, then push to all clients
     const io = getIo();
     if (io) {
       io.to(`quiz-${sessionId}`).emit('session_status_changed', {
@@ -208,8 +232,6 @@ async function setSessionStatus(req, res) {
 }
 
 async function restartSession(req, res) {
-  // Reset slide index to 0, clear locked rounds, put back in lobby.
-  // Teams and answers are preserved.
   try {
     const { sessionId } = req.params;
     const result = await db.query(
@@ -235,9 +257,6 @@ async function restartSession(req, res) {
   }
 }
 
-// ── Advance slide via REST (server persists + broadcasts) ────────────────────
-// Use this instead of socket.emit('slide_changed') so the DB write is guaranteed
-// even if the admin's WebSocket happens to be disconnected.
 async function setSessionSlide(req, res) {
   try {
     const { sessionId } = req.params;
@@ -277,33 +296,51 @@ async function getSession(req, res) {
   }
 }
 
-// ── Reorder rounds and widgets within an existing quiz ───────────────────────
-// Body: { roundIds: [id, ...], widgetIds: [id, ...] }
-// Arrays are the complete ordered lists; positions become the new "order" values.
+// ── Reorder: unified items OR legacy roundIds/widgetIds ───────────────────────
+// New body: { items: [{kind:'round', roundId:...} | {kind:'widget', widgetId:...}] }
+// Legacy body: { roundIds: [...], widgetIds: [...] }
 async function reorderQuiz(req, res) {
   try {
     const { id } = req.params;
-    const { roundIds, widgetIds } = req.body;
+    const { items, roundIds, widgetIds } = req.body;
 
     const client = await db.getClient();
     try {
       await client.query('BEGIN');
 
-      if (Array.isArray(roundIds)) {
-        for (let i = 0; i < roundIds.length; i++) {
-          await client.query(
-            'UPDATE quiz_rounds SET "order" = $1 WHERE quiz_id = $2 AND round_id = $3',
-            [i + 1, id, roundIds[i]]
-          );
+      if (Array.isArray(items)) {
+        // New unified format: update position on each row
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          if (item.kind === 'round') {
+            await client.query(
+              'UPDATE quiz_rounds SET position = $1 WHERE quiz_id = $2 AND round_id = $3',
+              [i, id, item.roundId]
+            );
+          } else if (item.kind === 'widget') {
+            await client.query(
+              'UPDATE quiz_widgets SET position = $1 WHERE quiz_id = $2 AND id = $3',
+              [i, id, item.widgetId]
+            );
+          }
         }
-      }
-
-      if (Array.isArray(widgetIds)) {
-        for (let i = 0; i < widgetIds.length; i++) {
-          await client.query(
-            'UPDATE quiz_widgets SET "order" = $1 WHERE quiz_id = $2 AND id = $3',
-            [i + 1, id, widgetIds[i]]
-          );
+      } else {
+        // Legacy format: update per-table "order" column only
+        if (Array.isArray(roundIds)) {
+          for (let i = 0; i < roundIds.length; i++) {
+            await client.query(
+              'UPDATE quiz_rounds SET "order" = $1 WHERE quiz_id = $2 AND round_id = $3',
+              [i + 1, id, roundIds[i]]
+            );
+          }
+        }
+        if (Array.isArray(widgetIds)) {
+          for (let i = 0; i < widgetIds.length; i++) {
+            await client.query(
+              'UPDATE quiz_widgets SET "order" = $1 WHERE quiz_id = $2 AND id = $3',
+              [i + 1, id, widgetIds[i]]
+            );
+          }
         }
       }
 
@@ -320,7 +357,6 @@ async function reorderQuiz(req, res) {
   }
 }
 
-// ── Delete a quiz (blocks if a session is active) ────────────────────────────
 async function deleteQuiz(req, res) {
   try {
     const { id } = req.params;
@@ -328,7 +364,6 @@ async function deleteQuiz(req, res) {
     try {
       await client.query('BEGIN');
 
-      // Prevent deleting a quiz that has a running session
       const sessions = await client.query(
         "SELECT id FROM quiz_sessions WHERE quiz_id = $1 AND status IN ('lobby', 'active')",
         [id]
@@ -359,12 +394,13 @@ async function deleteQuiz(req, res) {
   }
 }
 
-// ── Full update: rename + replace rounds + replace widgets ────────────────────
-// Body: { name, rounds: [roundId, ...], widgets: [{ type, data }, ...] }
+// ── Full update: rename + replace all items ───────────────────────────────────
+// Body: { name, items: [{kind, roundId?, type?, data?}, ...], master_id }
+//   OR legacy: { name, rounds: [roundId,...], widgets: [{type,data},...], master_id }
 async function updateQuiz(req, res) {
   try {
     const { id } = req.params;
-    const { name, rounds, widgets, master_id } = req.body;
+    const { name, items, rounds, widgets, master_id } = req.body;
 
     const client = await db.getClient();
     try {
@@ -379,24 +415,24 @@ async function updateQuiz(req, res) {
         return res.status(404).json({ error: 'Quiz not found' });
       }
 
-      // Replace round associations
-      await client.query('DELETE FROM quiz_rounds WHERE quiz_id = $1', [id]);
-      if (Array.isArray(rounds) && rounds.length > 0) {
-        for (let i = 0; i < rounds.length; i++) {
-          await client.query(
-            'INSERT INTO quiz_rounds (quiz_id, round_id, "order") VALUES ($1, $2, $3)',
-            [id, rounds[i], i + 1]
-          );
-        }
-      }
-
-      // Replace widget associations
+      // Delete all existing associations, then re-insert in the new order
+      await client.query('DELETE FROM quiz_rounds  WHERE quiz_id = $1', [id]);
       await client.query('DELETE FROM quiz_widgets WHERE quiz_id = $1', [id]);
-      if (Array.isArray(widgets) && widgets.length > 0) {
-        for (let i = 0; i < widgets.length; i++) {
+
+      const orderList = normaliseOrderList(items, rounds, widgets);
+      let roundOrder = 1, widgetOrder = 1;
+
+      for (let i = 0; i < orderList.length; i++) {
+        const item = orderList[i];
+        if (item.kind === 'round') {
           await client.query(
-            'INSERT INTO quiz_widgets (quiz_id, type, data, "order") VALUES ($1, $2, $3, $4)',
-            [id, widgets[i].type, JSON.stringify(widgets[i].data || {}), i + 1]
+            'INSERT INTO quiz_rounds (quiz_id, round_id, "order", position) VALUES ($1, $2, $3, $4)',
+            [id, item.roundId, roundOrder++, i]
+          );
+        } else if (item.kind === 'widget') {
+          await client.query(
+            'INSERT INTO quiz_widgets (quiz_id, type, data, "order", position) VALUES ($1, $2, $3, $4, $5)',
+            [id, item.type, JSON.stringify(item.data || {}), widgetOrder++, i]
           );
         }
       }
@@ -427,5 +463,6 @@ module.exports = {
   getSession,
   reorderQuiz,
   deleteQuiz,
-  updateQuiz
+  updateQuiz,
+  loadQuizWithRoundsAndWidgets
 };

@@ -229,19 +229,50 @@ Nothing from the master is ever written into `slides.content`. The slide record 
 
 The three frontends (admin, slideshow, quizzer) all call `buildSlides(quiz)` independently to construct a flat array of slide descriptors. The WebSocket only broadcasts a **slide index** (integer). All clients must produce the exact same array from the same quiz data.
 
-The slide types produced, in order:
+### Interleaved round/widget ordering
+
+Rounds and widgets can appear in **any order** within a quiz. For example:
+
+```
+Round 1 → Scoreboard → Round 2 → Scoreboard → Round 3
+```
+
+`buildSlides` drives this from **`quiz.items`** — a unified ordered array returned by the API where each element has `kind: 'round'` or `kind: 'widget'`. The `position` column on `quiz_rounds` and `quiz_widgets` stores a **shared integer sequence** (0, 1, 2…) across both tables, enabling free interleaving.
+
+**Backward compat**: if `quiz.items` is absent (pre-migration rows with `position = NULL`), `buildSlides` falls back to `quiz.rounds` first, then `quiz.widgets`, which matches the old fixed ordering.
+
+### Slide types produced, per `quiz.items` element
 
 | Type | When present | Key fields |
 |---|---|---|
 | `intro` | Always (first slide) | `title`, `subtitle` |
-| `round_intro` | Once per round | `roundId`, `title` |
-| `question` | Once per question in the round | `roundId`, `questionId`, `questionNumber`, `totalInRound`, `text`, `answer`, `points`, `mediaUrl`, `options`, `answerMode` |
+| `round_intro` | Once per round item | `roundId`, `title` |
+| `question` | Once per question in the round | `roundId`, `questionId`, `questionNumber`, `totalInRound`, `text`, `points`, `mediaUrl`, `options`, `answerMode` |
 | `mark_answers` | Once per round (after questions, before answers) | `roundId`, `roundName`, `totalInRound` |
 | `answer` | Once per question in the round | `roundId`, `questionId`, `questionNumber`, `text`, `answer` |
-| `widget` | Once per quiz widget | `widgetType`, `data` |
+| `widget` | Once per widget item | `widgetType`, `data` |
 | `end` | Always (last slide) | `title`, `subtitle` |
 
 **The `mark_answers` slide is always present for rounds that have at least one question.** Removing it from any one frontend without updating all three will break sync.
+
+### Schema additions for interleaving
+
+```sql
+-- Both columns share a single integer namespace (0 = first, 1 = second, …)
+ALTER TABLE quiz_rounds  ADD COLUMN IF NOT EXISTS position INT DEFAULT NULL;
+ALTER TABLE quiz_widgets ADD COLUMN IF NOT EXISTS position INT DEFAULT NULL;
+```
+
+`loadQuizWithRoundsAndWidgets` in `quizController.js` merges both tables into `quiz.items`, sorted by `COALESCE(position, 999999)`. Rows with `position IS NULL` sort to the end (legacy rounds-then-widgets order).
+
+The `/api/quizzes` POST, PUT, and `/reorder` endpoints all accept a unified `items` array:
+```json
+[
+  { "kind": "round",  "roundId": 1 },
+  { "kind": "widget", "type": "scoreboard", "data": { "title": "Leaderboard" } },
+  { "kind": "round",  "roundId": 2 }
+]
+```
 
 ---
 
