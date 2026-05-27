@@ -111,19 +111,28 @@ Files:
 
 The WebSocket only sends a **slide index** (integer), never the slide data itself. Every app independently calls `buildSlides(quiz)` and looks up `slides[index]`. If any copy diverges — different slide order, different type names, extra slides — the apps will show different content for the same index. Copy changes to all three files simultaneously.
 
-The slide order produced by `buildSlides` is:
+The slide order produced by `buildSlides` is driven by **`quiz.items`** — a unified ordered array returned by the API that can freely interleave rounds and widgets. A quiz can be structured like:
+
+```
+Round 1 → Scoreboard → Round 2 → Scoreboard → Round 3 → End
+```
+
+Each round group always expands into the same internal sequence:
 
 ```
 intro
-  └─ for each round:
-       round_intro
-       question × N
-       mark_answers          ← shown after all questions; teams review/submit before lock
-       answer × N            ← admin advancing here auto-locks the round
-  └─ for each widget:
-       widget
+  └─ for each item in quiz.items (rounds and widgets freely mixed):
+       if kind === 'round':
+         round_intro
+         question × N
+         mark_answers        ← teams review/submit before lock
+         answer × N          ← advancing here auto-locks the round
+       if kind === 'widget':
+         widget
 end
 ```
+
+**Backward compat**: Older quizzes without `quiz.items` fall back to `quiz.rounds` (all rounds first) then `quiz.widgets` (all widgets after), which matches the previous fixed ordering.
 
 ---
 
@@ -171,8 +180,8 @@ Key tables and their purposes:
 | `rounds` | Named question groups with optional `background_color` |
 | `round_questions` | Junction: ordered questions within a round. Has `question_format_override` for per-round MCQ mode. |
 | `quizzes` | Assembled quiz with a unique 6-char `code` and optional `master_id` FK to `slide_masters` |
-| `quiz_rounds` | Junction: ordered rounds within a quiz |
-| `quiz_widgets` | Custom slides (scoreboard/rules/custom) attached to a quiz, with `data` JSONB |
+| `quiz_rounds` | Junction: rounds within a quiz. `position` column stores global interleaved order (shared namespace with `quiz_widgets.position`). Legacy `"order"` column kept for backward compat. |
+| `quiz_widgets` | Custom slides (scoreboard/rules/custom) attached to a quiz, with `data` JSONB. `position` column stores global interleaved order. |
 | `quiz_sessions` | A running instance of a quiz. `status`: `lobby` → `active` → `finished`. `current_slide_index` drives sync. `locked_round_ids` JSONB array tracks which rounds' answers are locked. |
 | `teams` | Teams in a session (name + size). Find-or-create by case-insensitive name enables rejoining. |
 | `answers` | Team answer submissions (auto-saved on every keystroke via socket) |
@@ -306,6 +315,8 @@ Copy `.env.example` to `.env` before running locally.
 - **Quizzer joining**: The Quizzer calls `GET /api/quizzes/by-code/:code` to find the quiz, then `GET /api/quizzes/:id/active-session` to find the running session. It never starts a session — only the admin does. If a team name already exists in the session, the existing record is returned (rejoin path).
 
 - **Auto-mark normalisation**: The comparison strips leading "the ", collapses whitespace, and lowercases both sides. If a question's correct answer is `"The Moon"` and a team types `"moon"`, it will auto-score 1. Admins can still override by manually marking 0 or 0.5.
+
+- **Interleaved rounds and widgets**: `quiz_rounds.position` and `quiz_widgets.position` share a single integer namespace (0, 1, 2…) so a quiz can be ordered `Round 1 → Scoreboard → Round 2 → Scoreboard`. Both `buildSlides` and `loadQuizWithRoundsAndWidgets` use `quiz.items` (merged, sorted by position) rather than the legacy separate `quiz.rounds` / `quiz.widgets` arrays. Older rows with `position = NULL` fall back to the old per-table `"order"` column and are treated as rounds-first, then widgets.
 
 - **Drag and drop library**: All drag-drop uses `@dnd-kit` (QuizBuilder uses `@dnd-kit/core` + `@dnd-kit/sortable`). RoundBuilder uses `@hello-pangea/dnd`. Do not mix the two libraries within the same component tree.
 

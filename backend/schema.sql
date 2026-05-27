@@ -261,3 +261,13 @@ ALTER TABLE slide_masters ADD COLUMN IF NOT EXISTS templates JSONB NOT NULL DEFA
 -- Allow a quiz to declare which master theme it uses.
 -- The QuizBuilder presents custom pages from that master as available widgets.
 ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS master_id INT REFERENCES slide_masters(id) ON DELETE SET NULL;
+
+-- ============================================================
+-- Mixed rounds & widgets — interleaved ordering (additive)
+-- ============================================================
+-- position: global position of this round/widget in the quiz sequence.
+-- Rounds and widgets share a single integer namespace so they can be
+-- freely interleaved (e.g. Round 1 → Scoreboard → Round 2 → Scoreboard).
+-- NULL means legacy row — sort those using the old per-table "order" column.
+ALTER TABLE quiz_rounds  ADD COLUMN IF NOT EXISTS position INT DEFAULT NULL;
+ALTER TABLE quiz_widgets ADD COLUMN IF NOT EXISTS position INT DEFAULT NULL;

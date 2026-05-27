@@ -1,6 +1,7 @@
 function safeParse(s) { try { return JSON.parse(s); } catch { return {}; } }
 
 // MUST stay in sync with frontend-admin/src/utils/buildSlides.js
+// Rounds and widgets can be freely interleaved via quiz.items.
 export function buildSlides(quiz) {
   if (!quiz) return [];
   const slides = [];
@@ -11,61 +12,70 @@ export function buildSlides(quiz) {
     subtitle: `Quiz Code: ${quiz.code}`
   });
 
-  (quiz.rounds || []).forEach((round) => {
-    slides.push({
-      type: 'round_intro',
-      roundId: round.id,
-      title: round.name,
-      background: round.background_color
-    });
+  // Unified item sequence: rounds and widgets can appear in any order
+  const items = quiz.items || [
+    ...(quiz.rounds  || []).map(r => ({ kind: 'round',  ...r })),
+    ...(quiz.widgets || []).map(w => ({ kind: 'widget', ...w }))
+  ];
 
-    const questions = (round.questions || []).filter(q => q && q.id);
-
-    questions.forEach((q, i) => {
+  items.forEach(item => {
+    if (item.kind === 'round') {
+      const round = item;
       slides.push({
-        type: 'question',
+        type: 'round_intro',
         roundId: round.id,
-        questionId: q.id,
-        questionNumber: i + 1,
-        totalInRound: questions.length,
-        roundName: round.name,
-        text: q.text,
-        questionType: q.type,
-        mediaUrl: q.media_url,
-        options: q.options || [],
-        points: q.points
+        title: round.name,
+        background: round.background_color
       });
-    });
 
-    if (questions.length > 0) {
+      const questions = (round.questions || []).filter(q => q && q.id);
+
+      questions.forEach((q, i) => {
+        slides.push({
+          type: 'question',
+          roundId: round.id,
+          questionId: q.id,
+          questionNumber: i + 1,
+          totalInRound: questions.length,
+          roundName: round.name,
+          text: q.text,
+          questionType: q.type,
+          mediaUrl: q.media_url,
+          options: q.options || [],
+          points: q.points
+        });
+      });
+
+      if (questions.length > 0) {
+        slides.push({
+          type: 'mark_answers',
+          roundId: round.id,
+          roundName: round.name,
+          totalInRound: questions.length
+        });
+      }
+
+      questions.forEach((q, i) => {
+        slides.push({
+          type: 'answer',
+          roundId: round.id,
+          questionId: q.id,
+          questionNumber: i + 1,
+          roundName: round.name,
+          text: q.text,
+          answer: q.answer,
+          points: q.points
+        });
+      });
+
+    } else if (item.kind === 'widget') {
+      const w = item;
       slides.push({
-        type: 'mark_answers',
-        roundId: round.id,
-        roundName: round.name,
-        totalInRound: questions.length
+        type: 'widget',
+        widgetType: w.type,
+        data: typeof w.data === 'string' ? safeParse(w.data) : (w.data || {})
       });
     }
-
-    questions.forEach((q, i) => {
-      slides.push({
-        type: 'answer',
-        roundId: round.id,
-        questionId: q.id,
-        questionNumber: i + 1,
-        roundName: round.name,
-        text: q.text,
-        answer: q.answer,
-        points: q.points
-      });
-    });
-  });
-
-  (quiz.widgets || []).forEach((w) => {
-    slides.push({
-      type: 'widget',
-      widgetType: w.type,
-      data: typeof w.data === 'string' ? safeParse(w.data) : (w.data || {})
-    });
   });
 
   slides.push({

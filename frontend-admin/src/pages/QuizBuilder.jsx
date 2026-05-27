@@ -30,8 +30,7 @@ const DEFAULT_WIDGET_DATA = {
   custom:     { title: 'Custom Slide', body: '', image_url: '', bg_color: '#0a0e1f', bg_image: '' }
 };
 
-
-// ── Tile content (icon + label + meta) ──────────────────────────────────────
+// ── Tile content (icon + label + meta) ────────────────────────────────────────
 function TileBody({ item }) {
   if (item.kind === 'round') {
     const qc = item.questionCount ?? 0;
@@ -54,7 +53,7 @@ function TileBody({ item }) {
   );
 }
 
-// ── Sortable tile for new-quiz builder (has remove + edit buttons) ────────────
+// ── Sortable tile for new-quiz builder (has remove + edit buttons) ─────────────
 function BuilderTile({ item, index, onRemove, onEdit }) {
   const {
     attributes, listeners,
@@ -80,7 +79,7 @@ function BuilderTile({ item, index, onRemove, onEdit }) {
   );
 }
 
-// ── Read-only sortable tile for the quiz organizer panel ─────────────────────
+// ── Read-only sortable tile for the quiz organizer panel ──────────────────────
 function OrgTile({ item, index }) {
   const {
     attributes, listeners,
@@ -102,6 +101,29 @@ function OrgTile({ item, index }) {
   );
 }
 
+// ── Helper: reconstruct UI items from quiz.items (API unified list) ───────────
+function quizItemsToUiItems(quizItems, prefix) {
+  return (quizItems || []).map(item => {
+    if (item.kind === 'round') {
+      return {
+        uid:           `${prefix}-r-${item.id}`,
+        kind:          'round',
+        roundId:       item.id,
+        name:          item.name,
+        questionCount: (item.questions || []).filter(q => q?.id).length
+      };
+    } else {
+      return {
+        uid:      `${prefix}-w-${item.id}`,
+        kind:     'widget',
+        widgetId: item.id,   // DB id — needed for reorder persist
+        type:     item.type,
+        data:     typeof item.data === 'string' ? JSON.parse(item.data) : (item.data || {})
+      };
+    }
+  });
+}
+
 // ── Main page ────────────────────────────────────────────────────────────────
 export default function QuizBuilder() {
   const [quizzes, setQuizzes]       = useState([]);
@@ -109,11 +131,11 @@ export default function QuizBuilder() {
   const [masters, setMasters]       = useState([]);
   const [selectedMasterId, setSelectedMasterId] = useState('');
   const [name, setName]             = useState('');
-  const [orderItems, setOrderItems] = useState([]);   // items in new-quiz / edit-quiz order panel
+  const [orderItems, setOrderItems] = useState([]);   // mixed rounds + widgets in build order
   const [editingWidget, setEditingWidget] = useState(null);
-  const [editingQuiz, setEditingQuiz]     = useState(null); // null | { id } — edit mode
+  const [editingQuiz, setEditingQuiz]     = useState(null);
   const [organizingId, setOrganizingId]   = useState(null);
-  const [organizedData, setOrganizedData] = useState(null); // { id, name, rounds[], widgets[] }
+  const [organizedData, setOrganizedData] = useState(null); // { id, name, items[] }
   const [error, setError]           = useState(null);
 
   const sensors = useSensors(
@@ -139,7 +161,7 @@ export default function QuizBuilder() {
     return Array.isArray(m?.templates?.custom) ? m.templates.custom : [];
   }, [selectedMasterId, masters]);
 
-  // Rounds not yet in the order panel
+  // Rounds not yet in the order panel (each round can only appear once)
   const availableRounds = useMemo(() => {
     const usedIds = new Set(orderItems.filter(i => i.kind === 'round').map(i => i.roundId));
     return allRounds.filter(r => !usedIds.has(r.id));
@@ -172,8 +194,8 @@ export default function QuizBuilder() {
       kind: 'widget',
       type: 'custom',
       data: {
-        title:     page.title || '',
-        body:      page.body  || '',
+        title:     page.title    || '',
+        body:      page.body     || '',
         image_url: page.imageUrl || '',
         bg_color:  page.bgColor  || '#0a0e1f',
       },
@@ -185,7 +207,7 @@ export default function QuizBuilder() {
   const updateWidgetData = (uid, data) =>
     setOrderItems(prev => prev.map(i => i.uid === uid ? { ...i, data } : i));
 
-  // @dnd-kit drag-end: same-container sort only
+  // @dnd-kit drag-end: reorder within the order panel
   const handleBuilderDragEnd = ({ active, over }) => {
     if (!over || active.id === over.id) return;
     setOrderItems(items => {
@@ -195,18 +217,23 @@ export default function QuizBuilder() {
     });
   };
 
-  // ── Create or update quiz ─────────────────────────────────────────────────
+  // ── Create or update quiz ──────────────────────────────────────────────────
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const rounds    = orderItems.filter(i => i.kind === 'round').map(i => i.roundId);
-      const widgets   = orderItems.filter(i => i.kind === 'widget').map(i => ({ type: i.type, data: i.data || {} }));
+      // Send a single unified items array — preserves the interleaved round/widget order
+      const items = orderItems.map(i =>
+        i.kind === 'round'
+          ? { kind: 'round',  roundId: i.roundId }
+          : { kind: 'widget', type: i.type, data: i.data || {} }
+      );
       const master_id = selectedMasterId ? parseInt(selectedMasterId) : null;
+
       if (editingQuiz) {
-        await api.put(`/quizzes/${editingQuiz.id}`, { name, rounds, widgets, master_id });
+        await api.put(`/quizzes/${editingQuiz.id}`, { name, items, master_id });
         setEditingQuiz(null);
       } else {
-        const newQuiz = await api.post('/quizzes', { name, rounds, widgets, master_id });
+        const newQuiz = await api.post('/quizzes', { name, items, master_id });
         alert(`Quiz created! Code: ${newQuiz.code}`);
       }
       setName('');
@@ -223,28 +250,19 @@ export default function QuizBuilder() {
     setSelectedMasterId('');
   };
 
-  // ── Load existing quiz into the builder form ──────────────────────────────
+  // ── Load existing quiz into the builder form ───────────────────────────────
   const handleEdit = async (quizId) => {
     try {
       const quiz = await api.get(`/quizzes/${quizId}`);
-      const roundItems = (quiz.rounds || []).map(r => ({
-        uid:           `edit-r-${r.id}`,
-        kind:          'round',
-        roundId:       r.id,
-        name:          r.name,
-        questionCount: (r.questions || []).filter(q => q?.id).length
-      }));
-      const widgetItems = (quiz.widgets || []).map(w => ({
-        uid:  `edit-w-${w.id}`,
-        kind: 'widget',
-        type: w.type,
-        data: typeof w.data === 'string' ? JSON.parse(w.data) : (w.data || {})
-      }));
+      // quiz.items is the unified ordered sequence from the API
+      const source = quiz.items || [
+        ...(quiz.rounds  || []).map(r => ({ kind: 'round',  ...r })),
+        ...(quiz.widgets || []).map(w => ({ kind: 'widget', ...w }))
+      ];
       setEditingQuiz({ id: quiz.id });
       setName(quiz.name);
       setSelectedMasterId(quiz.master_id ? String(quiz.master_id) : '');
-      setOrderItems([...roundItems, ...widgetItems]);
-      // Close the organizer panel if open for this quiz
+      setOrderItems(quizItemsToUiItems(source, 'edit'));
       if (organizingId === quizId) { setOrganizingId(null); setOrganizedData(null); }
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err) { setError(err.message); }
@@ -270,24 +288,15 @@ export default function QuizBuilder() {
     }
     try {
       const quiz = await api.get(`/quizzes/${quizId}`);
+      const source = quiz.items || [
+        ...(quiz.rounds  || []).map(r => ({ kind: 'round',  ...r })),
+        ...(quiz.widgets || []).map(w => ({ kind: 'widget', ...w }))
+      ];
       setOrganizingId(quizId);
       setOrganizedData({
-        id:      quiz.id,
-        name:    quiz.name,
-        rounds:  (quiz.rounds  || []).map(r => ({
-          uid:           `org-r-${r.id}`,
-          kind:          'round',
-          roundId:       r.id,
-          name:          r.name,
-          questionCount: (r.questions || []).filter(q => q?.id).length
-        })),
-        widgets: (quiz.widgets || []).map(w => ({
-          uid:      `org-w-${w.id}`,
-          kind:     'widget',
-          widgetId: w.id,
-          type:     w.type,
-          data:     typeof w.data === 'string' ? JSON.parse(w.data) : (w.data || {})
-        }))
+        id:    quiz.id,
+        name:  quiz.name,
+        items: quizItemsToUiItems(source, 'org')
       });
     } catch (err) { setError(err.message); }
   };
@@ -340,7 +349,7 @@ export default function QuizBuilder() {
           <div className="dnd-panel">
             <div className="dnd-panel-header">
               <h3>Available Rounds</h3>
-              <p className="dnd-hint">Click a round to add it to your quiz</p>
+              <p className="dnd-hint">Click to add — rounds and widgets can be freely mixed</p>
             </div>
 
             <div className="so-round-picker">
@@ -400,11 +409,11 @@ export default function QuizBuilder() {
             </div>
           </div>
 
-          {/* Right panel: sortable order list */}
+          {/* Right panel: sortable order list — rounds and widgets freely mixed */}
           <div className="dnd-panel">
             <div className="dnd-panel-header">
               <h3>Quiz Order ({orderItems.length})</h3>
-              <p className="dnd-hint">Drag tiles to reorder</p>
+              <p className="dnd-hint">Drag tiles to reorder — mix rounds and widgets freely</p>
             </div>
 
             {orderItems.length === 0 ? (
@@ -472,7 +481,9 @@ export default function QuizBuilder() {
   );
 }
 
-// ── QuizCard with inline organizer ───────────────────────────────────────────
+// ── QuizCard with inline organizer ────────────────────────────────────────────
+// The organizer shows a single unified list of rounds and widgets, freely mixed,
+// matching the actual playback order. Drag to reorder; changes persist immediately.
 function QuizCard({ quiz, isOpen, isEditing, orgData, onOrganize, onEdit, onDelete, onOrgDataChange, onError }) {
   const [saveState, setSaveState] = useState(null); // null | 'saving' | 'saved'
 
@@ -481,13 +492,16 @@ function QuizCard({ quiz, isOpen, isEditing, orgData, onOrganize, onEdit, onDele
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
-  // Persist the current orgData to the backend
+  // Persist reordered items to the backend
   const persist = async (nextData) => {
     setSaveState('saving');
     try {
       await api.put(`/quizzes/${quiz.id}/reorder`, {
-        roundIds:  nextData.rounds.map(r => r.roundId),
-        widgetIds: nextData.widgets.map(w => w.widgetId)
+        items: nextData.items.map(i =>
+          i.kind === 'round'
+            ? { kind: 'round',  roundId:  i.roundId }
+            : { kind: 'widget', widgetId: i.widgetId }
+        )
       });
       setSaveState('saved');
       setTimeout(() => setSaveState(null), 1800);
@@ -497,29 +511,12 @@ function QuizCard({ quiz, isOpen, isEditing, orgData, onOrganize, onEdit, onDele
     }
   };
 
-  // ── Reorder-persist code path ────────────────────────────────────────────
-  // 1. @dnd-kit fires onDragEnd with { active, over }
-  // 2. arrayMove() produces the new ordered array (optimistic UI update)
-  // 3. onOrgDataChange() re-renders tiles immediately
-  // 4. persist() → PUT /api/quizzes/:id/reorder → UPDATE quiz_rounds / quiz_widgets "order"
-  const handleRoundDragEnd = ({ active, over }) => {
+  const handleItemDragEnd = ({ active, over }) => {
     if (!over || active.id === over.id || !orgData) return;
-    const rounds  = orgData.rounds;
-    const from    = rounds.findIndex(r => r.uid === active.id);
-    const to      = rounds.findIndex(r => r.uid === over.id);
+    const from = orgData.items.findIndex(i => i.uid === active.id);
+    const to   = orgData.items.findIndex(i => i.uid === over.id);
     if (from < 0 || to < 0) return;
-    const next = { ...orgData, rounds: arrayMove(rounds, from, to) };
-    onOrgDataChange(next);
-    persist(next);
-  };
-
-  const handleWidgetDragEnd = ({ active, over }) => {
-    if (!over || active.id === over.id || !orgData) return;
-    const widgets = orgData.widgets;
-    const from    = widgets.findIndex(w => w.uid === active.id);
-    const to      = widgets.findIndex(w => w.uid === over.id);
-    if (from < 0 || to < 0) return;
-    const next = { ...orgData, widgets: arrayMove(widgets, from, to) };
+    const next = { ...orgData, items: arrayMove(orgData.items, from, to) };
     onOrgDataChange(next);
     persist(next);
   };
@@ -563,73 +560,40 @@ function QuizCard({ quiz, isOpen, isEditing, orgData, onOrganize, onEdit, onDele
           <div className="so-org-status">
             {saveState === 'saving' && <span className="so-saving">Saving…</span>}
             {saveState === 'saved'  && <span className="so-saved">✓ Saved</span>}
-            {!saveState             && <span className="so-hint-drag">Drag tiles to change running order</span>}
+            {!saveState             && (
+              <span className="so-hint-drag">
+                Drag tiles to reorder — rounds and widgets can be freely mixed
+              </span>
+            )}
           </div>
 
-          <div className="so-org-cols">
-            {/* Rounds */}
-            <div className="so-org-section">
-              <p className="so-section-hd">
-                Rounds
-                <span className="so-section-note">play in this order</span>
-              </p>
-              {orgData.rounds.length === 0 ? (
-                <p className="so-empty">No rounds</p>
-              ) : (
-                <DndContext
-                  sensors={sensors}
-                  collisionDetection={closestCenter}
-                  onDragEnd={handleRoundDragEnd}
-                >
-                  <SortableContext
-                    items={orgData.rounds.map(r => r.uid)}
-                    strategy={verticalListSortingStrategy}
-                  >
-                    <div className="so-list">
-                      {orgData.rounds.map((r, i) => (
-                        <OrgTile key={r.uid} item={r} index={i} />
-                      ))}
-                    </div>
-                  </SortableContext>
-                </DndContext>
-              )}
-            </div>
-
-            {/* Widgets */}
-            <div className="so-org-section">
-              <p className="so-section-hd">
-                Widgets
-                <span className="so-section-note">shown after all rounds</span>
-              </p>
-              {orgData.widgets.length === 0 ? (
-                <p className="so-empty">No widgets</p>
-              ) : (
-                <DndContext
-                  sensors={sensors}
-                  collisionDetection={closestCenter}
-                  onDragEnd={handleWidgetDragEnd}
-                >
-                  <SortableContext
-                    items={orgData.widgets.map(w => w.uid)}
-                    strategy={verticalListSortingStrategy}
-                  >
-                    <div className="so-list">
-                      {orgData.widgets.map((w, i) => (
-                        <OrgTile key={w.uid} item={w} index={i} />
-                      ))}
-                    </div>
-                  </SortableContext>
-                </DndContext>
-              )}
-            </div>
-          </div>
+          {orgData.items.length === 0 ? (
+            <p className="so-empty">No rounds or widgets</p>
+          ) : (
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleItemDragEnd}
+            >
+              <SortableContext
+                items={orgData.items.map(i => i.uid)}
+                strategy={verticalListSortingStrategy}
+              >
+                <div className="so-list">
+                  {orgData.items.map((item, i) => (
+                    <OrgTile key={item.uid} item={item} index={i} />
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
+          )}
         </div>
       )}
     </div>
   );
 }
 
-// ── Widget editor modal ───────────────────────────────────────────────────────
+// ── Widget editor modal ────────────────────────────────────────────────────────
 function WidgetEditor({ widget, onSave, onClose }) {
   const [data, setData] = useState(widget.data || {});
   const set = (k, v) => setData(d => ({ ...d, [k]: v }));
@@ -689,7 +653,7 @@ function WidgetEditor({ widget, onSave, onClose }) {
           <WidgetPreview type={widget.type} data={data} />
         </div>
         <div className="modal-footer">
-          <button onClick={onClose}      className="btn btn-secondary">Cancel</button>
+          <button onClick={onClose}           className="btn btn-secondary">Cancel</button>
           <button onClick={() => onSave(data)} className="btn btn-primary">Save Widget</button>
         </div>
       </div>
