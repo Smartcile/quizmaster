@@ -1,5 +1,6 @@
 const db = require('../config/database');
 const { generateQuizCode } = require('../utils/codeGenerator');
+const { getIo } = require('../sockets');
 
 async function getAllQuizzes(req, res) {
   try {
@@ -69,8 +70,11 @@ async function getQuizByCode(req, res) {
 async function getActiveSession(req, res) {
   try {
     const { id } = req.params;
+    // Return any session that is not yet finished — includes lobby (waiting for teams)
+    // and active (quiz in progress). Clients use the returned status to decide how to render.
     const result = await db.query(
-      `SELECT * FROM quiz_sessions WHERE quiz_id = $1 AND status = 'active'
+      `SELECT * FROM quiz_sessions
+       WHERE quiz_id = $1 AND status IN ('lobby', 'active')
        ORDER BY created_at DESC LIMIT 1`,
       [id]
     );
@@ -157,6 +161,8 @@ async function startQuiz(req, res) {
 
 async function setSessionStatus(req, res) {
   // Generic transition: lobby | active | finished
+  // After updating the DB this handler broadcasts session_status_changed to all
+  // clients in the session room — the admin no longer needs to do this via socket.
   try {
     const { sessionId } = req.params;
     const { status } = req.body;
@@ -178,6 +184,17 @@ async function setSessionStatus(req, res) {
       params
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Session not found' });
+
+    // Authoritative broadcast — DB written first, then push to all clients
+    const io = getIo();
+    if (io) {
+      io.to(`quiz-${sessionId}`).emit('session_status_changed', {
+        status,
+        currentSlideIndex: result.rows[0].current_slide_index || 0,
+        timestamp: new Date().toISOString()
+      });
+    }
+
     res.json(result.rows[0]);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -185,13 +202,59 @@ async function setSessionStatus(req, res) {
 }
 
 async function restartSession(req, res) {
-  // Reset slide index to 0 and put back in lobby; keeps the same session and teams.
+  // Reset slide index to 0, clear locked rounds, put back in lobby.
+  // Teams and answers are preserved.
   try {
+    const { sessionId } = req.params;
     const result = await db.query(
-      "UPDATE quiz_sessions SET status = 'lobby', current_slide_index = 0, started_at = NULL WHERE id = $1 RETURNING *",
-      [req.params.sessionId]
+      `UPDATE quiz_sessions
+       SET status = 'lobby', current_slide_index = 0, started_at = NULL, locked_round_ids = '[]'
+       WHERE id = $1 RETURNING *`,
+      [sessionId]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Session not found' });
+
+    const io = getIo();
+    if (io) {
+      io.to(`quiz-${sessionId}`).emit('session_status_changed', {
+        status: 'lobby',
+        currentSlideIndex: 0,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
+// ── Advance slide via REST (server persists + broadcasts) ────────────────────
+// Use this instead of socket.emit('slide_changed') so the DB write is guaranteed
+// even if the admin's WebSocket happens to be disconnected.
+async function setSessionSlide(req, res) {
+  try {
+    const { sessionId } = req.params;
+    const { slideIndex } = req.body;
+
+    if (typeof slideIndex !== 'number') {
+      return res.status(400).json({ error: 'slideIndex must be a number' });
+    }
+
+    const result = await db.query(
+      'UPDATE quiz_sessions SET current_slide_index = $1 WHERE id = $2 RETURNING *',
+      [slideIndex, sessionId]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Session not found' });
+
+    const io = getIo();
+    if (io) {
+      io.to(`quiz-${sessionId}`).emit('slide_changed', {
+        slideIndex,
+        timestamp: new Date().toISOString()
+      });
+    }
+
     res.json(result.rows[0]);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -208,6 +271,49 @@ async function getSession(req, res) {
   }
 }
 
+// ── Reorder rounds and widgets within an existing quiz ───────────────────────
+// Body: { roundIds: [id, ...], widgetIds: [id, ...] }
+// Arrays are the complete ordered lists; positions become the new "order" values.
+async function reorderQuiz(req, res) {
+  try {
+    const { id } = req.params;
+    const { roundIds, widgetIds } = req.body;
+
+    const client = await db.getClient();
+    try {
+      await client.query('BEGIN');
+
+      if (Array.isArray(roundIds)) {
+        for (let i = 0; i < roundIds.length; i++) {
+          await client.query(
+            'UPDATE quiz_rounds SET "order" = $1 WHERE quiz_id = $2 AND round_id = $3',
+            [i + 1, id, roundIds[i]]
+          );
+        }
+      }
+
+      if (Array.isArray(widgetIds)) {
+        for (let i = 0; i < widgetIds.length; i++) {
+          await client.query(
+            'UPDATE quiz_widgets SET "order" = $1 WHERE quiz_id = $2 AND id = $3',
+            [i + 1, id, widgetIds[i]]
+          );
+        }
+      }
+
+      await client.query('COMMIT');
+      res.json({ ok: true });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
 module.exports = {
   getAllQuizzes,
   getQuiz,
@@ -216,6 +322,8 @@ module.exports = {
   createQuiz,
   startQuiz,
   setSessionStatus,
+  setSessionSlide,
   restartSession,
-  getSession
+  getSession,
+  reorderQuiz
 };

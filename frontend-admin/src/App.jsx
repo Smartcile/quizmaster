@@ -7,6 +7,8 @@ import RoundBuilder from './pages/RoundBuilder';
 import QuizBuilder from './pages/QuizBuilder';
 import AnswerMarking from './pages/AnswerMarking';
 import QuizControl from './pages/QuizControl';
+import SlideEditor from './pages/SlideEditor';
+import MasterEditor from './pages/MasterEditor';
 
 function App() {
   const [authed, setAuthed] = useState(null); // null = checking, false = login, true = in
@@ -50,6 +52,10 @@ function App() {
         return <AnswerMarking sessionId={activeQuiz?.sessionId} />;
       case 'control':
         return <QuizControl sessionId={activeQuiz?.sessionId} quiz={activeQuiz?.quiz} />;
+      case 'slides':
+        return <SlideEditor />;
+      case 'masters':
+        return <MasterEditor />;
       default:
         return (
           <Dashboard
@@ -71,6 +77,8 @@ function App() {
           <li><button onClick={() => setCurrentPage('questions')} className={currentPage === 'questions' ? 'active' : ''}>Questions</button></li>
           <li><button onClick={() => setCurrentPage('rounds')} className={currentPage === 'rounds' ? 'active' : ''}>Rounds</button></li>
           <li><button onClick={() => setCurrentPage('quizzes')} className={currentPage === 'quizzes' ? 'active' : ''}>Quizzes</button></li>
+          <li><button onClick={() => setCurrentPage('slides')} className={currentPage === 'slides' ? 'active' : ''}>Slides</button></li>
+          <li><button onClick={() => setCurrentPage('masters')} className={currentPage === 'masters' ? 'active' : ''}>Masters</button></li>
           {activeQuiz && (
             <>
               <li><button onClick={() => setCurrentPage('control')} className={currentPage === 'control' ? 'active' : ''}>Control</button></li>

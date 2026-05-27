@@ -107,6 +107,9 @@ ALTER TABLE questions ADD COLUMN IF NOT EXISTS options JSONB DEFAULT '[]'::jsonb
 ALTER TABLE questions ADD COLUMN IF NOT EXISTS difficulty VARCHAR(20) DEFAULT 'medium';
 ALTER TABLE questions ADD COLUMN IF NOT EXISTS answer_mode VARCHAR(20) DEFAULT 'text';
 ALTER TABLE quiz_sessions ADD COLUMN IF NOT EXISTS started_at TIMESTAMP;
+-- locked_round_ids: JSONB array of round IDs whose answers have been locked by the admin.
+-- Persisted so rejoining clients know which rounds are already locked.
+ALTER TABLE quiz_sessions ADD COLUMN IF NOT EXISTS locked_round_ids JSONB NOT NULL DEFAULT '[]';
 
 -- Create indexes
 CREATE INDEX IF NOT EXISTS idx_questions_type ON questions(type);
@@ -118,3 +121,98 @@ CREATE INDEX IF NOT EXISTS idx_teams_session_id ON teams(quiz_session_id);
 CREATE INDEX IF NOT EXISTS idx_answers_team_id ON answers(team_id);
 CREATE INDEX IF NOT EXISTS idx_scores_team_id ON scores(team_id);
 CREATE INDEX IF NOT EXISTS idx_brownie_points_team_id ON brownie_points(team_id);
+
+-- ============================================================
+-- Slide system — masters + slides
+-- Added: 2026-05-27
+-- ============================================================
+
+-- Enum: slide types
+DO $$ BEGIN
+  CREATE TYPE slide_type AS ENUM ('question', 'answer', 'intro', 'custom', 'widget');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- Enum: question_format (distinct from the legacy answer_mode column)
+DO $$ BEGIN
+  CREATE TYPE question_format AS ENUM ('standard', 'multichoice', 'both');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- slide_masters: defines the visual frame shared by many slides.
+-- Editing a master automatically resyles every slide that references it
+-- because master data is resolved at render time, never copied into slides.
+--
+-- styles JSONB shape:
+--   { "<name>": { "fontFamily": string, "fontSize": number,
+--                 "color": string, "fontWeight": string } }
+--   Common names: "title", "body", "answer"
+--
+-- placeholders JSONB shape (array):
+--   [{ "id": string, "x": number, "y": number,
+--      "width": number, "height": number,
+--      "styleName": string,   -- references a key in styles
+--      "role": string         -- "question" | "answer" | "title"
+--    }]
+CREATE TABLE IF NOT EXISTS slide_masters (
+  id                   SERIAL PRIMARY KEY,
+  name                 VARCHAR(255) NOT NULL,
+  background_color     VARCHAR(7),
+  background_image_url VARCHAR(500),
+  styles               JSONB NOT NULL DEFAULT '{}',
+  placeholders         JSONB NOT NULL DEFAULT '[]',
+  created_at           TIMESTAMP DEFAULT NOW(),
+  updated_at           TIMESTAMP DEFAULT NOW()
+);
+
+-- slides: one record per slide in a quiz.
+-- content holds ONLY slide-owned Fabric.js objects (typed text + free elements).
+-- The master's background, styles, and placeholder layout are looked up via
+-- master_id at render time and composited UNDER the slide content layer.
+-- Master-owned data is never duplicated here.
+CREATE TABLE IF NOT EXISTS slides (
+  id         SERIAL PRIMARY KEY,
+  quiz_id    INT NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
+  master_id  INT REFERENCES slide_masters(id) ON DELETE SET NULL,
+  type       slide_type NOT NULL DEFAULT 'custom',
+  "order"    INT NOT NULL,
+  content    JSONB NOT NULL DEFAULT '[]',
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- ============================================================
+-- questions table additions (additive — preserves all rows)
+-- ============================================================
+
+-- approved: human sign-off before a question enters a live quiz
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS approved BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- question_format: how this question may be presented
+-- 'standard'    — open text answer only
+-- 'multichoice' — MCQ options only
+-- 'both'        — either mode depending on round/session config
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS question_format question_format DEFAULT 'standard';
+
+-- difficulty already exists as VARCHAR(20). Add a CHECK constraint to
+-- formalise the allowed values without changing the column type.
+DO $$ BEGIN
+  ALTER TABLE questions
+    ADD CONSTRAINT questions_difficulty_check
+    CHECK (difficulty IN ('easy', 'medium', 'hard'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- ============================================================
+-- Indexes for new tables / columns
+-- ============================================================
+CREATE INDEX IF NOT EXISTS idx_slides_quiz_id    ON slides(quiz_id);
+CREATE INDEX IF NOT EXISTS idx_slides_master_id  ON slides(master_id);
+CREATE INDEX IF NOT EXISTS idx_slides_type       ON slides(type);
+CREATE INDEX IF NOT EXISTS idx_slides_order      ON slides(quiz_id, "order");
+CREATE INDEX IF NOT EXISTS idx_questions_approved ON questions(approved);
+CREATE INDEX IF NOT EXISTS idx_questions_format   ON questions(question_format);
+
+-- round_questions: per-question format override for 'both'-format questions.
+-- Stores the mode chosen for this specific round; does not modify the source question.
+ALTER TABLE round_questions ADD COLUMN IF NOT EXISTS question_format_override VARCHAR(20);

@@ -13,15 +13,19 @@ const quizRoutes = require('./routes/quizzes');
 const teamRoutes = require('./routes/teams');
 const answerRoutes = require('./routes/answers');
 const uploadRoutes = require('./routes/upload');
+const mastersRoutes = require('./routes/masters');
+const slidesRoutes = require('./routes/slides');
 const { setupWebSocketHandlers } = require('./websocket/handlers');
 const { errorHandler } = require('./middleware/errorHandler');
 const { login, requireAdminForWrites } = require('./middleware/auth');
+const { setIo } = require('./sockets');
 
 const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: { origin: '*', methods: ['GET', 'POST'] }
 });
+setIo(io); // make io available to controllers without circular requires
 
 const PORT = process.env.PORT || 5000;
 
@@ -44,6 +48,8 @@ app.get('/api/auth/verify', (req, res) => {
 app.use('/api/questions', requireAdminForWrites, questionRoutes);
 app.use('/api/rounds', requireAdminForWrites, roundRoutes);
 app.use('/api/quizzes', requireAdminForWrites, quizRoutes);
+app.use('/api/masters', requireAdminForWrites, mastersRoutes);
+app.use('/api/slides', requireAdminForWrites, slidesRoutes);
 
 // Teams + answers + upload: kept public so audience clients can write.
 // (Adjust if you want stricter control.)

@@ -5,11 +5,12 @@ import { api } from '../services/api';
 
 export default function QuizControl({ sessionId, quiz }) {
   const [currentSlide, setCurrentSlide] = useState(0);
-  const [sessionStatus, setSessionStatus] = useState('lobby'); // lobby | active | finished
+  const [sessionStatus, setSessionStatus] = useState('lobby');
   const [teamsCount, setTeamsCount] = useState(0);
   const socket = useWebSocket();
   const slides = useMemo(() => buildSlides(quiz), [quiz]);
 
+  // ── Initial state from REST ──────────────────────────────────────────────
   useEffect(() => {
     if (!sessionId) return;
     api.get(`/quizzes/sessions/${sessionId}`).then(s => {
@@ -20,41 +21,68 @@ export default function QuizControl({ sessionId, quiz }) {
     api.get(`/teams/session/${sessionId}`).then(t => setTeamsCount(t.length)).catch(() => {});
   }, [sessionId]);
 
+  // ── WebSocket subscriptions + auto-rejoin ────────────────────────────────
   useEffect(() => {
     if (!sessionId || !socket) return;
-    socket.emit('join_quiz', { sessionId, role: 'admin' });
+
+    // Unified join/rejoin — called on every (re)connect
+    const rejoin = () => socket.emit('join_quiz', { sessionId, role: 'admin' });
+
+    // session_state: sent by server on every join_quiz — restores full state after reconnect
+    const onSessionState = (data) => {
+      if (typeof data.slideIndex === 'number') setCurrentSlide(data.slideIndex);
+      if (data.status) setSessionStatus(data.status);
+    };
 
     const onSlide = (data) => {
       if (typeof data.slideIndex === 'number') setCurrentSlide(data.slideIndex);
     };
-    const onTeamJoin = () => {
-      api.get(`/teams/session/${sessionId}`).then(t => setTeamsCount(t.length)).catch(() => {});
-    };
+
     const onStatus = (data) => {
       setSessionStatus(data.status);
       if (typeof data.currentSlideIndex === 'number') setCurrentSlide(data.currentSlideIndex);
     };
-    socket.on('slide_changed', onSlide);
-    socket.on('team_joined', onTeamJoin);
+
+    const onTeamJoin = () => {
+      api.get(`/teams/session/${sessionId}`).then(t => setTeamsCount(t.length)).catch(() => {});
+    };
+
+    socket.on('connect',                rejoin);
+    socket.on('session_state',          onSessionState);
+    socket.on('slide_changed',          onSlide);
     socket.on('session_status_changed', onStatus);
+    socket.on('team_joined',            onTeamJoin);
+
+    // If socket is already connected when the effect runs, join immediately
+    if (socket.connected) rejoin();
+
     return () => {
-      socket.off('slide_changed', onSlide);
-      socket.off('team_joined', onTeamJoin);
+      socket.off('connect',                rejoin);
+      socket.off('session_state',          onSessionState);
+      socket.off('slide_changed',          onSlide);
       socket.off('session_status_changed', onStatus);
+      socket.off('team_joined',            onTeamJoin);
     };
   }, [sessionId, socket]);
 
-  const goToSlide = (index) => {
+  // ── Slide advance via REST (guaranteed DB write + broadcast) ────────────
+  // Falls back to WS emit if the REST call fails so the show can go on.
+  const goToSlide = async (index) => {
     if (index < 0 || index >= slides.length) return;
-    setCurrentSlide(index);
-    if (socket) socket.emit('slide_changed', { sessionId, slideIndex: index });
+    setCurrentSlide(index); // optimistic
+    try {
+      await api.put(`/quizzes/sessions/${sessionId}/slide`, { slideIndex: index });
+    } catch {
+      // REST failed — fall back to WebSocket path
+      if (socket) socket.emit('slide_changed', { sessionId, slideIndex: index });
+    }
   };
 
+  // ── Session lifecycle via REST — server now handles the WS broadcast ─────
   const changeStatus = async (status) => {
     try {
       await api.put(`/quizzes/sessions/${sessionId}/status`, { status });
-      setSessionStatus(status);
-      if (socket) socket.emit('session_status_changed', { sessionId, status, currentSlideIndex: currentSlide });
+      setSessionStatus(status); // optimistic — WS echo will confirm
     } catch (err) {
       alert('Failed: ' + err.message);
     }
@@ -66,7 +94,7 @@ export default function QuizControl({ sessionId, quiz }) {
       await api.post(`/quizzes/sessions/${sessionId}/restart`);
       setSessionStatus('lobby');
       setCurrentSlide(0);
-      if (socket) socket.emit('session_status_changed', { sessionId, status: 'lobby', currentSlideIndex: 0 });
+      // server broadcasts session_status_changed to all clients
     } catch (err) {
       alert('Failed: ' + err.message);
     }
@@ -74,7 +102,9 @@ export default function QuizControl({ sessionId, quiz }) {
 
   const lockAnswers = () => {
     const slide = slides[currentSlide];
-    if (socket && slide?.roundId) socket.emit('answer_locked', { sessionId, roundId: slide.roundId });
+    if (socket && slide?.roundId) {
+      socket.emit('answer_locked', { sessionId, roundId: slide.roundId });
+    }
   };
 
   if (!sessionId || !quiz) {
@@ -87,7 +117,7 @@ export default function QuizControl({ sessionId, quiz }) {
   }
 
   const current = slides[currentSlide];
-  const next = slides[currentSlide + 1];
+  const next    = slides[currentSlide + 1];
 
   return (
     <div className="quiz-control">
@@ -112,24 +142,22 @@ export default function QuizControl({ sessionId, quiz }) {
         )}
         {sessionStatus === 'active' && (
           <>
-            <button onClick={() => changeStatus('lobby')} className="btn btn-warning">⏸ Back to Lobby</button>
-            <button onClick={restart} className="btn btn-secondary">↺ Restart Session</button>
+            <button onClick={() => changeStatus('lobby')}    className="btn btn-warning">⏸ Back to Lobby</button>
+            <button onClick={restart}                         className="btn btn-secondary">↺ Restart Session</button>
             <button onClick={() => changeStatus('finished')} className="btn btn-danger">⏹ End Quiz</button>
           </>
         )}
         {sessionStatus === 'finished' && (
-          <>
-            <button onClick={restart} className="btn btn-primary">↺ Restart from Beginning</button>
-          </>
+          <button onClick={restart} className="btn btn-primary">↺ Restart from Beginning</button>
         )}
       </div>
 
       {sessionStatus === 'active' && (
         <>
           <div className="slide-navigation">
-            <button onClick={() => goToSlide(currentSlide - 1)} disabled={currentSlide === 0} className="btn btn-primary">← Previous</button>
-            <button onClick={() => goToSlide(currentSlide + 1)} disabled={currentSlide >= slides.length - 1} className="btn btn-primary">Next →</button>
-            <button onClick={lockAnswers} disabled={!current?.roundId} className="btn btn-warning">🔒 Lock Round Answers</button>
+            <button onClick={() => goToSlide(currentSlide - 1)} disabled={currentSlide === 0}                    className="btn btn-primary">← Previous</button>
+            <button onClick={() => goToSlide(currentSlide + 1)} disabled={currentSlide >= slides.length - 1}     className="btn btn-primary">Next →</button>
+            <button onClick={lockAnswers}                        disabled={!current?.roundId}                     className="btn btn-warning">🔒 Lock Round Answers</button>
           </div>
 
           <div className="presenter-view">

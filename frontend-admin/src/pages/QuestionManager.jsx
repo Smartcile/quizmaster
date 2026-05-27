@@ -20,6 +20,12 @@ const DIFFICULTIES = [
   { value: 'hard', label: 'Hard', color: '#ff3868' }
 ];
 
+const QUESTION_FORMATS = [
+  { value: 'standard', label: 'Standard' },
+  { value: 'multichoice', label: 'Multichoice' },
+  { value: 'both', label: 'Both' }
+];
+
 const EMPTY_FORM = {
   text: '',
   answer: '',
@@ -29,6 +35,8 @@ const EMPTY_FORM = {
   category: '',
   difficulty: 'medium',
   answer_mode: 'text',
+  question_format: 'standard',
+  approved: false,
   options: ['', '', '', '']
 };
 
@@ -38,6 +46,7 @@ export default function QuestionManager() {
   const [search, setSearch] = useState('');
   const [filterCategory, setFilterCategory] = useState('all');
   const [filterDifficulty, setFilterDifficulty] = useState('all');
+  const [filterApproved, setFilterApproved] = useState('all');
   const [form, setForm] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState(null);
   const [error, setError] = useState(null);
@@ -61,13 +70,15 @@ export default function QuestionManager() {
     return questions.filter(q => {
       if (filterCategory !== 'all' && q.category !== filterCategory) return false;
       if (filterDifficulty !== 'all' && (q.difficulty || 'medium') !== filterDifficulty) return false;
+      if (filterApproved === 'approved' && !q.approved) return false;
+      if (filterApproved === 'unapproved' && q.approved) return false;
       if (search) {
         const s = search.toLowerCase();
         return q.text.toLowerCase().includes(s) || (q.answer || '').toLowerCase().includes(s);
       }
       return true;
     });
-  }, [questions, search, filterCategory, filterDifficulty]);
+  }, [questions, search, filterCategory, filterDifficulty, filterApproved]);
 
   const selectQuestion = (q) => {
     setEditingId(q.id);
@@ -80,6 +91,8 @@ export default function QuestionManager() {
       category: q.category || '',
       difficulty: q.difficulty || 'medium',
       answer_mode: q.answer_mode || (q.type === 'mcq' ? 'mcq' : 'text'),
+      question_format: q.question_format || 'standard',
+      approved: q.approved ?? false,
       options: Array.isArray(q.options) && q.options.length ? [...q.options, '', '', '', ''].slice(0, 4) : ['', '', '', '']
     });
   };
@@ -174,6 +187,11 @@ export default function QuestionManager() {
                 <option value="all">All difficulties</option>
                 {DIFFICULTIES.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
               </select>
+              <select value={filterApproved} onChange={(e) => setFilterApproved(e.target.value)}>
+                <option value="all">All status</option>
+                <option value="approved">Approved</option>
+                <option value="unapproved">Unapproved</option>
+              </select>
             </div>
           </div>
 
@@ -188,7 +206,9 @@ export default function QuestionManager() {
               >
                 <div className="qm-question-text">{q.text}</div>
                 <div className="qm-question-meta">
+                  {q.approved && <span className="qm-approved" title="Approved">✓</span>}
                   <DifficultyBadge value={q.difficulty || 'medium'} />
+                  <FormatBadge value={q.question_format || 'standard'} />
                   <span className={`qm-tag qm-tag-${q.answer_mode || 'text'}`}>{q.answer_mode || 'text'}</span>
                   {q.category && <span className="qm-tag qm-tag-cat">{q.category}</span>}
                   <span className="qm-points">{q.points} pt</span>
@@ -201,9 +221,11 @@ export default function QuestionManager() {
         <section className="qm-editor">
           <div className="qm-editor-header">
             <h3>{editingId ? 'Edit Question' : 'New Question'}</h3>
-            {editingId && (
-              <button onClick={() => handleDelete(editingId)} className="btn btn-danger btn-sm">Delete</button>
-            )}
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              {editingId && (
+                <button onClick={() => handleDelete(editingId)} className="btn btn-danger btn-sm">Delete</button>
+              )}
+            </div>
           </div>
 
           <form onSubmit={handleSubmit} className="form">
@@ -241,10 +263,16 @@ export default function QuestionManager() {
               </label>
             </div>
 
-            <div className="form-row">
+            <div className="form-row form-row-3">
               <label className="form-label">Answer mode
                 <select value={form.answer_mode} onChange={(e) => setForm({ ...form, answer_mode: e.target.value })}>
                   {ANSWER_MODES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                </select>
+              </label>
+
+              <label className="form-label">Format
+                <select value={form.question_format} onChange={(e) => setForm({ ...form, question_format: e.target.value })}>
+                  {QUESTION_FORMATS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
                 </select>
               </label>
 
@@ -261,6 +289,15 @@ export default function QuestionManager() {
                 </datalist>
               </label>
             </div>
+
+            <label className={`approved-toggle ${form.approved ? 'is-approved' : ''}`}>
+              <input
+                type="checkbox"
+                checked={form.approved}
+                onChange={(e) => setForm({ ...form, approved: e.target.checked })}
+              />
+              {form.approved ? '✓ Approved for use in quizzes' : 'Not yet approved — check to approve'}
+            </label>
 
             {showMcq && (
               <div className="mcq-editor">
@@ -313,7 +350,6 @@ export default function QuestionManager() {
         </section>
       </div>
 
-      {/* CSV Upload Modal */}
       {csvOpen && (
         <div className="modal-overlay" onClick={() => setCsvOpen(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -340,4 +376,9 @@ export default function QuestionManager() {
 function DifficultyBadge({ value }) {
   const d = DIFFICULTIES.find(x => x.value === value) || DIFFICULTIES[1];
   return <span className={`qm-difficulty qm-difficulty-${value}`}>{d.label}</span>;
+}
+
+function FormatBadge({ value }) {
+  const labels = { standard: 'STD', multichoice: 'MCQ', both: 'BOTH' };
+  return <span className={`qm-tag qm-tag-fmt-${value || 'standard'}`}>{labels[value] || 'STD'}</span>;
 }

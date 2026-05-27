@@ -1,10 +1,10 @@
 const db = require('../config/database');
 
-const QUESTION_FIELDS = 'text, answer, type, media_url, points, tags, category, options, difficulty, answer_mode';
+const QUESTION_FIELDS = 'text, answer, type, media_url, points, tags, category, options, difficulty, answer_mode, approved, question_format';
 
 async function getAllQuestions(req, res) {
   try {
-    const { category, search, difficulty } = req.query;
+    const { category, search, difficulty, approved } = req.query;
     const conditions = [];
     const params = [];
 
@@ -15,6 +15,10 @@ async function getAllQuestions(req, res) {
     if (difficulty && difficulty !== 'all') {
       params.push(difficulty);
       conditions.push(`difficulty = $${params.length}`);
+    }
+    if (approved === 'true' || approved === 'false') {
+      params.push(approved === 'true');
+      conditions.push(`approved = $${params.length}`);
     }
     if (search) {
       params.push(`%${search}%`);
@@ -79,12 +83,13 @@ async function getQuestion(req, res) {
 
 async function createQuestion(req, res) {
   try {
-    const { text, answer, type, media_url, points, tags, category, options, difficulty, answer_mode } = req.body;
+    const { text, answer, type, media_url, points, tags, category, options, difficulty, answer_mode, approved, question_format } = req.body;
     const result = await db.query(
       `INSERT INTO questions (${QUESTION_FIELDS})
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
       [text, answer, type || 'text', media_url, points, tags, category,
-       JSON.stringify(options || []), difficulty || 'medium', answer_mode || 'text']
+       JSON.stringify(options || []), difficulty || 'medium', answer_mode || 'text',
+       approved ?? false, question_format || 'standard']
     );
     res.status(201).json(result.rows[0]);
   } catch (error) {
@@ -94,13 +99,15 @@ async function createQuestion(req, res) {
 
 async function updateQuestion(req, res) {
   try {
-    const { text, answer, type, media_url, points, tags, category, options, difficulty, answer_mode } = req.body;
+    const { text, answer, type, media_url, points, tags, category, options, difficulty, answer_mode, approved, question_format } = req.body;
     const result = await db.query(
       `UPDATE questions SET text=$1, answer=$2, type=$3, media_url=$4, points=$5,
-       tags=$6, category=$7, options=$8, difficulty=$9, answer_mode=$10
-       WHERE id=$11 RETURNING *`,
+       tags=$6, category=$7, options=$8, difficulty=$9, answer_mode=$10,
+       approved=$11, question_format=$12
+       WHERE id=$13 RETURNING *`,
       [text, answer, type || 'text', media_url, points, tags, category,
        JSON.stringify(options || []), difficulty || 'medium', answer_mode || 'text',
+       approved ?? false, question_format || 'standard',
        req.params.id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Question not found' });

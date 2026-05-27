@@ -36,6 +36,12 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
   // WebSocket events
   useEffect(() => {
     if (!socket) return;
+    // session_state: restore locked rounds after reconnect
+    const onSessionState = (data) => {
+      if (Array.isArray(data.lockedRoundIds) && data.lockedRoundIds.length > 0) {
+        setLockedRounds(prev => new Set([...prev, ...data.lockedRoundIds]));
+      }
+    };
     const onLocked = (data) => {
       setLockedRounds(prev => new Set([...prev, data.roundId]));
     };
@@ -44,11 +50,13 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
         setScores(prev => ({ ...prev, [data.questionId]: parseFloat(data.points) }));
       }
     };
-    socket.on('answer_locked', onLocked);
-    socket.on('answer_marked', onMarked);
+    socket.on('session_state',  onSessionState);
+    socket.on('answer_locked',  onLocked);
+    socket.on('answer_marked',  onMarked);
     return () => {
-      socket.off('answer_locked', onLocked);
-      socket.off('answer_marked', onMarked);
+      socket.off('session_state',  onSessionState);
+      socket.off('answer_locked',  onLocked);
+      socket.off('answer_marked',  onMarked);
     };
   }, [socket, team?.id]);
 
