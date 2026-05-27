@@ -1,26 +1,32 @@
-import { useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import io from 'socket.io-client';
 
-// Connect to same origin - nginx proxies /socket.io to backend container
+// Returns the socket as React state so consuming components re-render when it
+// becomes available. Previously returned socketRef.current which is always null
+// on first render and never triggers a re-render when the socket connects.
 export function useWebSocket() {
-  const socketRef = useRef(null);
+  const [socket, setSocket] = useState(null);
 
   useEffect(() => {
-    const socket = io(window.location.origin, {
+    const sock = io(window.location.origin, {
       path: '/socket.io',
       reconnection: true,
       reconnectionDelay: 1000,
-      reconnectionAttempts: 5,
+      reconnectionAttempts: Infinity,  // keep retrying — server state survives outages
       transports: ['websocket', 'polling']
     });
 
-    socketRef.current = socket;
-    socket.on('connect', () => console.log('WebSocket connected:', socket.id));
-    socket.on('disconnect', () => console.log('WebSocket disconnected'));
-    socket.on('connect_error', (err) => console.error('WebSocket error:', err.message));
+    sock.on('connect',       () => console.log('WS connected:', sock.id));
+    sock.on('disconnect',    (reason) => console.log('WS disconnected:', reason));
+    sock.on('connect_error', (err) => console.error('WS error:', err.message));
 
-    return () => socket.disconnect();
+    setSocket(sock);
+
+    return () => {
+      sock.disconnect();
+      setSocket(null);
+    };
   }, []);
 
-  return socketRef.current;
+  return socket;
 }

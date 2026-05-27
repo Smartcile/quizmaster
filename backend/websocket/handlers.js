@@ -1,11 +1,17 @@
 const db = require('../config/database');
 
+// Per-socket registry: socket.id → { sessionId, teamId, teamName, role, roomKey }
+// Used only for cleanup on disconnect; all state is authoritative in the DB.
 const quizSessions = new Map();
 
 function setupWebSocketHandlers(io) {
   io.on('connection', (socket) => {
-    console.log(`Client connected: ${socket.id}`);
+    console.log(`WS connected: ${socket.id}`);
 
+    // ── join_quiz ────────────────────────────────────────────────────────────
+    // Emitted by every client on first connect AND on every reconnect.
+    // Returns a single session_state event with the full current show state so
+    // the client can render without any additional REST calls.
     socket.on('join_quiz', async (data) => {
       const { sessionId, teamId, teamName, role } = data;
       const roomKey = `quiz-${sessionId}`;
@@ -13,53 +19,91 @@ function setupWebSocketHandlers(io) {
       socket.join(roomKey);
       quizSessions.set(socket.id, { sessionId, teamId, teamName, role, roomKey });
 
-      // Send current slide index to newly-joined client so it catches up
       try {
         const sessRes = await db.query(
-          'SELECT current_slide_index FROM quiz_sessions WHERE id = $1',
+          `SELECT current_slide_index, status, locked_round_ids
+           FROM quiz_sessions WHERE id = $1`,
           [sessionId]
         );
         if (sessRes.rows.length > 0) {
-          socket.emit('slide_changed', {
-            slideIndex: sessRes.rows[0].current_slide_index || 0,
-            timestamp: new Date().toISOString()
+          const { current_slide_index, status, locked_round_ids } = sessRes.rows[0];
+          socket.emit('session_state', {
+            slideIndex:     current_slide_index || 0,
+            status:         status || 'lobby',
+            lockedRoundIds: locked_round_ids   || []
           });
         }
       } catch (err) {
-        console.error('Error fetching current slide:', err);
+        console.error('join_quiz: error fetching session state:', err);
       }
 
-      // Only announce team joins, not viewers
+      // Announce team presence to all room members (admin uses this to count teams)
       if (teamId && teamName) {
         io.to(roomKey).emit('team_joined', {
           teamId,
           teamName,
           timestamp: new Date().toISOString()
         });
-        console.log(`Team ${teamName} joined quiz session ${sessionId}`);
+        console.log(`Team "${teamName}" joined session ${sessionId}`);
       } else {
-        console.log(`Viewer (${role || 'unknown'}) joined quiz session ${sessionId}`);
+        console.log(`${role || 'viewer'} joined session ${sessionId}`);
       }
     });
 
+    // ── slide_changed ────────────────────────────────────────────────────────
+    // Primary path: admin calls PUT /sessions/:id/slide (REST) which persists
+    // then broadcasts via io directly.  This WS handler is kept as a fallback
+    // (e.g. if the REST call fails) — it persists and broadcasts identically.
     socket.on('slide_changed', async (data) => {
-      const { sessionId, slideIndex, slideData } = data;
+      const { sessionId, slideIndex } = data;
       const roomKey = `quiz-${sessionId}`;
 
-      await db.query(
-        'UPDATE quiz_sessions SET current_slide_index = $1 WHERE id = $2',
-        [slideIndex, sessionId]
-      );
+      try {
+        await db.query(
+          'UPDATE quiz_sessions SET current_slide_index = $1 WHERE id = $2',
+          [slideIndex, sessionId]
+        );
+      } catch (err) {
+        console.error('slide_changed: DB error:', err);
+      }
 
       io.to(roomKey).emit('slide_changed', {
         slideIndex,
-        slideData,
         timestamp: new Date().toISOString()
       });
 
-      console.log(`Slide changed in session ${sessionId} to index ${slideIndex}`);
+      console.log(`Session ${sessionId}: slide → ${slideIndex}`);
     });
 
+    // ── answer_locked ────────────────────────────────────────────────────────
+    // Persists the locked round ID so rejoining clients receive it in
+    // session_state.  Broadcasts to the room so quizzers disable inputs.
+    socket.on('answer_locked', async (data) => {
+      const { sessionId, roundId } = data;
+      const roomKey = `quiz-${sessionId}`;
+
+      try {
+        // Append roundId only if not already present (idempotent)
+        await db.query(
+          `UPDATE quiz_sessions
+           SET locked_round_ids = locked_round_ids || $1::jsonb
+           WHERE id = $2
+             AND NOT (locked_round_ids @> $1::jsonb)`,
+          [JSON.stringify([roundId]), sessionId]
+        );
+      } catch (err) {
+        console.error('answer_locked: DB error:', err);
+      }
+
+      io.to(roomKey).emit('answer_locked', {
+        roundId,
+        timestamp: new Date().toISOString()
+      });
+
+      console.log(`Session ${sessionId}: round ${roundId} locked`);
+    });
+
+    // ── submit_answer ────────────────────────────────────────────────────────
     socket.on('submit_answer', async (data) => {
       const { sessionId, teamId, questionId, roundId, answer } = data;
       const roomKey = `quiz-${sessionId}`;
@@ -87,35 +131,41 @@ function setupWebSocketHandlers(io) {
           questionId,
           timestamp: new Date().toISOString()
         });
-      } catch (error) {
-        console.error('Error submitting answer:', error);
+      } catch (err) {
+        console.error('submit_answer: error:', err);
       }
     });
 
+    // ── session_status_changed ───────────────────────────────────────────────
+    // Primary path: admin calls PUT /sessions/:id/status (REST), which persists
+    // to DB then broadcasts via io.  This handler is kept as a fallback only.
+    // It mirrors the REST behaviour: persist then broadcast.
     socket.on('session_status_changed', async (data) => {
-      // Broadcasts a session lifecycle event so slideshow + quizzers update immediately.
       const { sessionId, status, currentSlideIndex } = data;
       const roomKey = `quiz-${sessionId}`;
+
+      const valid = ['lobby', 'active', 'finished'];
+      if (!valid.includes(status)) return;
+
+      try {
+        await db.query(
+          `UPDATE quiz_sessions SET status = $1 WHERE id = $2`,
+          [status, sessionId]
+        );
+      } catch (err) {
+        console.error('session_status_changed: DB error:', err);
+      }
+
       io.to(roomKey).emit('session_status_changed', {
         status,
         currentSlideIndex: currentSlideIndex ?? 0,
         timestamp: new Date().toISOString()
       });
-      console.log(`Session ${sessionId} status -> ${status}`);
+
+      console.log(`Session ${sessionId}: status → ${status}`);
     });
 
-    socket.on('answer_locked', async (data) => {
-      const { sessionId, roundId } = data;
-      const roomKey = `quiz-${sessionId}`;
-
-      io.to(roomKey).emit('answer_locked', {
-        roundId,
-        timestamp: new Date().toISOString()
-      });
-
-      console.log(`Answers locked for round ${roundId} in session ${sessionId}`);
-    });
-
+    // ── mark_answer ──────────────────────────────────────────────────────────
     socket.on('mark_answer', async (data) => {
       const { sessionId, teamId, questionId, points } = data;
       const roomKey = `quiz-${sessionId}`;
@@ -144,16 +194,17 @@ function setupWebSocketHandlers(io) {
           points,
           timestamp: new Date().toISOString()
         });
-      } catch (error) {
-        console.error('Error marking answer:', error);
+      } catch (err) {
+        console.error('mark_answer: error:', err);
       }
     });
 
-    socket.on('disconnect', () => {
-      const sessionData = quizSessions.get(socket.id);
-      if (sessionData) {
+    // ── disconnect ───────────────────────────────────────────────────────────
+    socket.on('disconnect', (reason) => {
+      const meta = quizSessions.get(socket.id);
+      if (meta) {
         quizSessions.delete(socket.id);
-        console.log(`Client disconnected: ${socket.id}`);
+        console.log(`WS disconnected: ${socket.id} (${meta.role || 'viewer'}) reason=${reason}`);
       }
     });
   });

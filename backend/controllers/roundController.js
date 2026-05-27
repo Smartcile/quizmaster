@@ -1,9 +1,24 @@
 const db = require('../config/database');
 
+const ROUND_QUESTIONS_AGG = `
+  json_agg(json_build_object(
+    'id', q.id,
+    'text', q.text,
+    'type', q.type,
+    'answer', q.answer,
+    'points', q.points,
+    'order', rq."order",
+    'question_format', q.question_format,
+    'difficulty', q.difficulty,
+    'approved', q.approved,
+    'question_format_override', rq.question_format_override
+  ) ORDER BY rq."order") AS questions
+`;
+
 async function getAllRounds(req, res) {
   try {
     const result = await db.query(`
-      SELECT r.*, json_agg(json_build_object('id', q.id, 'text', q.text, 'type', q.type, 'answer', q.answer, 'points', q.points, 'order', rq."order")) as questions
+      SELECT r.*, ${ROUND_QUESTIONS_AGG}
       FROM rounds r
       LEFT JOIN round_questions rq ON r.id = rq.round_id
       LEFT JOIN questions q ON rq.question_id = q.id
@@ -20,7 +35,7 @@ async function getRound(req, res) {
   try {
     const { id } = req.params;
     const result = await db.query(`
-      SELECT r.*, json_agg(json_build_object('id', q.id, 'text', q.text, 'type', q.type, 'answer', q.answer, 'points', q.points, 'order', rq."order")) as questions
+      SELECT r.*, ${ROUND_QUESTIONS_AGG}
       FROM rounds r
       LEFT JOIN round_questions rq ON r.id = rq.round_id
       LEFT JOIN questions q ON rq.question_id = q.id
@@ -34,6 +49,18 @@ async function getRound(req, res) {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
+}
+
+// questions may be plain IDs or objects {id, question_format_override}
+function insertRoundQuestions(client, roundId, questions) {
+  return Promise.all(questions.map((q, i) => {
+    const qId = typeof q === 'object' ? q.id : q;
+    const override = typeof q === 'object' ? (q.question_format_override || null) : null;
+    return client.query(
+      'INSERT INTO round_questions (round_id, question_id, "order", question_format_override) VALUES ($1, $2, $3, $4)',
+      [roundId, qId, i + 1, override]
+    );
+  }));
 }
 
 async function createRound(req, res) {
@@ -50,12 +77,7 @@ async function createRound(req, res) {
       const roundId = roundResult.rows[0].id;
 
       if (questions && questions.length > 0) {
-        for (let i = 0; i < questions.length; i++) {
-          await client.query(
-            'INSERT INTO round_questions (round_id, question_id, "order") VALUES ($1, $2, $3)',
-            [roundId, questions[i], i + 1]
-          );
-        }
+        await insertRoundQuestions(client, roundId, questions);
       }
 
       await client.query('COMMIT');
@@ -87,11 +109,8 @@ async function updateRound(req, res) {
 
       if (questions) {
         await client.query('DELETE FROM round_questions WHERE round_id = $1', [id]);
-        for (let i = 0; i < questions.length; i++) {
-          await client.query(
-            'INSERT INTO round_questions (round_id, question_id, "order") VALUES ($1, $2, $3)',
-            [id, questions[i], i + 1]
-          );
+        if (questions.length > 0) {
+          await insertRoundQuestions(client, id, questions);
         }
       }
 

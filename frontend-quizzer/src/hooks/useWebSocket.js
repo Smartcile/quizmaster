@@ -1,24 +1,29 @@
-import { useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import io from 'socket.io-client';
 
 export function useWebSocket() {
-  const socketRef = useRef(null);
+  const [socket, setSocket] = useState(null);
 
   useEffect(() => {
-    const socket = io(window.location.origin, {
+    const sock = io(window.location.origin, {
       path: '/socket.io',
       reconnection: true,
       reconnectionDelay: 1000,
-      reconnectionAttempts: 5,
+      reconnectionAttempts: Infinity,
       transports: ['websocket', 'polling']
     });
 
-    socketRef.current = socket;
-    socket.on('connect', () => console.log('WebSocket connected'));
-    socket.on('disconnect', () => console.log('WebSocket disconnected'));
+    sock.on('connect',       () => console.log('WS connected:', sock.id));
+    sock.on('disconnect',    (reason) => console.log('WS disconnected:', reason));
+    sock.on('connect_error', (err) => console.error('WS error:', err.message));
 
-    return () => socket.disconnect();
+    setSocket(sock);
+
+    return () => {
+      sock.disconnect();
+      setSocket(null);
+    };
   }, []);
 
-  return socketRef.current;
+  return socket;
 }

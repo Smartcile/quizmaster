@@ -12,6 +12,7 @@ export default function RoundBuilder() {
   const [filterCategory, setFilterCategory] = useState('all');
   const [form, setForm] = useState(EMPTY);
   const [selectedQuestions, setSelectedQuestions] = useState([]); // ordered ids
+  const [formatOverrides, setFormatOverrides] = useState({}); // {[questionId]: 'standard' | 'multichoice'}
   const [editingId, setEditingId] = useState(null);
   const [error, setError] = useState(null);
 
@@ -52,7 +53,11 @@ export default function RoundBuilder() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const payload = { ...form, questions: selectedQuestions };
+      const questionsPayload = selectedQuestions.map(id => ({
+        id,
+        question_format_override: formatOverrides[id] || null
+      }));
+      const payload = { ...form, questions: questionsPayload };
       if (editingId) await api.put(`/rounds/${editingId}`, payload);
       else await api.post('/rounds', payload);
       loadAll();
@@ -69,14 +74,22 @@ export default function RoundBuilder() {
       background_color: r.background_color || '#0a0e1f',
       format: r.format || 'standard'
     });
-    const ids = (r.questions || []).filter(q => q && q.id).sort((a, b) => (a.order || 0) - (b.order || 0)).map(q => q.id);
-    setSelectedQuestions(ids);
+    const sortedQs = (r.questions || [])
+      .filter(q => q && q.id)
+      .sort((a, b) => (a.order || 0) - (b.order || 0));
+    setSelectedQuestions(sortedQs.map(q => q.id));
+    const overrides = {};
+    sortedQs.forEach(q => {
+      if (q.question_format_override) overrides[q.id] = q.question_format_override;
+    });
+    setFormatOverrides(overrides);
   };
 
   const reset = () => {
     setEditingId(null);
     setForm(EMPTY);
     setSelectedQuestions([]);
+    setFormatOverrides({});
   };
 
   const handleDelete = async (id) => {
@@ -90,11 +103,14 @@ export default function RoundBuilder() {
     }
   };
 
+  const toggleFormat = (questionId, value) => {
+    setFormatOverrides(prev => ({ ...prev, [questionId]: value }));
+  };
+
   const onDragEnd = (result) => {
     const { source, destination, draggableId } = result;
     if (!destination) return;
 
-    // From palette to selected
     if (source.droppableId === 'palette' && destination.droppableId === 'selected') {
       const id = parseInt(draggableId.replace('palette-', ''), 10);
       const next = [...selectedQuestions];
@@ -103,7 +119,6 @@ export default function RoundBuilder() {
       return;
     }
 
-    // Reorder within selected
     if (source.droppableId === 'selected' && destination.droppableId === 'selected') {
       const next = [...selectedQuestions];
       const [moved] = next.splice(source.index, 1);
@@ -112,7 +127,6 @@ export default function RoundBuilder() {
       return;
     }
 
-    // Drag back to palette to remove
     if (source.droppableId === 'selected' && destination.droppableId === 'palette') {
       const next = [...selectedQuestions];
       next.splice(source.index, 1);
@@ -186,6 +200,7 @@ export default function RoundBuilder() {
                           <div className="dnd-item-text">{q.text}</div>
                           <div className="dnd-item-meta">
                             <span className={`qm-tag qm-tag-${q.type}`}>{q.type}</span>
+                            <FormatBadge value={q.question_format || 'standard'} />
                             {q.category && <span className="qm-tag qm-tag-cat">{q.category}</span>}
                           </div>
                         </div>
@@ -224,9 +239,24 @@ export default function RoundBuilder() {
                         >
                           <span className="dnd-order">{i + 1}</span>
                           <div className="dnd-item-text">{q.text}</div>
-                          <div className="dnd-item-meta">
-                            <span className={`qm-tag qm-tag-${q.type}`}>{q.type}</span>
-                          </div>
+                          {(q.question_format || 'standard') === 'both' ? (
+                            <div className="rq-format-toggle" onClick={e => e.stopPropagation()}>
+                              <button
+                                type="button"
+                                className={`rq-toggle-btn ${(formatOverrides[q.id] || 'standard') === 'standard' ? 'active-std' : ''}`}
+                                onClick={() => toggleFormat(q.id, 'standard')}
+                              >STD</button>
+                              <button
+                                type="button"
+                                className={`rq-toggle-btn ${(formatOverrides[q.id] || 'standard') === 'multichoice' ? 'active-mcq' : ''}`}
+                                onClick={() => toggleFormat(q.id, 'multichoice')}
+                              >MCQ</button>
+                            </div>
+                          ) : (
+                            <span className={`rq-format-badge rq-format-badge-${q.question_format || 'standard'}`}>
+                              {(q.question_format || 'standard') === 'multichoice' ? 'MCQ' : 'STD'}
+                            </span>
+                          )}
                         </div>
                       )}
                     </Draggable>
@@ -258,4 +288,9 @@ export default function RoundBuilder() {
       </div>
     </div>
   );
+}
+
+function FormatBadge({ value }) {
+  const labels = { standard: 'STD', multichoice: 'MCQ', both: 'BOTH' };
+  return <span className={`qm-tag qm-tag-fmt-${value || 'standard'}`}>{labels[value] || 'STD'}</span>;
 }

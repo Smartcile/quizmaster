@@ -47,8 +47,20 @@ async function getTeamScores(req, res) {
   }
 }
 
+// Look up a single team by ID — used by the quizzer to restore identity after a page refresh
+async function getTeamById(req, res) {
+  try {
+    const result = await db.query('SELECT * FROM teams WHERE id = $1', [req.params.teamId]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Team not found' });
+    res.json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
 module.exports = {
   joinQuiz,
   getTeamsBySession,
-  getTeamScores
+  getTeamScores,
+  getTeamById
 };

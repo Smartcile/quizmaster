@@ -76,8 +76,15 @@ function App() {
 
   useEffect(() => {
     if (!socket || !sessionId) return;
-    socket.emit('join_quiz', { sessionId, role: 'slideshow' });
 
+    // Unified join/rejoin — called on every (re)connect
+    const rejoin = () => socket.emit('join_quiz', { sessionId, role: 'slideshow' });
+
+    // session_state: full authoritative state sent by server on every join_quiz
+    const onSessionState = (data) => {
+      if (typeof data.slideIndex === 'number') setCurrentSlide(data.slideIndex);
+      if (data.status) setSessionStatus(data.status);
+    };
     const onSlide = (data) => {
       if (typeof data.slideIndex === 'number') setCurrentSlide(data.slideIndex);
     };
@@ -88,17 +95,25 @@ function App() {
     const onTeamJoin = () => {
       api.get(`/teams/session/${sessionId}`).then(t => setTeamsCount(t.length)).catch(() => {});
     };
-    socket.on('slide_changed', onSlide);
+
+    socket.on('connect',                rejoin);
+    socket.on('session_state',          onSessionState);
+    socket.on('slide_changed',          onSlide);
     socket.on('session_status_changed', onStatus);
-    socket.on('team_joined', onTeamJoin);
+    socket.on('team_joined',            onTeamJoin);
+
+    // If socket is already connected when the effect runs, join immediately
+    if (socket.connected) rejoin();
 
     // Initial team count
     api.get(`/teams/session/${sessionId}`).then(t => setTeamsCount(t.length)).catch(() => {});
 
     return () => {
-      socket.off('slide_changed', onSlide);
+      socket.off('connect',                rejoin);
+      socket.off('session_state',          onSessionState);
+      socket.off('slide_changed',          onSlide);
       socket.off('session_status_changed', onStatus);
-      socket.off('team_joined', onTeamJoin);
+      socket.off('team_joined',            onTeamJoin);
     };
   }, [socket, sessionId]);
 

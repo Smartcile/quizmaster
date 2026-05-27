@@ -14,6 +14,37 @@ function App() {
   const [error, setError] = useState(null);
   const socket = useWebSocket();
 
+  // ── Restore team identity from sessionStorage after page refresh ──────────
+  useEffect(() => {
+    const stored = sessionStorage.getItem('quizTeam');
+    if (!stored) return;
+    let parsed;
+    try { parsed = JSON.parse(stored); } catch { sessionStorage.removeItem('quizTeam'); return; }
+    const { teamId, quizCode } = parsed || {};
+    if (!teamId || !quizCode) return;
+
+    (async () => {
+      try {
+        const [teamData, quizData] = await Promise.all([
+          api.get(`/teams/${teamId}`),
+          api.get(`/quizzes/by-code/${quizCode}`)
+        ]);
+        const session = await api.get(`/quizzes/${quizData.id}/active-session`);
+        setTeam(teamData);
+        setQuiz(quizData);
+        setSessionId(session.id);
+        setSessionStatus(session.status || 'lobby');
+        setCurrentSlide(session.current_slide_index || 0);
+        if (session.status === 'active')        setPhase('playing');
+        else if (session.status === 'finished') setPhase('finished');
+        else                                    setPhase('waiting');
+      } catch {
+        // Stored session is stale — clear it and stay on join screen
+        sessionStorage.removeItem('quizTeam');
+      }
+    })();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleJoin = async (code, teamName, teamSize) => {
     setError(null);
     try {
@@ -42,31 +73,54 @@ function App() {
       setCurrentSlide(session.current_slide_index || 0);
       setTeam(teamData);
       setPhase(session.status === 'active' ? 'playing' : 'waiting');
+
+      // Persist identity so a page refresh rejoins automatically
+      sessionStorage.setItem('quizTeam', JSON.stringify({ teamId: teamData.id, quizCode: code }));
     } catch (err) {
       setError(err.message || 'Failed to join quiz');
     }
   };
 
-  // Subscribe to WebSocket once we have a session
+  // ── WebSocket subscriptions + auto-rejoin ────────────────────────────────
   useEffect(() => {
     if (!socket || !sessionId || !team) return;
-    socket.emit('join_quiz', { sessionId, teamId: team.id, teamName: team.name, role: 'team' });
 
+    // Unified join/rejoin — called on every (re)connect
+    const rejoin = () => socket.emit('join_quiz', { sessionId, teamId: team.id, teamName: team.name, role: 'team' });
+
+    // session_state: full authoritative state sent by server on every join_quiz
+    const onSessionState = (data) => {
+      if (typeof data.slideIndex === 'number') setCurrentSlide(data.slideIndex);
+      if (data.status) {
+        setSessionStatus(data.status);
+        if (data.status === 'active')        setPhase('playing');
+        else if (data.status === 'lobby')    setPhase('waiting');
+        else if (data.status === 'finished') setPhase('finished');
+      }
+    };
     const onSlide = (data) => {
       if (typeof data.slideIndex === 'number') setCurrentSlide(data.slideIndex);
     };
     const onStatus = (data) => {
       setSessionStatus(data.status);
       if (typeof data.currentSlideIndex === 'number') setCurrentSlide(data.currentSlideIndex);
-      if (data.status === 'active') setPhase('playing');
-      else if (data.status === 'lobby') setPhase('waiting');
+      if (data.status === 'active')        setPhase('playing');
+      else if (data.status === 'lobby')    setPhase('waiting');
       else if (data.status === 'finished') setPhase('finished');
     };
 
-    socket.on('slide_changed', onSlide);
+    socket.on('connect',                rejoin);
+    socket.on('session_state',          onSessionState);
+    socket.on('slide_changed',          onSlide);
     socket.on('session_status_changed', onStatus);
+
+    // If socket is already connected when the effect runs, join immediately
+    if (socket.connected) rejoin();
+
     return () => {
-      socket.off('slide_changed', onSlide);
+      socket.off('connect',                rejoin);
+      socket.off('session_state',          onSessionState);
+      socket.off('slide_changed',          onSlide);
       socket.off('session_status_changed', onStatus);
     };
   }, [socket, sessionId, team]);
