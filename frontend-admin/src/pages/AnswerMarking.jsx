@@ -1,105 +1,171 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { api } from '../services/api';
 import { useWebSocket } from '../hooks/useWebSocket';
 
 export default function AnswerMarking({ sessionId }) {
-  const [answers, setAnswers] = useState([]);
-  const [currentQuestion, setCurrentQuestion] = useState(null);
-  const [teams, setTeams] = useState([]);
+  const [data,       setData]      = useState(null);
+  const [loading,    setLoading]   = useState(false);
+  const [csvRoundId, setCsvRound]  = useState('all');
   const socket = useWebSocket();
 
-  useEffect(() => {
+  const loadData = useCallback(async () => {
     if (!sessionId) return;
-    loadTeams();
+    setLoading(true);
+    try {
+      const result = await api.get(`/answers/session/${sessionId}`);
+      setData(result);
+    } catch (err) {
+      console.error('Failed to load marking data:', err);
+    } finally {
+      setLoading(false);
+    }
   }, [sessionId]);
 
-  const loadTeams = async () => {
+  useEffect(() => { loadData(); }, [loadData]);
+
+  // Refresh whenever any answer is marked (from this page or the socket handler)
+  useEffect(() => {
+    if (!socket) return;
+    socket.on('answer_marked', loadData);
+    return () => socket.off('answer_marked', loadData);
+  }, [socket, loadData]);
+
+  const mark = async (teamId, questionId, points) => {
     try {
-      const response = await fetch(`/api/teams/session/${sessionId}`);
-      const data = await response.json();
-      setTeams(data);
-    } catch (error) {
-      console.error('Error loading teams:', error);
+      await api.post('/answers/mark', { teamId, questionId, points, sessionId });
+      // loadData triggered by the answer_marked broadcast from the server
+    } catch (err) {
+      console.error('Marking failed:', err);
     }
   };
 
-  const loadAnswersForQuestion = async (questionId) => {
-    try {
-      const response = await fetch(`/api/answers/question?questionId=${questionId}&sessionId=${sessionId}`);
-      const data = await response.json();
-      setAnswers(data);
-      setCurrentQuestion(questionId);
-    } catch (error) {
-      console.error('Error loading answers:', error);
-    }
+  const downloadCSV = () => {
+    const p = new URLSearchParams({ sessionId });
+    if (csvRoundId !== 'all') p.set('roundId', csvRoundId);
+    window.open(`/api/answers/export?${p}`, '_blank');
   };
 
-  const markAnswer = async (teamId, points) => {
-    try {
-      await fetch('/api/answers/mark', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ teamId, questionId: currentQuestion, points })
-      });
+  // ── Idle / loading states ─────────────────────────────────────────────────
+  if (!sessionId) {
+    return (
+      <div className="answer-marking">
+        <h2>Answer Marking</h2>
+        <p>Start a quiz session first to mark answers.</p>
+      </div>
+    );
+  }
 
-      if (socket) {
-        socket.emit('mark_answer', {
-          sessionId,
-          teamId,
-          questionId: currentQuestion,
-          points
-        });
-      }
+  if (loading && !data) {
+    return (
+      <div className="answer-marking">
+        <h2>Answer Marking</h2>
+        <p>Loading…</p>
+      </div>
+    );
+  }
 
-      loadAnswersForQuestion(currentQuestion);
-    } catch (error) {
-      console.error('Error marking answer:', error);
-    }
+  const { rounds = [], questions = [], teams = [], answers = [], scores = [] } = data || {};
+
+  const getAnswer = (teamId, qId) =>
+    answers.find(a => a.team_id === teamId && a.question_id === qId)?.answer_text ?? '';
+
+  const getScore = (teamId, qId) => {
+    const s = scores.find(s => s.team_id === teamId && s.question_id === qId);
+    return s != null ? parseFloat(s.points_awarded) : null;
   };
 
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="answer-marking">
-      <h2>Answer Marking</h2>
 
-      {!sessionId ? (
-        <p>Start a quiz to mark answers</p>
-      ) : (
-        <div className="marking-layout">
-          <div className="teams-panel">
-            <h3>Teams ({teams.length})</h3>
-            <div className="team-list">
-              {teams.map(t => (
-                <div key={t.id} className="team-card">
-                  <h4>{t.name}</h4>
-                  <p>Size: {t.size}</p>
-                </div>
-              ))}
-            </div>
-          </div>
+      {/* Header bar */}
+      <div className="marking-header">
+        <h2>Answer Marking {loading && <span className="marking-refreshing">↻</span>}</h2>
+        <div className="marking-csv-bar">
+          <select
+            value={csvRoundId}
+            onChange={e => setCsvRound(e.target.value)}
+            className="csv-round-select"
+          >
+            <option value="all">All Rounds</option>
+            {rounds.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+          </select>
+          <button onClick={downloadCSV} className="btn btn-secondary btn-sm">↓ Download CSV</button>
+          <button onClick={loadData}   className="btn btn-secondary btn-sm" disabled={loading}>↻ Refresh</button>
+        </div>
+      </div>
 
-          <div className="marking-panel">
-            <h3>Answers</h3>
-            {answers.length === 0 ? (
-              <p>Select a question to mark answers</p>
-            ) : (
-              <div className="answers-list">
-                {answers.map(a => (
-                  <div key={a.id} className="answer-item">
-                    <div className="answer-content">
-                      <h4>{a.team_name}</h4>
-                      <p>Answer: {a.answer_text || '(no answer)'}</p>
-                      <p className="correct">Correct: {a.correct_answer}</p>
-                    </div>
-                    <div className="score-buttons">
-                      <button onClick={() => markAnswer(a.team_id, 0)} className="btn btn-danger btn-sm">0</button>
-                      <button onClick={() => markAnswer(a.team_id, 0.5)} className="btn btn-warning btn-sm">0.5</button>
-                      <button onClick={() => markAnswer(a.team_id, 1)} className="btn btn-success btn-sm">1</button>
-                    </div>
-                  </div>
-                ))}
+      {teams.length === 0 && (
+        <p className="marking-empty">No teams have joined this session yet.</p>
+      )}
+
+      {rounds.map((round, idx) => {
+        const rqs = questions.filter(q => q.round_id === round.id);
+        return (
+          <div key={round.id} className="marking-round">
+
+            {/* "Marking Your Answers" divider between rounds */}
+            {idx > 0 && (
+              <div className="marking-divider">
+                <span>✦ Marking Your Answers ✦</span>
               </div>
             )}
+
+            <h3 className="marking-round-title">
+              <span className="round-badge">{idx + 1}</span>
+              {round.name}
+              <span className="round-q-count">{rqs.length} question{rqs.length !== 1 ? 's' : ''}</span>
+            </h3>
+
+            {rqs.map(q => (
+              <div key={q.id} className="marking-question">
+                <div className="marking-q-header">
+                  <span className="marking-q-num">Q{q.order}</span>
+                  <span className="marking-q-text">{q.text}</span>
+                  <span className="marking-q-answer">✓ {q.answer}</span>
+                  <span className="marking-q-pts">{q.points}pt</span>
+                </div>
+
+                <div className="marking-team-rows">
+                  {teams.length === 0 ? (
+                    <p className="marking-empty">No teams yet</p>
+                  ) : teams.map(t => {
+                    const ansText = getAnswer(t.id, q.id);
+                    const score   = getScore(t.id, q.id);
+                    return (
+                      <div key={t.id} className="marking-team-row">
+                        <span className="marking-team-name">{t.name}</span>
+                        <span className={`marking-answer-text ${!ansText ? 'no-answer' : ''}`}>
+                          {ansText || '(no answer)'}
+                        </span>
+                        <div className="marking-score-btns">
+                          {[0, 0.5, 1].map(pts => (
+                            <button
+                              key={pts}
+                              onClick={() => mark(t.id, q.id, pts)}
+                              className={`score-btn ${score === pts ? 'score-btn-active' : ''}`}
+                            >
+                              {pts}
+                            </button>
+                          ))}
+                          {score !== null && (
+                            <span className={`score-pill ${score === 1 ? 'pill-full' : score === 0.5 ? 'pill-half' : 'pill-zero'}`}>
+                              {score}pt
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
-        </div>
+        );
+      })}
+
+      {rounds.length === 0 && data && (
+        <p className="marking-empty">No rounds found for this session.</p>
       )}
     </div>
   );

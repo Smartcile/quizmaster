@@ -687,15 +687,42 @@ body {
   color: var(--text-muted);
   font-weight: 700;
   font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.15s;
+  position: relative;
+  /* reset browser button styles */
+  padding: 0;
+  font-family: inherit;
+}
+.round-nav-btn:hover {
+  border-color: var(--neon-cyan);
+  color: var(--neon-cyan);
+  background: rgba(0, 240, 255, 0.08);
+}
+.round-nav-btn:active {
+  transform: scale(0.92);
 }
 .round-nav-btn.current {
   border-color: var(--neon-cyan);
   color: var(--neon-cyan);
   box-shadow: 0 0 10px rgba(0, 240, 255, 0.4);
+  background: rgba(0, 240, 255, 0.1);
 }
 .round-nav-btn.answered {
   border-color: var(--neon-green);
   color: var(--neon-green);
+}
+.round-nav-btn.answered.current {
+  border-color: var(--neon-cyan);
+  color: var(--neon-cyan);
+}
+.nav-answered-dot {
+  position: absolute;
+  bottom: 2px;
+  right: 4px;
+  font-size: 0.55rem;
+  color: var(--neon-green);
+  line-height: 1;
 }
 .round-nav-hint {
   margin-top: 10px;

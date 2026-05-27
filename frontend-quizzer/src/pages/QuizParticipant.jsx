@@ -3,18 +3,30 @@ import { api } from '../services/api';
 import { buildSlides } from '../utils/buildSlides';
 
 export default function QuizParticipant({ quiz, sessionId, team, currentSlide, socket }) {
-  const [answers, setAnswers] = useState({});      // questionId -> text
-  const [lockedRounds, setLockedRounds] = useState(new Set());
-  const [scores, setScores] = useState({});        // questionId -> points
+  const [answers,          setAnswers]          = useState({});
+  const [lockedRounds,     setLockedRounds]      = useState(new Set());
+  const [scores,           setScores]            = useState({});
+  const [viewingQuestionId, setViewingQuestionId] = useState(null); // null = follow admin
 
   const slides = useMemo(() => buildSlides(quiz), [quiz]);
   const slide = slides[currentSlide];
 
-  // List of question slides in this quiz (for "previous answers in round")
+  // All question slides in the current round (for in-round navigation)
   const questionsInCurrentRound = useMemo(() => {
     if (!slide?.roundId) return [];
     return slides.filter(s => s.type === 'question' && s.roundId === slide.roundId);
   }, [slides, slide]);
+
+  // When the admin moves to a different round, reset local navigation
+  useEffect(() => {
+    setViewingQuestionId(null);
+  }, [slide?.roundId]);
+
+  // The question slide to display — guest may have navigated away from admin's question
+  const activeSlide = useMemo(() => {
+    if (!viewingQuestionId || slide?.type !== 'question') return slide;
+    return questionsInCurrentRound.find(q => q.questionId === viewingQuestionId) || slide;
+  }, [viewingQuestionId, slide, questionsInCurrentRound]);
 
   // Load existing team answers + scores when joining mid-quiz
   useEffect(() => {
@@ -89,7 +101,16 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
     }
 
     if (slide.type === 'question') {
-      return <QuestionView slide={slide} answer={answers[slide.questionId] || ''} score={scores[slide.questionId]} locked={isLockedFor(slide.roundId)} onChange={(v) => submitAnswer(slide.questionId, v)} />;
+      // activeSlide may be a different question in the same round if the guest navigated
+      return (
+        <QuestionView
+          slide={activeSlide}
+          answer={answers[activeSlide.questionId] || ''}
+          score={scores[activeSlide.questionId]}
+          locked={isLockedFor(activeSlide.roundId)}
+          onChange={(v) => submitAnswer(activeSlide.questionId, v)}
+        />
+      );
     }
 
     if (slide.type === 'answer') {
@@ -140,26 +161,28 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
         {renderSlide()}
       </div>
 
-      {/* Allow flipping back through this round's questions when the round isn't yet locked */}
+      {/* In-round navigation: tap any question to answer/edit it until the round is locked */}
       {slide?.type === 'question' && questionsInCurrentRound.length > 1 && !isLockedFor(slide.roundId) && (
         <div className="round-nav">
-          <p className="round-nav-label">Round questions:</p>
+          <p className="round-nav-label">Questions in this round:</p>
           <div className="round-nav-buttons">
             {questionsInCurrentRound.map((q) => {
-              const isCurrent = q.questionId === slide.questionId;
+              const isViewing  = q.questionId === (viewingQuestionId || slide.questionId);
               const isAnswered = !!answers[q.questionId];
               return (
-                <div
+                <button
                   key={q.questionId}
-                  className={`round-nav-btn ${isCurrent ? 'current' : ''} ${isAnswered ? 'answered' : ''}`}
+                  onClick={() => setViewingQuestionId(q.questionId)}
+                  className={`round-nav-btn ${isViewing ? 'current' : ''} ${isAnswered ? 'answered' : ''}`}
                   title={q.text}
                 >
                   Q{q.questionNumber}
-                </div>
+                  {isAnswered && !isViewing && <span className="nav-answered-dot">·</span>}
+                </button>
               );
             })}
           </div>
-          <p className="round-nav-hint">The quiz master controls which question is shown. You can answer as they progress.</p>
+          <p className="round-nav-hint">Tap any question to view or edit your answer. Edits are saved until the round is locked.</p>
         </div>
       )}
     </div>

@@ -2536,6 +2536,234 @@ input[type="checkbox"] {
   font-style: italic;
 }
 
+/* ── Answer Marking ──────────────────────────────────────────────────────── */
+
+.answer-marking {
+  padding: 1.5rem;
+  max-width: 960px;
+}
+
+.marking-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.marking-header h2 { margin: 0; }
+
+.marking-refreshing {
+  display: inline-block;
+  animation: spin 1s linear infinite;
+  margin-left: .4rem;
+  font-size: 1rem;
+  color: var(--accent-cyan);
+}
+
+.marking-csv-bar {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  flex-wrap: wrap;
+}
+
+.csv-round-select {
+  background: var(--bg-card);
+  border: 1px solid var(--accent-purple);
+  color: var(--text-primary);
+  padding: .3rem .7rem;
+  border-radius: 6px;
+  font-size: .85rem;
+  cursor: pointer;
+}
+
+/* Divider between rounds */
+.marking-divider {
+  position: relative;
+  text-align: center;
+  margin: 2rem 0 1.5rem;
+}
+.marking-divider::before,
+.marking-divider::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 30%;
+  height: 1px;
+  background: linear-gradient(to right, transparent, var(--accent-purple));
+}
+.marking-divider::before { left: 0; }
+.marking-divider::after  { right: 0; transform: scaleX(-1); }
+.marking-divider span {
+  display: inline-block;
+  padding: 0 .8rem;
+  color: var(--accent-purple);
+  font-size: .8rem;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.marking-round { margin-bottom: 1rem; }
+
+.marking-round-title {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--accent-cyan);
+  margin: 0 0 .75rem;
+}
+.round-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  background: var(--gradient-primary);
+  border-radius: 50%;
+  color: #fff;
+  font-size: .72rem;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+.round-q-count {
+  margin-left: auto;
+  font-size: .72rem;
+  color: var(--text-dim);
+  font-weight: 400;
+}
+
+.marking-question {
+  background: rgba(255,255,255,.03);
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 8px;
+  margin-bottom: .6rem;
+  overflow: hidden;
+}
+
+.marking-q-header {
+  display: flex;
+  align-items: flex-start;
+  gap: .7rem;
+  padding: .55rem .85rem;
+  background: rgba(255,255,255,.04);
+  flex-wrap: wrap;
+  border-bottom: 1px solid rgba(255,255,255,.06);
+}
+.marking-q-num {
+  flex-shrink: 0;
+  background: var(--bg-secondary);
+  color: var(--accent-purple);
+  border-radius: 4px;
+  padding: .12rem .4rem;
+  font-size: .72rem;
+  font-weight: 800;
+}
+.marking-q-text {
+  flex: 1;
+  font-size: .9rem;
+  color: var(--text-primary);
+  min-width: 0;
+}
+.marking-q-answer {
+  color: #4ade80;
+  font-size: .8rem;
+  font-style: italic;
+  flex-shrink: 0;
+}
+.marking-q-pts {
+  color: var(--text-dim);
+  font-size: .72rem;
+  flex-shrink: 0;
+}
+
+.marking-team-rows { padding: .3rem .5rem .5rem; }
+
+.marking-team-row {
+  display: flex;
+  align-items: center;
+  gap: .7rem;
+  padding: .35rem .4rem;
+  border-radius: 6px;
+  flex-wrap: wrap;
+  transition: background .1s;
+}
+.marking-team-row:hover { background: rgba(255,255,255,.04); }
+
+.marking-team-name {
+  width: 130px;
+  font-size: .85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.marking-answer-text {
+  flex: 1;
+  font-size: .85rem;
+  color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.marking-answer-text.no-answer {
+  color: #555;
+  font-style: italic;
+}
+.marking-score-btns {
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+  flex-shrink: 0;
+}
+.score-btn {
+  width: 2.1rem;
+  height: 2.1rem;
+  background: transparent;
+  border: 1px solid #444;
+  color: #999;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: .8rem;
+  font-weight: 700;
+  transition: all .12s;
+}
+.score-btn:hover {
+  border-color: var(--accent-purple);
+  color: var(--accent-purple);
+}
+.score-btn.score-btn-active {
+  background: var(--accent-purple);
+  border-color: var(--accent-purple);
+  color: #fff;
+}
+.score-pill {
+  font-size: .72rem;
+  font-weight: 700;
+  padding: .15rem .45rem;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.pill-full  { background: rgba(74,222,128,.15); color: #4ade80; }
+.pill-half  { background: rgba(251,191,36,.15);  color: #fbbf24; }
+.pill-zero  { background: rgba(248,113,113,.15); color: #f87171; }
+
+.marking-empty {
+  color: var(--text-dim);
+  font-style: italic;
+  padding: .75rem 0;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── (original rule continues) ─── */
 .so-empty {
   font-size: 0.8rem;
   color: var(--text-dim);
