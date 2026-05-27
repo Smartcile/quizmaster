@@ -11,7 +11,9 @@ const {
   setSessionSlide,
   restartSession,
   getSession,
-  reorderQuiz
+  reorderQuiz,
+  deleteQuiz,
+  updateQuiz
 } = require('../controllers/quizController');
 
 router.get('/', getAllQuizzes);
@@ -21,6 +23,8 @@ router.get('/:id/active-session', getActiveSession);
 router.post('/', createQuiz);
 router.post('/:id/start', startQuiz);
 router.put('/:id/reorder', reorderQuiz);
+router.put('/:id', updateQuiz);
+router.delete('/:id', deleteQuiz);
 
 // Session lifecycle
 router.get('/sessions/:sessionId', getSession);

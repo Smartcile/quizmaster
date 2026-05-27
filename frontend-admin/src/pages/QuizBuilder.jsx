@@ -107,8 +107,9 @@ export default function QuizBuilder() {
   const [quizzes, setQuizzes]       = useState([]);
   const [allRounds, setAllRounds]   = useState([]);
   const [name, setName]             = useState('');
-  const [orderItems, setOrderItems] = useState([]);   // items in new-quiz order panel
+  const [orderItems, setOrderItems] = useState([]);   // items in new-quiz / edit-quiz order panel
   const [editingWidget, setEditingWidget] = useState(null);
+  const [editingQuiz, setEditingQuiz]     = useState(null); // null | { id } — edit mode
   const [organizingId, setOrganizingId]   = useState(null);
   const [organizedData, setOrganizedData] = useState(null); // { id, name, rounds[], widgets[] }
   const [error, setError]           = useState(null);
@@ -169,15 +170,64 @@ export default function QuizBuilder() {
     });
   };
 
-  const handleCreate = async (e) => {
+  // ── Create or update quiz ─────────────────────────────────────────────────
+  const handleSubmit = async (e) => {
     e.preventDefault();
     try {
       const rounds  = orderItems.filter(i => i.kind === 'round').map(i => i.roundId);
       const widgets = orderItems.filter(i => i.kind === 'widget').map(i => ({ type: i.type, data: i.data || {} }));
-      const newQuiz = await api.post('/quizzes', { name, rounds, widgets });
-      alert(`Quiz created! Code: ${newQuiz.code}`);
+      if (editingQuiz) {
+        await api.put(`/quizzes/${editingQuiz.id}`, { name, rounds, widgets });
+        setEditingQuiz(null);
+      } else {
+        const newQuiz = await api.post('/quizzes', { name, rounds, widgets });
+        alert(`Quiz created! Code: ${newQuiz.code}`);
+      }
       setName('');
       setOrderItems([]);
+      loadAll();
+    } catch (err) { setError(err.message); }
+  };
+
+  const cancelEdit = () => {
+    setEditingQuiz(null);
+    setName('');
+    setOrderItems([]);
+  };
+
+  // ── Load existing quiz into the builder form ──────────────────────────────
+  const handleEdit = async (quizId) => {
+    try {
+      const quiz = await api.get(`/quizzes/${quizId}`);
+      const roundItems = (quiz.rounds || []).map(r => ({
+        uid:           `edit-r-${r.id}`,
+        kind:          'round',
+        roundId:       r.id,
+        name:          r.name,
+        questionCount: (r.questions || []).filter(q => q?.id).length
+      }));
+      const widgetItems = (quiz.widgets || []).map(w => ({
+        uid:  `edit-w-${w.id}`,
+        kind: 'widget',
+        type: w.type,
+        data: typeof w.data === 'string' ? JSON.parse(w.data) : (w.data || {})
+      }));
+      setEditingQuiz({ id: quiz.id });
+      setName(quiz.name);
+      setOrderItems([...roundItems, ...widgetItems]);
+      // Close the organizer panel if open for this quiz
+      if (organizingId === quizId) { setOrganizingId(null); setOrganizedData(null); }
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (err) { setError(err.message); }
+  };
+
+  // ── Delete a quiz ─────────────────────────────────────────────────────────
+  const handleDelete = async (quizId, quizName) => {
+    if (!confirm(`Delete "${quizName}"? This cannot be undone.`)) return;
+    try {
+      await api.delete(`/quizzes/${quizId}`);
+      if (organizingId === quizId) { setOrganizingId(null); setOrganizedData(null); }
+      if (editingQuiz?.id === quizId) cancelEdit();
       loadAll();
     } catch (err) { setError(err.message); }
   };
@@ -220,11 +270,11 @@ export default function QuizBuilder() {
         <div className="error-banner" onClick={() => setError(null)}>{error} ✕</div>
       )}
 
-      {/* ── New Quiz ── */}
-      <div className="panel">
+      {/* ── New Quiz / Edit Quiz ── */}
+      <div className={`panel ${editingQuiz ? 'panel-editing' : ''}`}>
         <div className="builder-header">
-          <h2>New Quiz</h2>
-          <form onSubmit={handleCreate} className="builder-form-inline">
+          <h2>{editingQuiz ? '✏ Edit Quiz' : 'New Quiz'}</h2>
+          <form onSubmit={handleSubmit} className="builder-form-inline">
             <input
               type="text"
               placeholder="Quiz name (e.g. Tuesday Pub Quiz)"
@@ -232,12 +282,17 @@ export default function QuizBuilder() {
               onChange={e => setName(e.target.value)}
               required
             />
+            {editingQuiz && (
+              <button type="button" className="btn btn-secondary" onClick={cancelEdit}>
+                Cancel
+              </button>
+            )}
             <button
               type="submit"
               className="btn btn-primary"
               disabled={!name || orderItems.length === 0}
             >
-              Create Quiz ({orderItems.length} items)
+              {editingQuiz ? `Save Changes (${orderItems.length} items)` : `Create Quiz (${orderItems.length} items)`}
             </button>
           </form>
         </div>
@@ -337,8 +392,11 @@ export default function QuizBuilder() {
               key={q.id}
               quiz={q}
               isOpen={organizingId === q.id}
+              isEditing={editingQuiz?.id === q.id}
               orgData={organizingId === q.id ? organizedData : null}
               onOrganize={() => handleOrganize(q.id)}
+              onEdit={() => handleEdit(q.id)}
+              onDelete={() => handleDelete(q.id, q.name)}
               onOrgDataChange={setOrganizedData}
               onError={setError}
             />
@@ -359,7 +417,7 @@ export default function QuizBuilder() {
 }
 
 // ── QuizCard with inline organizer ───────────────────────────────────────────
-function QuizCard({ quiz, isOpen, orgData, onOrganize, onOrgDataChange, onError }) {
+function QuizCard({ quiz, isOpen, isEditing, orgData, onOrganize, onEdit, onDelete, onOrgDataChange, onError }) {
   const [saveState, setSaveState] = useState(null); // null | 'saving' | 'saved'
 
   const sensors = useSensors(
@@ -411,19 +469,37 @@ function QuizCard({ quiz, isOpen, orgData, onOrganize, onOrgDataChange, onError 
   };
 
   return (
-    <div className={`quiz-card ${isOpen ? 'quiz-card-open' : ''}`}>
+    <div className={`quiz-card ${isOpen ? 'quiz-card-open' : ''} ${isEditing ? 'quiz-card-editing' : ''}`}>
       <div className="quiz-card-row">
         <div>
           <h4>{quiz.name}</h4>
           <p>Code: <strong>{quiz.code}</strong> · {new Date(quiz.created_at).toLocaleDateString()}</p>
         </div>
-        <button
-          type="button"
-          className={`btn btn-sm ${isOpen ? 'btn-primary' : 'btn-secondary'}`}
-          onClick={onOrganize}
-        >
-          {isOpen ? '▲ Close' : '📋 Arrange'}
-        </button>
+        <div className="quiz-card-actions">
+          <button
+            type="button"
+            className={`btn btn-sm ${isEditing ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={onEdit}
+            title="Edit this quiz"
+          >
+            {isEditing ? '✏ Editing…' : '✏ Edit'}
+          </button>
+          <button
+            type="button"
+            className={`btn btn-sm ${isOpen ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={onOrganize}
+          >
+            {isOpen ? '▲ Close' : '📋 Arrange'}
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm btn-danger"
+            onClick={onDelete}
+            title="Delete this quiz"
+          >
+            🗑 Delete
+          </button>
+        </div>
       </div>
 
       {isOpen && orgData && (

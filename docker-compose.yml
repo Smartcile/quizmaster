@@ -32,6 +32,11 @@ services:
       DB_NAME: ${DB_NAME:-quiz_master}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      # Optional: set custom public URLs so the Admin lobby shows the correct
+      # quizzer/slideshow links when portals are on different domains.
+      # QUIZZER_URL: ${QUIZZER_URL:-}
+      # SLIDESHOW_URL: ${SLIDESHOW_URL:-}
+      # ADMIN_URL: ${ADMIN_URL:-}
     # Backend is only reached via frontend nginx proxies - no host port needed.
     # Uncomment to expose for direct API testing:
     # ports:
