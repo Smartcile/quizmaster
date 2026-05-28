@@ -94,7 +94,7 @@ quiz-master/
     ├── nginx.conf
     └── src/
         ├── App.jsx             # Join (find-or-create rejoin) → waiting → playing → finished
-        ├── pages/QuizParticipant.jsx  # Answer input, mark-answers review, answer reveals
+        ├── pages/QuizParticipant.jsx  # Answer input, mark-answers review, answer reveals, host-current highlight
         └── utils/buildSlides.js  ← SAME function as admin
 ```
 
@@ -203,6 +203,7 @@ Key tables and their purposes:
 | `QuizControl.jsx` | Control | Live slide navigation, lock/unlock answers, lifecycle buttons (lobby/active/finished) |
 | `AnswerMarking.jsx` | Mark Answers | Per-question per-team answer review, 0/0.5/1 scoring with optimistic UI |
 | `MastersAndSlides.jsx` | Masters & Slides | Edit master themes (Layout tab: background/styles/placeholders) and slide content defaults (Templates tab: intro/round/mark-answers/end/scoreboard/rules/custom pages) |
+| `QuizHistory.jsx` | History | View all finished quiz sessions: date/time, team count, expandable team scores + CSV download per session |
 
 ---
 
@@ -229,20 +230,45 @@ All clients join room `quiz-${sessionId}` after connecting. The server sends `se
 ### Auto-mark
 When a team submits an answer, the backend normalises both the submitted text and the stored correct answer (lowercase, trim, collapse whitespace, strip leading "the ") and inserts a score of 1 if they match — but only if no score row already exists. The admin can always override by marking manually. No page refresh needed; the socket `answer_marked` event updates all clients immediately.
 
+**Auto-mark reset**: If a team changes a previously correct auto-marked answer to an incorrect one, `maybeAutoMark` detects this (via `scores.auto_marked = true`) and resets the score to 0. Manually-marked scores (`auto_marked = false`) are never touched by this logic.
+
 ### Mark Your Answers slide
 `buildSlides` inserts a `mark_answers` slide between the last question and the first answer reveal for every round. The quizzer shows a review list of all answers in that round. Advancing past this slide (into the first `answer` slide) automatically emits `answer_locked` for the round, preventing further edits.
+
+**Editing from review**: While the round is unlocked, quizzers can tap any question in the review list to open it for editing (renders `QuestionView` with a "← Back to Review" button). Saving auto-returns them to the review list.
 
 ### Answer lock / unlock
 Admins can manually lock or unlock a round's answers at any time via the buttons in QuizControl. Lock state is persisted in `quiz_sessions.locked_round_ids` (JSONB array) so rejoining clients get the correct state from `session_state`.
 
+### Score deselection
+In AnswerMarking, clicking an already-active score button (0, 0.5, or 1) sends `points: null` to `POST /api/answers/mark`, which deletes the score row. The `answer_marked` socket event is broadcast with `points: null` so all clients remove the score immediately.
+
 ### Team rejoin
 `POST /api/teams/join` does a case-insensitive find-or-create: if a team with the same name already exists in the session it returns the existing record with `rejoined: true` and `200` (not `201`). All previously submitted answers and scores are preserved. The session must not be `finished` — if it is, join returns `409`.
+
+### Lobby team list auto-refresh
+When the session transitions back to `lobby` (via `session_status_changed` WebSocket event or after a restart), QuizControl reloads the team list from `GET /api/teams/session/:id` so newly joined teams appear without a manual refresh.
 
 ### Scoreboard widget
 The slideshow renders a live `ScoreboardWidget` that fetches `/api/teams/session/:id/scoreboard` and re-fetches on `answer_marked` and `team_joined` events. The endpoint returns teams ordered by `scores + brownie_points` total descending.
 
 ### Custom pages in Masters
 Each master can store custom page templates in `slide_masters.templates.custom` (array). When a quiz is built using that master, these custom pages appear as pre-filled widget options in QuizBuilder so they can be added to the quiz order without re-typing content each time.
+
+### Quiz history
+`GET /api/quizzes/sessions/history` returns all finished sessions (quiz name, code, date, team count). `GET /api/quizzes/sessions/:id/results` returns teams with quiz scores and brownie points, ordered by total descending. The History admin page displays these with expandable per-session scoreboards and a CSV download link.
+
+### Portal links during active quiz
+When a session is active, QuizControl shows quick links to the Quizzer Portal and the Display/Slideshow using URLs from the `/api/config` endpoint (or falling back to the same hostname with ports 3003/3002).
+
+### Host-current highlight on quizzer round-nav
+The round-nav button for the question the admin is currently showing gets a `.host-current` amber/orange highlight. This is distinct from `.current` (the question the guest is viewing) and `.answered` (a question with a submitted answer).
+
+### End Quiz confirmation
+The "⏹ End Quiz" button in QuizControl shows a `confirm()` dialog before setting the session status to `finished`.
+
+### Dynamic MCQ options
+The question editor now supports adding and removing MCQ options dynamically (minimum 2 options). Options are no longer capped at 4.
 
 ---
 
@@ -323,3 +349,11 @@ Copy `.env.example` to `.env` before running locally.
 - **Masters & Slides nav**: The separate "Slides" and "Masters" nav items were merged into a single "Masters & Slides" page (`MastersAndSlides.jsx`). `MasterEditor.jsx` and `SlideEditor.jsx` still exist in the file system for reference but are no longer imported from `App.jsx`.
 
 - **Categories**: The `categories` table is seeded with 14 defaults on every startup (`ON CONFLICT DO NOTHING`). Admins can rename or delete any of them via the category manager in the Questions page. Renaming a category propagates to all questions that used the old name.
+
+- **History route ordering**: `GET /api/quizzes/sessions/history` must be declared BEFORE `GET /api/quizzes/sessions/:sessionId` in `routes/quizzes.js`, otherwise Express matches "history" as the `:sessionId` parameter.
+
+- **Score deselect null handling**: When the admin deselects a score, `POST /api/answers/mark` receives `{ points: null }`. The backend deletes the score row and broadcasts `answer_marked` with `points: null`. Both AnswerMarking's `applyMarkLocal` and the quizzer's `onMarked` handler must handle `null` points (remove the score rather than treating it as 0).
+
+- **Auto-mark reset requires `auto_marked` flag**: The `scores` table has an `auto_marked BOOLEAN` column. `maybeAutoMark` only resets scores where `auto_marked = true`. Manually-marked scores are always protected from auto-reset.
+
+- **Scrollable question editor**: The question editor panel uses `.qm-editor-scrollable` which constrains height to the viewport and makes `.form` overflow-y scrollable, so the Submit button is always reachable regardless of how many MCQ options are showing.

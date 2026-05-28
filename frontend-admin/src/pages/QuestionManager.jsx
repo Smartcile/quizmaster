@@ -111,7 +111,7 @@ export default function QuestionManager() {
       answer_mode: q.answer_mode || (q.type === 'mcq' ? 'mcq' : 'text'),
       question_format: q.question_format || 'standard',
       approved: q.approved ?? false,
-      options: Array.isArray(q.options) && q.options.length ? [...q.options, '', '', '', ''].slice(0, 4) : ['', '', '', '']
+      options: Array.isArray(q.options) && q.options.length ? [...q.options] : ['', '', '', '']
     });
   };
 
@@ -166,6 +166,15 @@ export default function QuestionManager() {
     const opts = [...form.options];
     opts[i] = value;
     setForm({ ...form, options: opts });
+  };
+
+  const addOption = () => {
+    setForm(f => ({ ...f, options: [...f.options, ''] }));
+  };
+
+  const removeOption = (i) => {
+    if (form.options.length <= 2) return; // minimum 2 options
+    setForm(f => ({ ...f, options: f.options.filter((_, idx) => idx !== i) }));
   };
 
   const showMcq = form.answer_mode === 'mcq' || form.answer_mode === 'both';
@@ -248,7 +257,7 @@ export default function QuestionManager() {
           </div>
         </aside>
 
-        <section className="qm-editor">
+        <section className="qm-editor qm-editor-scrollable">
           <div className="qm-editor-header">
             <h3>{editingId ? 'Edit Question' : 'New Question'}</h3>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -331,7 +340,16 @@ export default function QuestionManager() {
 
             {showMcq && (
               <div className="mcq-editor">
-                <label className="form-label">Multiple choice options</label>
+                <div className="mcq-editor-header">
+                  <label className="form-label" style={{ margin: 0 }}>Multiple choice options</label>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm mcq-add-btn"
+                    onClick={addOption}
+                  >
+                    + Add Option
+                  </button>
+                </div>
                 {form.options.map((opt, i) => (
                   <div key={i} className="mcq-option-row">
                     <span className="mcq-letter">{String.fromCharCode(65 + i)}</span>
@@ -341,6 +359,15 @@ export default function QuestionManager() {
                       value={opt}
                       onChange={(e) => updateOption(i, e.target.value)}
                     />
+                    <button
+                      type="button"
+                      className="mcq-remove-btn"
+                      onClick={() => removeOption(i)}
+                      disabled={form.options.length <= 2}
+                      title={form.options.length <= 2 ? 'Need at least 2 options' : 'Remove option'}
+                    >
+                      ×
+                    </button>
                   </div>
                 ))}
               </div>

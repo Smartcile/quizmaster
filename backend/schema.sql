@@ -271,3 +271,12 @@ ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS master_id INT REFERENCES slide_mast
 -- NULL means legacy row — sort those using the old per-table "order" column.
 ALTER TABLE quiz_rounds  ADD COLUMN IF NOT EXISTS position INT DEFAULT NULL;
 ALTER TABLE quiz_widgets ADD COLUMN IF NOT EXISTS position INT DEFAULT NULL;
+
+-- ============================================================
+-- Score tracking improvements (additive)
+-- ============================================================
+-- auto_marked: true when the score was set by the auto-mark system.
+-- When a team changes a previously correct answer to an incorrect one,
+-- the auto-mark system can reset the score to 0.
+-- Manual admin marks always set auto_marked = false, preventing auto-resets.
+ALTER TABLE scores ADD COLUMN IF NOT EXISTS auto_marked BOOLEAN NOT NULL DEFAULT FALSE;

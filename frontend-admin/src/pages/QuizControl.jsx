@@ -52,6 +52,10 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd }) {
     const onStatus = (data) => {
       setSessionStatus(data.status);
       if (typeof data.currentSlideIndex === 'number') setCurrentSlide(data.currentSlideIndex);
+      // Reload team list whenever the session returns to lobby (e.g. after restart)
+      if (data.status === 'lobby') {
+        api.get(`/teams/session/${sessionId}`).then(setTeams).catch(() => {});
+      }
     };
 
     const onTeamJoin = () => {
@@ -129,6 +133,8 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd }) {
       await api.post(`/quizzes/sessions/${sessionId}/restart`);
       setSessionStatus('lobby');
       setCurrentSlide(0);
+      // Reload teams so the lobby list is current after restart
+      api.get(`/teams/session/${sessionId}`).then(setTeams).catch(() => {});
       // server broadcasts session_status_changed to all clients
     } catch (err) {
       alert('Failed: ' + err.message);
@@ -202,7 +208,16 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd }) {
           <>
             <button onClick={() => changeStatus('lobby')}    className="btn btn-warning">⏸ Back to Lobby</button>
             <button onClick={restart}                         className="btn btn-secondary">↺ Restart Session</button>
-            <button onClick={() => changeStatus('finished')} className="btn btn-danger">⏹ End Quiz</button>
+            <button
+              onClick={() => {
+                if (confirm('End the quiz? This will mark the session as finished and lock all answers.')) {
+                  changeStatus('finished');
+                }
+              }}
+              className="btn btn-danger"
+            >
+              ⏹ End Quiz
+            </button>
           </>
         )}
         {sessionStatus === 'finished' && (
@@ -212,6 +227,30 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd }) {
           </>
         )}
       </div>
+
+      {sessionStatus === 'active' && portalConfig && (
+        <div className="portal-links">
+          <span className="portal-links-label">Open portals:</span>
+          <a
+            href={portalConfig.quizzerUrl ||
+              `${window.location.protocol}//${window.location.hostname}:3003`}
+            target="_blank"
+            rel="noreferrer"
+            className="portal-link-btn portal-link-quizzer"
+          >
+            📱 Quizzer Portal
+          </a>
+          <a
+            href={portalConfig.slideshowUrl ||
+              `${window.location.protocol}//${window.location.hostname}:3002`}
+            target="_blank"
+            rel="noreferrer"
+            className="portal-link-btn portal-link-slideshow"
+          >
+            🖥 Display / Slideshow
+          </a>
+        </div>
+      )}
 
       {sessionStatus === 'active' && (
         <>

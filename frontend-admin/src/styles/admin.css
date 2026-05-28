@@ -1948,6 +1948,267 @@ select {
 .se-slide-label { flex: 1; font-size: 0.82rem; }
 .se-slide-layers { font-size: 0.72rem; color: var(--text-dim); }
 
+/* =====================================================
+   QUIZ HISTORY PAGE
+   ===================================================== */
+.quiz-history-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.history-empty-state {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 60px 40px;
+  text-align: center;
+}
+.history-empty {
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 1.1rem;
+  margin: 0;
+}
+.history-empty-sub {
+  color: var(--text-dim);
+  font-size: 0.88rem;
+  margin-top: 8px;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.history-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  transition: border-color 0.2s ease;
+}
+.history-card:hover { border-color: var(--neon-cyan); }
+.history-card.history-card-open { border-color: var(--neon-purple); }
+
+.history-card-header {
+  width: 100%;
+  background: none;
+  border: none;
+  color: inherit;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  text-align: left;
+  transition: background 0.15s;
+}
+.history-card-header:hover { background: rgba(0, 0, 0, 0.2); }
+
+.history-card-left {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-shrink: 0;
+  min-width: 180px;
+}
+.history-quiz-name {
+  color: var(--text-primary);
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+.history-quiz-code {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  font-family: monospace;
+}
+
+.history-card-mid {
+  flex: 1;
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.history-meta-item {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+.history-teams-pill {
+  background: rgba(0, 240, 255, 0.08);
+  border: 1px solid rgba(0, 240, 255, 0.3);
+  border-radius: 999px;
+  padding: 2px 10px;
+  color: var(--neon-cyan);
+  font-size: 0.8rem;
+}
+
+.history-chevron {
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  flex-shrink: 0;
+}
+
+.history-card-body {
+  border-top: 1px solid var(--border);
+  padding: 20px;
+}
+.history-loading,
+.history-no-teams {
+  color: var(--text-muted);
+  font-style: italic;
+  text-align: center;
+  padding: 16px 0;
+}
+
+.history-teams-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+.history-teams-table th {
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-size: 0.72rem;
+  letter-spacing: 1px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+  text-align: left;
+}
+.history-teams-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(42, 49, 104, 0.5);
+  color: var(--text-primary);
+}
+.history-teams-table tr:last-child td { border-bottom: none; }
+.history-row-winner td { background: rgba(0, 255, 159, 0.04); }
+
+.col-rank  { width: 40px; text-align: center; }
+.col-name  { }
+.col-size, .col-score, .col-bonus { width: 80px; text-align: right; color: var(--text-muted); }
+.col-total { width: 80px; text-align: right; }
+
+.history-total-pts {
+  font-weight: 700;
+  color: var(--neon-yellow);
+}
+
+.history-card-footer {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* =====================================================
+   MCQ ADD / REMOVE OPTIONS
+   ===================================================== */
+.mcq-editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.mcq-add-btn {
+  flex-shrink: 0;
+}
+
+.mcq-remove-btn {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text-dim);
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  font-family: inherit;
+  flex-shrink: 0;
+}
+.mcq-remove-btn:hover:not(:disabled) {
+  color: var(--neon-pink);
+  border-color: var(--neon-pink);
+  background: rgba(255, 56, 104, 0.08);
+}
+.mcq-remove-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* =====================================================
+   SCROLLABLE QUESTION EDITOR
+   ===================================================== */
+.qm-editor-scrollable {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 120px);
+  overflow: hidden;
+}
+.qm-editor-scrollable .form {
+  overflow-y: auto;
+  flex: 1;
+  padding: 20px;
+}
+
+/* =====================================================
+   PORTAL LINKS (QuizControl active state)
+   ===================================================== */
+.portal-links {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+  background: linear-gradient(135deg, rgba(0, 240, 255, 0.05) 0%, rgba(184, 41, 255, 0.05) 100%);
+  border: 1px solid rgba(0, 240, 255, 0.3);
+  border-radius: var(--radius);
+  flex-wrap: wrap;
+}
+.portal-links-label {
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+}
+.portal-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all 0.2s ease;
+  border: 1px solid;
+}
+.portal-link-quizzer {
+  color: var(--neon-cyan);
+  border-color: var(--neon-cyan);
+  background: rgba(0, 240, 255, 0.08);
+}
+.portal-link-quizzer:hover {
+  background: rgba(0, 240, 255, 0.18);
+  box-shadow: 0 0 15px rgba(0, 240, 255, 0.3);
+}
+.portal-link-slideshow {
+  color: var(--neon-purple);
+  border-color: var(--neon-purple);
+  background: rgba(184, 41, 255, 0.08);
+}
+.portal-link-slideshow:hover {
+  background: rgba(184, 41, 255, 0.18);
+  box-shadow: 0 0 15px rgba(184, 41, 255, 0.3);
+}
+
 /* No-masters note in sidebar */
 .se-no-masters {
   background: var(--bg-card);
