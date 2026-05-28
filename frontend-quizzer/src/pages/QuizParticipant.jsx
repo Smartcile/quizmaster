@@ -127,6 +127,31 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
     if (slide.type === 'mark_answers') {
       const roundQuestions = slides.filter(s => s.type === 'question' && s.roundId === slide.roundId);
       const locked = isLockedFor(slide.roundId);
+
+      // Guest tapped a question to edit — show the QuestionView with a back button
+      if (!locked && viewingQuestionId) {
+        const editSlide = roundQuestions.find(q => q.questionId === viewingQuestionId);
+        if (editSlide) {
+          return (
+            <div className="mark-edit-wrapper">
+              <button
+                className="back-to-review-btn"
+                onClick={() => setViewingQuestionId(null)}
+              >
+                ← Back to Review
+              </button>
+              <QuestionView
+                slide={editSlide}
+                answer={answers[editSlide.questionId] || ''}
+                score={scores[editSlide.questionId]}
+                locked={false}
+                onChange={(v) => submitAnswer(editSlide.questionId, v)}
+              />
+            </div>
+          );
+        }
+      }
+
       return (
         <div className="mark-answers-review">
           <p className="mark-label">{slide.roundName}</p>
@@ -211,14 +236,15 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
           <p className="round-nav-label">Questions in this round:</p>
           <div className="round-nav-buttons">
             {questionsInCurrentRound.map((q) => {
-              const isViewing  = q.questionId === (viewingQuestionId || slide.questionId);
-              const isAnswered = !!answers[q.questionId];
+              const isViewing     = q.questionId === (viewingQuestionId || slide.questionId);
+              const isAnswered    = !!answers[q.questionId];
+              const isHostCurrent = q.questionId === slide.questionId && !isViewing;
               return (
                 <button
                   key={q.questionId}
                   onClick={() => setViewingQuestionId(q.questionId)}
-                  className={`round-nav-btn ${isViewing ? 'current' : ''} ${isAnswered ? 'answered' : ''}`}
-                  title={q.text}
+                  className={`round-nav-btn ${isViewing ? 'current' : ''} ${isAnswered ? 'answered' : ''} ${isHostCurrent ? 'host-current' : ''}`}
+                  title={isHostCurrent ? `Host is on this question: ${q.text}` : q.text}
                 >
                   Q{q.questionNumber}
                   {isAnswered && !isViewing && <span className="nav-answered-dot">·</span>}

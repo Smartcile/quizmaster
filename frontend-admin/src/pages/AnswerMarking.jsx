@@ -24,14 +24,20 @@ export default function AnswerMarking({ sessionId }) {
   useEffect(() => { loadData(); }, [loadData]);
 
   // Apply a single mark to local state immediately — no full reload required.
+  // points === null means the score was removed (deselected).
   const applyMarkLocal = useCallback((teamId, questionId, points) => {
     setData(prev => {
       if (!prev) return prev;
-      const scores = Array.isArray(prev.scores) ? [...prev.scores] : [];
+      let scores = Array.isArray(prev.scores) ? [...prev.scores] : [];
       const idx = scores.findIndex(s => s.team_id === teamId && s.question_id === questionId);
-      const row = { team_id: teamId, question_id: questionId, points_awarded: points };
-      if (idx >= 0) scores[idx] = row;
-      else          scores.push(row);
+      if (points === null) {
+        // Remove the score row entirely
+        if (idx >= 0) scores.splice(idx, 1);
+      } else {
+        const row = { team_id: teamId, question_id: questionId, points_awarded: points };
+        if (idx >= 0) scores[idx] = row;
+        else          scores.push(row);
+      }
       return { ...prev, scores };
     });
   }, []);
@@ -40,8 +46,9 @@ export default function AnswerMarking({ sessionId }) {
   useEffect(() => {
     if (!socket) return;
     const onMarked = (m) => {
-      if (m && m.teamId != null && m.questionId != null && m.points != null) {
-        applyMarkLocal(parseInt(m.teamId), parseInt(m.questionId), parseFloat(m.points));
+      if (m && m.teamId != null && m.questionId != null) {
+        const pts = m.points === null || m.points === undefined ? null : parseFloat(m.points);
+        applyMarkLocal(parseInt(m.teamId), parseInt(m.questionId), pts);
       }
     };
     const onSubmitted = () => loadData();  // refresh answer text when a team submits
@@ -168,8 +175,9 @@ export default function AnswerMarking({ sessionId }) {
                           {[0, 0.5, 1].map(pts => (
                             <button
                               key={pts}
-                              onClick={() => mark(t.id, q.id, pts)}
+                              onClick={() => mark(t.id, q.id, score === pts ? null : pts)}
                               className={`score-btn ${score === pts ? 'score-btn-active' : ''}`}
+                              title={score === pts ? 'Click to remove mark' : `Award ${pts} point${pts !== 1 ? 's' : ''}`}
                             >
                               {pts}
                             </button>

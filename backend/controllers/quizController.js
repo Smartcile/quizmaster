@@ -450,6 +450,59 @@ async function updateQuiz(req, res) {
   }
 }
 
+// ── Session history: all finished sessions with quiz info + team count ────────
+async function getSessionHistory(req, res) {
+  try {
+    const result = await db.query(`
+      SELECT
+        qs.id           AS session_id,
+        qs.created_at,
+        qs.started_at,
+        q.id            AS quiz_id,
+        q.name          AS quiz_name,
+        q.code          AS quiz_code,
+        COUNT(DISTINCT t.id)::int AS team_count
+      FROM quiz_sessions qs
+      JOIN quizzes q        ON qs.quiz_id = q.id
+      LEFT JOIN teams t     ON t.quiz_session_id = qs.id
+      WHERE qs.status = 'finished'
+      GROUP BY qs.id, q.id, q.name, q.code
+      ORDER BY qs.created_at DESC
+    `);
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
+// ── Session results: teams with total scores for a finished session ───────────
+async function getSessionResults(req, res) {
+  try {
+    const { sessionId } = req.params;
+    const teamsResult = await db.query(`
+      SELECT
+        t.id,
+        t.name,
+        t.size,
+        COALESCE(SUM(s.points_awarded), 0)::decimal AS score_total,
+        COALESCE(
+          (SELECT SUM(bp.points) FROM brownie_points bp WHERE bp.team_id = t.id),
+          0
+        )::decimal AS brownie_total
+      FROM teams t
+      LEFT JOIN scores s ON s.team_id = t.id
+      WHERE t.quiz_session_id = $1
+      GROUP BY t.id, t.name, t.size
+      ORDER BY
+        (COALESCE(SUM(s.points_awarded), 0) + COALESCE((SELECT SUM(bp.points) FROM brownie_points bp WHERE bp.team_id = t.id), 0)) DESC,
+        t.name ASC
+    `, [sessionId]);
+    res.json({ teams: teamsResult.rows });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
 module.exports = {
   getAllQuizzes,
   getQuiz,
@@ -464,5 +517,7 @@ module.exports = {
   reorderQuiz,
   deleteQuiz,
   updateQuiz,
-  loadQuizWithRoundsAndWidgets
+  loadQuizWithRoundsAndWidgets,
+  getSessionHistory,
+  getSessionResults
 };

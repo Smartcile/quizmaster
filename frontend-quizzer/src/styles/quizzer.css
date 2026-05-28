@@ -801,3 +801,43 @@ body {
 .mark-review-item.unanswered .mark-review-ans {
   color: var(--neon-orange, #ff9d00);
 }
+
+/* ====== Host-current highlight on round-nav ====== */
+.round-nav-btn.host-current {
+  border-color: var(--neon-orange);
+  color: var(--neon-orange);
+  box-shadow: 0 0 10px rgba(255, 157, 0, 0.35);
+  background: rgba(255, 157, 0, 0.1);
+}
+/* host-current + current: viewing matches host position — neon cyan wins */
+.round-nav-btn.host-current.current {
+  border-color: var(--neon-cyan);
+  color: var(--neon-cyan);
+  box-shadow: 0 0 10px rgba(0, 240, 255, 0.4);
+  background: rgba(0, 240, 255, 0.1);
+}
+
+/* ====== Edit from mark_answers review ====== */
+.mark-edit-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.back-to-review-btn {
+  align-self: flex-start;
+  background: rgba(0, 240, 255, 0.08);
+  border: 1px solid var(--neon-cyan);
+  color: var(--neon-cyan);
+  border-radius: var(--radius-sm);
+  padding: 8px 16px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.2s ease;
+}
+.back-to-review-btn:hover {
+  background: rgba(0, 240, 255, 0.18);
+  box-shadow: 0 0 12px rgba(0, 240, 255, 0.3);
+}
