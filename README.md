@@ -98,6 +98,9 @@ Health checks: postgres has `pg_isready`, backend has `/api/health`. Frontends `
 | `ADMIN_PORT` | `3001` | Host port for admin dashboard (optional override) |
 | `SLIDESHOW_PORT` | `3002` | Host port for slideshow viewer (optional override) |
 | `QUIZZER_PORT` | `3003` | Host port for quizzer portal (optional override) |
+| `ADMIN_URL` | *(auto)* | Full public URL of admin — shown in lobby when set |
+| `SLIDESHOW_URL` | *(auto)* | Full public URL of slideshow — shown in admin lobby |
+| `QUIZZER_URL` | *(auto)* | Full public URL of quizzer — shown in admin lobby + slideshow lobby |
 
 ### Security note
 
@@ -171,7 +174,8 @@ API calls automatically use the same hostname the page was served from — no re
   - `mcq` — multiple choice only
   - `both` (hybrid) — teams can pick an MCQ option OR type a free answer
 - Left-column list with **🔍 search** and category/difficulty filters
-- Click a question to load into the right-side editor; "+ New" clears
+- Click a question to load into the right-side editor (scrollable — the Save button is always reachable); "+ New" clears
+- **Dynamic MCQ options** — add as many options as you need, remove any (minimum 2 enforced)
 - **📁 Import CSV** as a top-right modal button
 - Media upload endpoint for image/video/audio assets
 
@@ -191,10 +195,10 @@ API calls automatically use the same hostname the page was served from — no re
 
 ### Session Lifecycle
 - **Start Quiz** creates a session in **lobby** status — slideshow shows the big join code, teams start joining
-- Teams can join during lobby phase (not just after Begin Quiz)
+- Teams can join during lobby phase (not just after Begin Quiz). Lobby team list **auto-refreshes** when the session transitions back to lobby after a restart
 - Admin sees: live team counter, **▶ Begin Quiz** to go live
-- **Active** state — Next/Previous slide nav, Lock Round Answers, slide thumbnails
-- **⏸ Back to Lobby** / **↺ Restart Session** / **⏹ End Quiz** controls
+- **Active** state — Next/Previous slide nav, Lock Round Answers, slide thumbnails, quick-links to the **Quizzer Portal** and **Slideshow** portals
+- **⏸ Back to Lobby** / **↺ Restart Session** / **⏹ End Quiz** controls — End Quiz shows a confirmation dialog before finishing
 - Restart keeps the same teams but resets to slide 0
 - All surfaces recover automatically after a network hiccup — WebSocket auto-rejoins and the server replays authoritative state (slide index, session status, locked rounds)
 
@@ -209,6 +213,8 @@ API calls automatically use the same hostname the page was served from — no re
 - **Waiting screen** if session is in lobby; auto-flips to playing when admin clicks Begin
 - Renders the current slide as: question (with text input / MCQ / both), waiting message, or answer reveal (showing their answer, correct answer, points awarded)
 - Answers auto-save as teams type
+- In-round navigation bar — jump to any unlocked question. The question the **host is currently showing** gets a distinct **amber/orange glow** (distinct from the guest's current cyan and the answered green)
+- **Review before lock** — the "Mark Your Answers" slide lists all answers. Tap any question to edit it; a "← Back to Review" button returns to the list
 - When a round is locked, inputs disable and the score badge appears once marked
 - **Page refresh recovery** — team identity is stored in sessionStorage; refreshing the page silently rejoins the same session without re-entering the form
 - Mobile-first responsive design
@@ -221,10 +227,28 @@ API calls automatically use the same hostname the page was served from — no re
 - All quizzes list with LIVE badges on running ones
 - Refresh button
 
+### Admin Nav
+| Page | Purpose |
+|---|---|
+| Dashboard | Start/manage sessions, live metrics |
+| Questions | Question bank CRUD, import CSV, manage categories |
+| Rounds | Assemble questions into rounds |
+| Quizzes | Combine rounds + widgets, pick master theme |
+| Masters & Slides | Edit visual themes and slide content templates |
+| Control | Live slide navigation, lock/unlock, portal links |
+| Mark Answers | Per-team marking grid, 0 / 0.5 / 1 pt, CSV export |
+| **History** | All finished sessions — dates, scores, CSV download |
+
 ### Answer Marking
 - Lists each team's answer per question with the correct answer
-- One-click 0 / 0.5 / 1 point scoring
-- Real-time broadcast to that team's portal
+- One-click 0 / 0.5 / 1 point scoring — click the **active** score button again to remove the mark entirely
+- Real-time broadcast to all clients via WebSocket
+- Download answers + scores as CSV (full session or per round)
+
+### Quiz History
+- New **History** section in the admin nav shows all finished sessions
+- Per-session: date/time started, team count, expandable team scoreboard (quiz pts + bonus + total), 🥇🥈🥉 ranking
+- Download the full answers CSV for any historical session
 
 ---
 
