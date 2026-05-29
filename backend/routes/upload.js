@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const path = require('path');
+const db = require('../config/database');
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -15,13 +16,21 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 
-router.post('/media', upload.single('file'), (req, res) => {
+router.post('/media', upload.single('file'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
   }
+  const url = `/uploads/${req.file.filename}`;
+  try {
+    await db.query(
+      `INSERT INTO media_files (filename, original_name, mime_type, size_bytes, url)
+       VALUES ($1, $2, $3, $4, $5) ON CONFLICT (filename) DO NOTHING`,
+      [req.file.filename, req.file.originalname, req.file.mimetype, req.file.size, url]
+    );
+  } catch { /* non-fatal — media library tracking is best-effort */ }
   res.json({
     filename: req.file.filename,
-    url: `/uploads/${req.file.filename}`,
+    url,
     size: req.file.size
   });
 });

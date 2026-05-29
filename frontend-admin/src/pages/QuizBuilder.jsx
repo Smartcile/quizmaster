@@ -79,28 +79,6 @@ function BuilderTile({ item, index, onRemove, onEdit }) {
   );
 }
 
-// ── Read-only sortable tile for the quiz organizer panel ──────────────────────
-function OrgTile({ item, index }) {
-  const {
-    attributes, listeners,
-    setNodeRef, transform, transition, isDragging
-  } = useSortable({ id: item.uid });
-
-  const style = {
-    transform:  CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.45 : 1
-  };
-
-  return (
-    <div ref={setNodeRef} style={style} className={`so-tile ${isDragging ? 'so-dragging' : ''}`}>
-      <span className="so-grip" {...attributes} {...listeners}>⠿</span>
-      <span className="so-num">{index + 1}</span>
-      <TileBody item={item} />
-    </div>
-  );
-}
-
 // ── Helper: reconstruct UI items from quiz.items (API unified list) ───────────
 function quizItemsToUiItems(quizItems, prefix) {
   return (quizItems || []).map(item => {
@@ -131,11 +109,10 @@ export default function QuizBuilder() {
   const [masters, setMasters]       = useState([]);
   const [selectedMasterId, setSelectedMasterId] = useState('');
   const [name, setName]             = useState('');
+  const [teamSizeScoring, setTeamSizeScoring] = useState(false);
   const [orderItems, setOrderItems] = useState([]);   // mixed rounds + widgets in build order
   const [editingWidget, setEditingWidget] = useState(null);
   const [editingQuiz, setEditingQuiz]     = useState(null);
-  const [organizingId, setOrganizingId]   = useState(null);
-  const [organizedData, setOrganizedData] = useState(null); // { id, name, items[] }
   const [error, setError]           = useState(null);
 
   const sensors = useSensors(
@@ -230,15 +207,16 @@ export default function QuizBuilder() {
       const master_id = selectedMasterId ? parseInt(selectedMasterId) : null;
 
       if (editingQuiz) {
-        await api.put(`/quizzes/${editingQuiz.id}`, { name, items, master_id });
+        await api.put(`/quizzes/${editingQuiz.id}`, { name, items, master_id, team_size_scoring: teamSizeScoring });
         setEditingQuiz(null);
       } else {
-        const newQuiz = await api.post('/quizzes', { name, items, master_id });
+        const newQuiz = await api.post('/quizzes', { name, items, master_id, team_size_scoring: teamSizeScoring });
         alert(`Quiz created! Code: ${newQuiz.code}`);
       }
       setName('');
       setOrderItems([]);
       setSelectedMasterId('');
+      setTeamSizeScoring(false);
       loadAll();
     } catch (err) { setError(err.message); }
   };
@@ -248,6 +226,7 @@ export default function QuizBuilder() {
     setName('');
     setOrderItems([]);
     setSelectedMasterId('');
+    setTeamSizeScoring(false);
   };
 
   // ── Load existing quiz into the builder form ───────────────────────────────
@@ -262,8 +241,8 @@ export default function QuizBuilder() {
       setEditingQuiz({ id: quiz.id });
       setName(quiz.name);
       setSelectedMasterId(quiz.master_id ? String(quiz.master_id) : '');
+      setTeamSizeScoring(quiz.team_size_scoring || false);
       setOrderItems(quizItemsToUiItems(source, 'edit'));
-      if (organizingId === quizId) { setOrganizingId(null); setOrganizedData(null); }
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err) { setError(err.message); }
   };
@@ -273,31 +252,8 @@ export default function QuizBuilder() {
     if (!confirm(`Delete "${quizName}"? This cannot be undone.`)) return;
     try {
       await api.delete(`/quizzes/${quizId}`);
-      if (organizingId === quizId) { setOrganizingId(null); setOrganizedData(null); }
       if (editingQuiz?.id === quizId) cancelEdit();
       loadAll();
-    } catch (err) { setError(err.message); }
-  };
-
-  // ── Organizer for existing quiz ────────────────────────────────────────────
-  const handleOrganize = async (quizId) => {
-    if (organizingId === quizId) {
-      setOrganizingId(null);
-      setOrganizedData(null);
-      return;
-    }
-    try {
-      const quiz = await api.get(`/quizzes/${quizId}`);
-      const source = quiz.items || [
-        ...(quiz.rounds  || []).map(r => ({ kind: 'round',  ...r })),
-        ...(quiz.widgets || []).map(w => ({ kind: 'widget', ...w }))
-      ];
-      setOrganizingId(quizId);
-      setOrganizedData({
-        id:    quiz.id,
-        name:  quiz.name,
-        items: quizItemsToUiItems(source, 'org')
-      });
     } catch (err) { setError(err.message); }
   };
 
@@ -329,6 +285,14 @@ export default function QuizBuilder() {
               <option value="">— No master theme —</option>
               {masters.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select>
+            <label className="quiz-tss-toggle">
+              <input
+                type="checkbox"
+                checked={teamSizeScoring}
+                onChange={e => setTeamSizeScoring(e.target.checked)}
+              />
+              Team size handicap
+            </label>
             {editingQuiz && (
               <button type="button" className="btn btn-secondary" onClick={cancelEdit}>
                 Cancel
@@ -456,14 +420,9 @@ export default function QuizBuilder() {
             <QuizCard
               key={q.id}
               quiz={q}
-              isOpen={organizingId === q.id}
               isEditing={editingQuiz?.id === q.id}
-              orgData={organizingId === q.id ? organizedData : null}
-              onOrganize={() => handleOrganize(q.id)}
               onEdit={() => handleEdit(q.id)}
               onDelete={() => handleDelete(q.id, q.name)}
-              onOrgDataChange={setOrganizedData}
-              onError={setError}
             />
           ))}
         </div>
@@ -481,50 +440,12 @@ export default function QuizBuilder() {
   );
 }
 
-// ── QuizCard with inline organizer ────────────────────────────────────────────
-// The organizer shows a single unified list of rounds and widgets, freely mixed,
-// matching the actual playback order. Drag to reorder; changes persist immediately.
-function QuizCard({ quiz, isOpen, isEditing, orgData, onOrganize, onEdit, onDelete, onOrgDataChange, onError }) {
-  const [saveState, setSaveState] = useState(null); // null | 'saving' | 'saved'
-
-  const sensors = useSensors(
-    useSensor(PointerSensor,  { activationConstraint: { distance: 5 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
-  );
-
-  // Persist reordered items to the backend
-  const persist = async (nextData) => {
-    setSaveState('saving');
-    try {
-      await api.put(`/quizzes/${quiz.id}/reorder`, {
-        items: nextData.items.map(i =>
-          i.kind === 'round'
-            ? { kind: 'round',  roundId:  i.roundId }
-            : { kind: 'widget', widgetId: i.widgetId }
-        )
-      });
-      setSaveState('saved');
-      setTimeout(() => setSaveState(null), 1800);
-    } catch (err) {
-      onError('Failed to save order: ' + err.message);
-      setSaveState(null);
-    }
-  };
-
-  const handleItemDragEnd = ({ active, over }) => {
-    if (!over || active.id === over.id || !orgData) return;
-    const from = orgData.items.findIndex(i => i.uid === active.id);
-    const to   = orgData.items.findIndex(i => i.uid === over.id);
-    if (from < 0 || to < 0) return;
-    const next = { ...orgData, items: arrayMove(orgData.items, from, to) };
-    onOrgDataChange(next);
-    persist(next);
-  };
-
+// ── QuizCard ──────────────────────────────────────────────────────────────────
+function QuizCard({ quiz, isEditing, onEdit, onDelete }) {
   return (
-    <div className={`quiz-card ${isOpen ? 'quiz-card-open' : ''} ${isEditing ? 'quiz-card-editing' : ''}`}>
+    <div className={`quiz-card ${isEditing ? 'quiz-card-editing' : ''}`}>
       <div className="quiz-card-row">
-        <div>
+        <div className="quiz-card-info">
           <h4>{quiz.name}</h4>
           <p>Code: <strong>{quiz.code}</strong> · {new Date(quiz.created_at).toLocaleDateString()}</p>
         </div>
@@ -539,13 +460,6 @@ function QuizCard({ quiz, isOpen, isEditing, orgData, onOrganize, onEdit, onDele
           </button>
           <button
             type="button"
-            className={`btn btn-sm ${isOpen ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={onOrganize}
-          >
-            {isOpen ? '▲ Close' : '📋 Arrange'}
-          </button>
-          <button
-            type="button"
             className="btn btn-sm btn-danger"
             onClick={onDelete}
             title="Delete this quiz"
@@ -554,41 +468,6 @@ function QuizCard({ quiz, isOpen, isEditing, orgData, onOrganize, onEdit, onDele
           </button>
         </div>
       </div>
-
-      {isOpen && orgData && (
-        <div className="so-organizer">
-          <div className="so-org-status">
-            {saveState === 'saving' && <span className="so-saving">Saving…</span>}
-            {saveState === 'saved'  && <span className="so-saved">✓ Saved</span>}
-            {!saveState             && (
-              <span className="so-hint-drag">
-                Drag tiles to reorder — rounds and widgets can be freely mixed
-              </span>
-            )}
-          </div>
-
-          {orgData.items.length === 0 ? (
-            <p className="so-empty">No rounds or widgets</p>
-          ) : (
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              onDragEnd={handleItemDragEnd}
-            >
-              <SortableContext
-                items={orgData.items.map(i => i.uid)}
-                strategy={verticalListSortingStrategy}
-              >
-                <div className="so-list">
-                  {orgData.items.map((item, i) => (
-                    <OrgTile key={item.uid} item={item} index={i} />
-                  ))}
-                </div>
-              </SortableContext>
-            </DndContext>
-          )}
-        </div>
-      )}
     </div>
   );
 }

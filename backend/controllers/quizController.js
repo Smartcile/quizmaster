@@ -123,7 +123,7 @@ function normaliseOrderList(items, rounds, widgets) {
 
 async function createQuiz(req, res) {
   try {
-    const { name, items, rounds, widgets, master_id } = req.body;
+    const { name, items, rounds, widgets, master_id, team_size_scoring } = req.body;
     const code = generateQuizCode();
 
     const client = await db.getClient();
@@ -131,8 +131,8 @@ async function createQuiz(req, res) {
       await client.query('BEGIN');
 
       const quizResult = await client.query(
-        'INSERT INTO quizzes (name, code, master_id) VALUES ($1, $2, $3) RETURNING *',
-        [name, code, master_id || null]
+        'INSERT INTO quizzes (name, code, master_id, team_size_scoring) VALUES ($1, $2, $3, $4) RETURNING *',
+        [name, code, master_id || null, team_size_scoring || false]
       );
       const quizId = quizResult.rows[0].id;
 
@@ -400,15 +400,15 @@ async function deleteQuiz(req, res) {
 async function updateQuiz(req, res) {
   try {
     const { id } = req.params;
-    const { name, items, rounds, widgets, master_id } = req.body;
+    const { name, items, rounds, widgets, master_id, team_size_scoring } = req.body;
 
     const client = await db.getClient();
     try {
       await client.query('BEGIN');
 
       const quizResult = await client.query(
-        'UPDATE quizzes SET name = $1, master_id = $2 WHERE id = $3 RETURNING *',
-        [name, master_id || null, id]
+        'UPDATE quizzes SET name = $1, master_id = $2, team_size_scoring = $3 WHERE id = $4 RETURNING *',
+        [name, master_id || null, team_size_scoring || false, id]
       );
       if (quizResult.rows.length === 0) {
         await client.query('ROLLBACK');
@@ -484,17 +484,30 @@ async function getSessionResults(req, res) {
         t.id,
         t.name,
         t.size,
-        COALESCE(SUM(s.points_awarded), 0)::decimal AS score_total,
+        COALESCE(SUM(s.points_awarded), 0)::float AS score_total,
         COALESCE(
           (SELECT SUM(bp.points) FROM brownie_points bp WHERE bp.team_id = t.id),
           0
-        )::decimal AS brownie_total
+        )::float AS brownie_total,
+        CASE WHEN q.team_size_scoring
+          THEN GREATEST(-4, LEAST(5, 6 - COALESCE(t.size, 6)))
+          ELSE 0
+        END::float AS size_points
       FROM teams t
+      JOIN quiz_sessions qs ON qs.id = t.quiz_session_id
+      JOIN quizzes q ON q.id = qs.quiz_id
       LEFT JOIN scores s ON s.team_id = t.id
       WHERE t.quiz_session_id = $1
-      GROUP BY t.id, t.name, t.size
+      GROUP BY t.id, t.name, t.size, q.team_size_scoring
       ORDER BY
-        (COALESCE(SUM(s.points_awarded), 0) + COALESCE((SELECT SUM(bp.points) FROM brownie_points bp WHERE bp.team_id = t.id), 0)) DESC,
+        (
+          COALESCE(SUM(s.points_awarded), 0) +
+          COALESCE((SELECT SUM(bp.points) FROM brownie_points bp WHERE bp.team_id = t.id), 0) +
+          CASE WHEN q.team_size_scoring
+            THEN GREATEST(-4, LEAST(5, 6 - COALESCE(t.size, 6)))
+            ELSE 0
+          END
+        ) DESC,
         t.name ASC
     `, [sessionId]);
     res.json({ teams: teamsResult.rows });
