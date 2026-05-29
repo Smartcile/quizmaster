@@ -36,6 +36,8 @@ services:
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
       # Optional: set custom public URLs so the Admin lobby shows the correct
       # quizzer/slideshow links when portals are on different domains.
+      # Used by QuizControl to build the portal link buttons (lobby + active).
+      # Leave unset to use the hostname:port fallback.
       # QUIZZER_URL: ${QUIZZER_URL:-}
       # SLIDESHOW_URL: ${SLIDESHOW_URL:-}
       # ADMIN_URL: ${ADMIN_URL:-}
