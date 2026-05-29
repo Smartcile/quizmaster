@@ -180,16 +180,17 @@ Key tables and their purposes:
 | `categories` | Managed category list. Seeded with 14 defaults; admins can add/rename/delete. Renames propagate to `questions.category`. |
 | `rounds` | Named question groups with optional `background_color` |
 | `round_questions` | Junction: ordered questions within a round. Has `question_format_override` for per-round MCQ mode. |
-| `quizzes` | Assembled quiz with a unique 6-char `code` and optional `master_id` FK to `slide_masters` |
+| `quizzes` | Assembled quiz with a unique 6-char `code`, optional `master_id` FK to `slide_masters`, and `team_size_scoring BOOLEAN` (enables handicap scoring). |
 | `quiz_rounds` | Junction: rounds within a quiz. `position` column stores global interleaved order (shared namespace with `quiz_widgets.position`). Legacy `"order"` column kept for backward compat. |
 | `quiz_widgets` | Custom slides (scoreboard/rules/custom) attached to a quiz, with `data` JSONB. `position` column stores global interleaved order. |
 | `quiz_sessions` | A running instance of a quiz. `status`: `lobby` → `active` → `finished`. `current_slide_index` drives sync. `locked_round_ids` JSONB array tracks which rounds' answers are locked. |
 | `teams` | Teams in a session (name + size). Find-or-create by case-insensitive name enables rejoining. |
 | `answers` | Team answer submissions (auto-saved on every keystroke via socket) |
-| `scores` | Admin-marked scores: 0, 0.5, or 1 per question per team. Auto-populated when submitted answer matches the correct answer (normalised). |
+| `scores` | Admin-marked scores: 0, 0.5, or 1 per question per team. Auto-populated when submitted answer matches the correct answer (normalised). `auto_marked BOOLEAN` distinguishes system marks from manual overrides. |
 | `brownie_points` | Bonus points the admin can award manually |
 | `slide_masters` | Visual themes: background, text styles, placeholder positions, and per-slide-type content `templates` JSONB |
 | `slides` | Per-quiz Fabric.js canvas slides (intro/custom types) linked to a master for styling |
+| `media_files` | Registry of uploaded media files. Fields: `filename` (unique), `original_name`, `mime_type`, `size_bytes`, `url`, `uploaded_at`. Populated by `POST /api/upload/media` via `ON CONFLICT DO NOTHING`. |
 
 ---
 
