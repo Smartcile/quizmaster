@@ -90,12 +90,13 @@ quiz-master/
 │   └── src/
 │       ├── App.jsx             # Code entry → lobby → active slide rendering + scoreboard widget
 │       └── utils/buildSlides.js  ← SAME function as admin
-└── frontend-quizzer/
-    ├── nginx.conf
-    └── src/
-        ├── App.jsx             # Join (find-or-create rejoin) → waiting → playing → finished
-        ├── pages/QuizParticipant.jsx  # Answer input, mark-answers review, answer reveals, host-current highlight
-        └── utils/buildSlides.js  ← SAME function as admin
+├── frontend-quizzer/
+│   ├── nginx.conf
+│   └── src/
+│       ├── App.jsx             # Join (find-or-create rejoin) → waiting → playing → finished
+│       ├── pages/JoinQuiz.jsx  # Pre-fills quiz code from ?code= URL param
+│       ├── pages/QuizParticipant.jsx  # Answer input, mark-answers review, answer reveals, host-current highlight
+│       └── utils/buildSlides.js  ← SAME function as admin
 ```
 
 ---
@@ -199,10 +200,11 @@ Key tables and their purposes:
 | `Dashboard.jsx` | Dashboard | Start/manage sessions, live session status |
 | `QuestionManager.jsx` | Questions | Question bank CRUD, category filter, difficulty, CSV export, category manager |
 | `RoundBuilder.jsx` | Rounds | Assemble questions into rounds, set round colour |
-| `QuizBuilder.jsx` | Quizzes | Combine rounds + widgets into a quiz, pick master theme, arrange order |
-| `QuizControl.jsx` | Control | Live slide navigation, lock/unlock answers, lifecycle buttons (lobby/active/finished) |
+| `QuizBuilder.jsx` | Quizzes | Combine rounds + widgets into a quiz, pick master theme, enable team size handicap scoring |
+| `QuizControl.jsx` | Control | Live slide navigation, lock/unlock answers, lifecycle buttons, portal quick-links (lobby + active) |
 | `AnswerMarking.jsx` | Mark Answers | Per-question per-team answer review, 0/0.5/1 scoring with optimistic UI |
 | `MastersAndSlides.jsx` | Masters & Slides | Edit master themes (Layout tab: background/styles/placeholders) and slide content defaults (Templates tab: intro/round/mark-answers/end/scoreboard/rules/custom pages) |
+| `MediaLibrary.jsx` | Media | Upload and manage images/video/audio. Shows usage labels per file; prevents deletion of in-use files |
 | `QuizHistory.jsx` | History | View all finished quiz sessions: date/time, team count, expandable team scores + CSV download per session |
 
 ---
@@ -269,6 +271,15 @@ The "⏹ End Quiz" button in QuizControl shows a `confirm()` dialog before setti
 
 ### Dynamic MCQ options
 The question editor now supports adding and removing MCQ options dynamically (minimum 2 options). Options are no longer capped at 4.
+
+### Team size handicap scoring
+When `team_size_scoring` is enabled on a quiz (toggle in QuizBuilder), each team receives starting points based on their registered team size: size 1→+5, 2→+4, 3→+3, 4→+2, 5→+1, 6→0, 7→-1, 8→-2, 9→-3, 10→-4. Formula: `GREATEST(-4, LEAST(5, 6 - size))`. These points are included in `total` on the scoreboard and appear as a separate "Handicap" column in History when any team has a non-zero size_points value. The `team_size_scoring` boolean is stored on the `quizzes` table and flows through `loadQuizWithRoundsAndWidgets`, `getSessionScoreboard`, and `getSessionResults`.
+
+### Portal links with quiz code pre-fill
+QuizControl shows portal link buttons for both **lobby** and **active** states. The Quizzer link includes `?code=${quiz.code}` so players who open the link land with the code pre-filled in the join form. `JoinQuiz.jsx` reads `new URLSearchParams(window.location.search).get('code')` on mount and initialises the code state from it. The portal URL is built from `QUIZZER_URL` env var (set in backend and returned by `/api/config`) or falls back to `hostname:3003`.
+
+### Media library
+`GET /api/media` returns all uploaded files from the `media_files` table, each annotated with usage labels ("Question", "Slide Master") and an `in_use` flag. `GET /api/media/:id/usage` returns the exact questions and slide masters referencing the file. `DELETE /api/media/:id` refuses (409) if the file is still in use. The upload endpoint (`POST /api/upload/media`) registers new files in `media_files` using `ON CONFLICT DO NOTHING`. The `MediaLibrary.jsx` admin page shows a grid of files with thumbnails for images and emoji icons for video/audio; clicking a card opens a detail modal with metadata, preview, and usage breakdown.
 
 ---
 
@@ -357,3 +368,13 @@ Copy `.env.example` to `.env` before running locally.
 - **Auto-mark reset requires `auto_marked` flag**: The `scores` table has an `auto_marked BOOLEAN` column. `maybeAutoMark` only resets scores where `auto_marked = true`. Manually-marked scores are always protected from auto-reset.
 
 - **Scrollable question editor**: The question editor panel uses `.qm-editor-scrollable` which constrains height to the viewport and makes `.form` overflow-y scrollable, so the Submit button is always reachable regardless of how many MCQ options are showing.
+
+- **Team size scoring formula**: `GREATEST(-4, LEAST(5, 6 - size))` — teams with size > 10 get clamped to -4. Teams with `size = null` default to size=6 (0 pts). Change the formula only in both `getSessionScoreboard` (teamController.js) and `getSessionResults` (quizController.js) to keep them in sync.
+
+- **Media library N+1 queries**: `listMedia` in mediaController.js does two COUNT queries per file to build the usage labels. This is acceptable for small libraries. If the library grows large, replace with two bulk queries (one for all question media_urls, one for all slide_master background_image_urls) and annotate in-memory.
+
+- **Portal link code pre-fill**: The `?code=` param is only read on mount via `useState` lazy initialiser in `JoinQuiz.jsx`. Deep-linking to a code does not auto-submit the form — the player still enters their team name and clicks Join. This is intentional so teams don't accidentally skip the team name step.
+
+- **Rounds and quiz builder scroll heights**: `.dnd-split` has `max-height: 55vh` and `.dnd-list` / `.so-round-picker` / `.so-list` are scrollable flex children. If the panels look too short on a large display, increase the max-height in admin.css. The `.quiz-list` (Existing Quizzes) also scrolls at `max-height: 360px`.
+
+- **Quiz Arrange removed**: The inline "Arrange" organizer panel on quiz cards was removed. Reordering is done by loading the quiz into the builder form (Edit) and dragging tiles in the "Quiz Order" panel.

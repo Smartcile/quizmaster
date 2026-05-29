@@ -228,12 +228,11 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd }) {
         )}
       </div>
 
-      {sessionStatus === 'active' && portalConfig && (
+      {(sessionStatus === 'lobby' || sessionStatus === 'active') && (
         <div className="portal-links">
           <span className="portal-links-label">Open portals:</span>
           <a
-            href={portalConfig.quizzerUrl ||
-              `${window.location.protocol}//${window.location.hostname}:3003`}
+            href={`${portalConfig?.quizzerUrl || `${window.location.protocol}//${window.location.hostname}:3003`}?code=${quiz.code}`}
             target="_blank"
             rel="noreferrer"
             className="portal-link-btn portal-link-quizzer"
@@ -241,8 +240,7 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd }) {
             📱 Quizzer Portal
           </a>
           <a
-            href={portalConfig.slideshowUrl ||
-              `${window.location.protocol}//${window.location.hostname}:3002`}
+            href={portalConfig?.slideshowUrl || `${window.location.protocol}//${window.location.hostname}:3002`}
             target="_blank"
             rel="noreferrer"
             className="portal-link-btn portal-link-slideshow"

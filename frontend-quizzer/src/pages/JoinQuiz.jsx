@@ -1,7 +1,10 @@
 import { useState } from 'react';
 
 export default function JoinQuiz({ onJoin, error }) {
-  const [code, setCode] = useState('');
+  const [code, setCode] = useState(() => {
+    const param = new URLSearchParams(window.location.search).get('code');
+    return param ? param.toUpperCase() : '';
+  });
   const [teamName, setTeamName] = useState('');
   const [teamSize, setTeamSize] = useState(1);
   const [loading, setLoading] = useState(false);

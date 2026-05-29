@@ -280,3 +280,26 @@ ALTER TABLE quiz_widgets ADD COLUMN IF NOT EXISTS position INT DEFAULT NULL;
 -- the auto-mark system can reset the score to 0.
 -- Manual admin marks always set auto_marked = false, preventing auto-resets.
 ALTER TABLE scores ADD COLUMN IF NOT EXISTS auto_marked BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- ============================================================
+-- Team size scoring (additive)
+-- ============================================================
+-- team_size_scoring: when enabled for a quiz, each team gets starting points
+-- based on their registered size (handicap so small teams can compete).
+-- Formula: GREATEST(-4, LEAST(5, 6 - size))  →  size 1→+5, 6→0, 10→-4
+ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS team_size_scoring BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- ============================================================
+-- Media library (additive)
+-- ============================================================
+-- media_files: tracks all uploaded files for the media library page
+CREATE TABLE IF NOT EXISTS media_files (
+  id            SERIAL PRIMARY KEY,
+  filename      VARCHAR(500) NOT NULL UNIQUE,
+  original_name VARCHAR(500),
+  mime_type     VARCHAR(100),
+  size_bytes    BIGINT,
+  url           VARCHAR(500) NOT NULL,
+  uploaded_at   TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_media_files_filename ON media_files(filename);

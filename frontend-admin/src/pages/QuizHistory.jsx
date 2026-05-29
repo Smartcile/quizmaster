@@ -42,7 +42,7 @@ export default function QuizHistory() {
   };
 
   const totalScore = (t) =>
-    (parseFloat(t.score_total) || 0) + (parseFloat(t.brownie_total) || 0);
+    (parseFloat(t.score_total) || 0) + (parseFloat(t.brownie_total) || 0) + (parseFloat(t.size_points) || 0);
 
   if (loading) {
     return (
@@ -106,38 +106,51 @@ export default function QuizHistory() {
                       <p className="history-no-teams">No teams in this session.</p>
                     )}
 
-                    {!isLoading && teamData && teamData.teams.length > 0 && (
-                      <table className="history-teams-table">
-                        <thead>
-                          <tr>
-                            <th className="col-rank">#</th>
-                            <th className="col-name">Team</th>
-                            <th className="col-size">Size</th>
-                            <th className="col-score">Quiz pts</th>
-                            <th className="col-bonus">Bonus</th>
-                            <th className="col-total">Total</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {teamData.teams.map((t, i) => (
-                            <tr key={t.id} className={i === 0 ? 'history-row-winner' : ''}>
-                              <td className="col-rank">
-                                {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}
-                              </td>
-                              <td className="col-name">{t.name}</td>
-                              <td className="col-size">{t.size ?? '—'}</td>
-                              <td className="col-score">{parseFloat(t.score_total) || 0}</td>
-                              <td className="col-bonus">
-                                {parseFloat(t.brownie_total) > 0
-                                  ? `+${parseFloat(t.brownie_total)}`
-                                  : '—'}
-                              </td>
-                              <td className="col-total history-total-pts">{totalScore(t)}</td>
+                    {!isLoading && teamData && teamData.teams.length > 0 && (() => {
+                      const hasSizePoints = teamData.teams.some(t => (parseFloat(t.size_points) || 0) !== 0);
+                      return (
+                        <table className="history-teams-table">
+                          <thead>
+                            <tr>
+                              <th className="col-rank">#</th>
+                              <th className="col-name">Team</th>
+                              <th className="col-size">Size</th>
+                              <th className="col-score">Quiz pts</th>
+                              <th className="col-bonus">Bonus</th>
+                              {hasSizePoints && <th className="col-score">Handicap</th>}
+                              <th className="col-total">Total</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    )}
+                          </thead>
+                          <tbody>
+                            {teamData.teams.map((t, i) => (
+                              <tr key={t.id} className={i === 0 ? 'history-row-winner' : ''}>
+                                <td className="col-rank">
+                                  {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}
+                                </td>
+                                <td className="col-name">{t.name}</td>
+                                <td className="col-size">{t.size ?? '—'}</td>
+                                <td className="col-score">{parseFloat(t.score_total) || 0}</td>
+                                <td className="col-bonus">
+                                  {parseFloat(t.brownie_total) > 0
+                                    ? `+${parseFloat(t.brownie_total)}`
+                                    : '—'}
+                                </td>
+                                {hasSizePoints && (
+                                  <td className="col-score">
+                                    {parseFloat(t.size_points) > 0
+                                      ? `+${parseFloat(t.size_points)}`
+                                      : parseFloat(t.size_points) < 0
+                                        ? parseFloat(t.size_points)
+                                        : '—'}
+                                  </td>
+                                )}
+                                <td className="col-total history-total-pts">{totalScore(t)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      );
+                    })()}
 
                     <div className="history-card-footer">
                       <button

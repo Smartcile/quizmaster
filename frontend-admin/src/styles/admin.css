@@ -1080,7 +1080,7 @@ select {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 20px;
-  min-height: 500px;
+  max-height: 55vh;
 }
 
 .dnd-panel {
@@ -1120,7 +1120,7 @@ select {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  min-height: 300px;
+  min-height: 0;
 }
 
 .dnd-target {
@@ -1216,6 +1216,8 @@ select {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  max-height: 320px;
+  overflow-y: auto;
 }
 
 .round-item {
@@ -2737,12 +2739,27 @@ input[type="checkbox"] {
    SLIDE ORGANIZER — compact @dnd-kit tiles
    ===================================================== */
 
+/* Team size scoring toggle */
+.quiz-tss-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.quiz-tss-toggle:hover { color: var(--text-primary); }
+
 /* ── Round picker chips (new quiz left panel) ── */
 .so-round-picker {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 5px;
-  margin-bottom: 4px;
+  padding: 10px 12px;
 }
 
 .so-round-chip {
@@ -2786,9 +2803,13 @@ input[type="checkbox"] {
 
 /* ── Sortable tile list ── */
 .so-list {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 3px;
+  padding: 10px;
 }
 
 /* ── Single tile ── */
@@ -2886,9 +2907,8 @@ input[type="checkbox"] {
 }
 .quiz-card-row {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
+  align-items: stretch;
+  gap: 16px;
 }
 
 .so-organizer {
@@ -3171,15 +3191,31 @@ input[type="checkbox"] {
   padding: 8px 0;
 }
 
+/* Quiz builder list — scrollable flex column (overrides dashboard grid inside .panel) */
+.panel .quiz-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 360px;
+  overflow-y: auto;
+  margin-top: 0;
+}
+
+/* ── Quiz card info ── */
+.quiz-card-info { flex: 1; }
+.quiz-card-info h4 { color: var(--text-primary); margin-bottom: 4px; }
+.quiz-card-info p  { color: var(--text-muted); font-size: 0.88rem; }
+.quiz-card-info strong { color: var(--neon-cyan); }
+
 /* ── Quiz card action buttons row ── */
 .quiz-card-actions {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 6px;
+  justify-content: center;
   flex-shrink: 0;
-  flex-wrap: wrap;
-  justify-content: flex-end;
 }
+.quiz-card-actions .btn { width: 100%; min-width: 90px; }
 
 /* Edit mode highlight on the builder panel */
 .panel-editing {
@@ -3468,4 +3504,165 @@ input[type="checkbox"] {
   letter-spacing: 0.06em;
   color: var(--neon-purple);
   margin-bottom: 6px;
+}
+
+/* =====================================================
+   MEDIA LIBRARY
+   ===================================================== */
+.media-library-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.media-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 16px;
+}
+
+.media-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  padding: 0;
+  font-family: inherit;
+  color: inherit;
+}
+.media-card:hover {
+  border-color: var(--neon-cyan);
+  box-shadow: var(--shadow-glow-cyan);
+}
+.media-card-in-use {
+  border-color: rgba(0, 255, 159, 0.3);
+}
+.media-card-in-use:hover {
+  border-color: var(--neon-green);
+  box-shadow: var(--shadow-glow-green);
+}
+
+.media-thumb {
+  width: 100%;
+  height: 120px;
+  overflow: hidden;
+  background: var(--bg-base);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.media-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.media-thumb-icon {
+  font-size: 2.5rem;
+}
+
+.media-icon {
+  font-size: 2.5rem;
+}
+
+.media-card-body {
+  padding: 10px 12px;
+}
+.media-card-name {
+  color: var(--text-primary);
+  font-size: 0.82rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 3px;
+}
+.media-card-meta {
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  margin-bottom: 6px;
+}
+.media-card-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.media-usage-chip {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+/* Detail modal */
+.media-detail-modal { max-width: 620px; }
+
+.media-detail-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+}
+.media-meta-row {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  font-size: 0.88rem;
+}
+.media-meta-label {
+  color: var(--text-muted);
+  font-weight: 600;
+  min-width: 80px;
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.media-meta-value {
+  color: var(--text-primary);
+  word-break: break-all;
+}
+.media-meta-url {
+  color: var(--neon-cyan);
+  font-size: 0.78rem;
+  word-break: break-all;
+  background: rgba(0,240,255,0.06);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.media-usage-section { display: flex; flex-direction: column; gap: 10px; }
+.media-usage-section h4 { color: var(--neon-cyan); font-size: 0.9rem; margin-bottom: 4px; }
+.media-usage-group-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.media-usage-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.media-usage-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  background: var(--bg-elevated);
+  border-radius: 5px;
 }

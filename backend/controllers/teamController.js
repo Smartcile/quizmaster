@@ -101,8 +101,21 @@ async function getSessionScoreboard(req, res) {
         t.size,
         COALESCE(s.score_total,   0)::float AS score_total,
         COALESCE(b.brownie_total, 0)::float AS brownie_total,
-        (COALESCE(s.score_total, 0) + COALESCE(b.brownie_total, 0))::float AS total
+        CASE WHEN q.team_size_scoring
+          THEN GREATEST(-4, LEAST(5, 6 - COALESCE(t.size, 6)))
+          ELSE 0
+        END::float AS size_points,
+        (
+          COALESCE(s.score_total, 0) +
+          COALESCE(b.brownie_total, 0) +
+          CASE WHEN q.team_size_scoring
+            THEN GREATEST(-4, LEAST(5, 6 - COALESCE(t.size, 6)))
+            ELSE 0
+          END
+        )::float AS total
       FROM teams t
+      JOIN quiz_sessions qs ON qs.id = t.quiz_session_id
+      JOIN quizzes q ON q.id = qs.quiz_id
       LEFT JOIN (
         SELECT team_id, SUM(points_awarded) AS score_total
         FROM scores GROUP BY team_id
