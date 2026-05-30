@@ -225,7 +225,7 @@ API calls automatically use the same hostname the page was served from — no re
 ### Quizzer Portal
 - Teams enter quiz code, team name, team size
 - **Waiting screen** if session is in lobby; auto-flips to playing when admin clicks Begin
-- Renders the current slide as: question (with text input / MCQ / both), waiting message, or answer reveal (showing their answer, correct answer, points awarded)
+- Renders the current slide as: question (with text input / MCQ / both), waiting message, or answer reveal (showing their answer, correct answer, points awarded). On reveal, the team's answer box border **glows red** when marked wrong (0) and **glows yellow** for a half mark (0.5); a correct answer (1) stays neutral
 - Answers auto-save as teams type
 - In-round navigation bar — jump to any unlocked question. The question the **host is currently showing** gets a distinct **amber/orange glow** (distinct from the guest's current cyan and the answered green)
 - **Review before lock** — the "Mark Your Answers" slide lists all answers. Tap any question to edit it; a "← Back to Review" button returns to the list

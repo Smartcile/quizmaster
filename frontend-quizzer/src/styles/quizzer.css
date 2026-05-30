@@ -613,6 +613,17 @@ body {
   border-radius: var(--radius-sm);
   padding: 14px;
   margin-bottom: 16px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+/* Wrong answer (0 pts) → glowing red border */
+.reveal-your-answer.answer-wrong {
+  border-color: var(--neon-pink);
+  box-shadow: 0 0 16px rgba(255, 56, 104, 0.55);
+}
+/* Half mark (0.5 pts) → glowing yellow border */
+.reveal-your-answer.answer-half {
+  border-color: var(--neon-yellow);
+  box-shadow: 0 0 16px rgba(255, 230, 0, 0.5);
 }
 .reveal-your-label {
   display: block;
