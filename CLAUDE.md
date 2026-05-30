@@ -261,8 +261,21 @@ Each master can store custom page templates in `slide_masters.templates.custom` 
 ### Quiz history
 `GET /api/quizzes/sessions/history` returns all finished sessions (quiz name, code, date, team count). `GET /api/quizzes/sessions/:id/results` returns teams with quiz scores and brownie points, ordered by total descending. The History admin page displays these with expandable per-session scoreboards and a CSV download link.
 
-### Portal links during active quiz
-When a session is active, QuizControl shows quick links to the Quizzer Portal and the Display/Slideshow using URLs from the `/api/config` endpoint (or falling back to the same hostname with ports 3003/3002).
+### Portal links & join-URL labels (driven by `/api/config`)
+Every surface that needs to **display** a portal address reads it from the public `GET /api/config` endpoint, which returns:
+
+```json
+{ "quizzerUrl": <QUIZZER_URL|null>, "slideshowUrl": <SLIDESHOW_URL|null>, "adminUrl": <ADMIN_URL|null> }
+```
+
+- **Admin `QuizControl.jsx`** — the "📱 Quizzer Portal" + "🖥 Display / Slideshow" buttons (shown in both lobby and active) and the lobby "Teams visit …" code use `portalConfig.quizzerUrl` / `portalConfig.slideshowUrl`.
+- **Slideshow `App.jsx`** — the lobby "Teams join at …" label uses `portalConfig.quizzerUrl`.
+
+When an env var is unset, `/api/config` returns `null` for it and the UI falls back to `${protocol}//${hostname}:3003` (quizzer) / `:3002` (slideshow). Trailing slashes on the configured URLs are stripped before use.
+
+**Path-based deep link**: the quizzer join link is built as `${quizzerBase}/${quiz.code}` (e.g. `https://answer.website.com/ABC123`), shown both as the admin portal button and in the admin + slideshow lobby instructions. `JoinQuiz.jsx` reads the code from the first URL **path segment** (regex `^[A-Za-z0-9]{4,8}$`, upper-cased), falling back to a legacy `?code=` query param for older links. This relies on the quizzer nginx SPA fallback (`try_files $uri $uri/ /index.html`) so any path serves the app; Vite's absolute `/assets/...` base means deep paths still load assets correctly.
+
+**The env vars must reach the backend container.** They are wired through the `backend` service `environment:` block in both `docker-compose.yml` and `docker-compose.prod.yml` as `QUIZZER_URL: ${QUIZZER_URL:-}` etc. Setting `SLIDESHOW_URL=https://show.website.com` in `.env` flows into the container and `/api/config` then returns it. The frontends are **not** rebuilt for this — they fetch `/api/config` at runtime, so a backend recreate (`docker-compose up -d`) is enough.
 
 ### Host-current highlight on quizzer round-nav
 The round-nav button for the question the admin is currently showing gets a `.host-current` amber/orange highlight. This is distinct from `.current` (the question the guest is viewing) and `.answered` (a question with a submitted answer).
@@ -277,7 +290,7 @@ The question editor now supports adding and removing MCQ options dynamically (mi
 When `team_size_scoring` is enabled on a quiz (toggle in QuizBuilder), each team receives starting points based on their registered team size: size 1→+5, 2→+4, 3→+3, 4→+2, 5→+1, 6→0, 7→-1, 8→-2, 9→-3, 10→-4. Formula: `GREATEST(-4, LEAST(5, 6 - size))`. These points are included in `total` on the scoreboard and appear as a separate "Handicap" column in History when any team has a non-zero size_points value. The `team_size_scoring` boolean is stored on the `quizzes` table and flows through `loadQuizWithRoundsAndWidgets`, `getSessionScoreboard`, and `getSessionResults`.
 
 ### Portal links with quiz code pre-fill
-QuizControl shows portal link buttons for both **lobby** and **active** states. The Quizzer link includes `?code=${quiz.code}` so players who open the link land with the code pre-filled in the join form. `JoinQuiz.jsx` reads `new URLSearchParams(window.location.search).get('code')` on mount and initialises the code state from it. The portal URL is built from `QUIZZER_URL` env var (set in backend and returned by `/api/config`) or falls back to `hostname:3003`.
+QuizControl shows portal link buttons for both **lobby** and **active** states. The Quizzer link is a **path-based deep link** `${quizzerBase}/${quiz.code}` (e.g. `https://answer.website.com/ABC123`) so players who open the link land with the code pre-filled in the join form. `JoinQuiz.jsx` derives the code from the first URL path segment on mount (with a legacy `?code=` query-param fallback). The portal base URL is built from `QUIZZER_URL` env var (set in backend and returned by `/api/config`) or falls back to `hostname:3003`.
 
 ### Media library
 `GET /api/media` returns all uploaded files from the `media_files` table, each annotated with usage labels ("Question", "Slide Master") and an `in_use` flag. `GET /api/media/:id/usage` returns the exact questions and slide masters referencing the file. `DELETE /api/media/:id` refuses (409) if the file is still in use. The upload endpoint (`POST /api/upload/media`) registers new files in `media_files` using `ON CONFLICT DO NOTHING`. The `MediaLibrary.jsx` admin page shows a grid of files with thumbnails for images and emoji icons for video/audio; clicking a card opens a detail modal with metadata, preview, and usage breakdown.
@@ -374,7 +387,9 @@ Copy `.env.example` to `.env` before running locally.
 
 - **Media library N+1 queries**: `listMedia` in mediaController.js does two COUNT queries per file to build the usage labels. This is acceptable for small libraries. If the library grows large, replace with two bulk queries (one for all question media_urls, one for all slide_master background_image_urls) and annotate in-memory.
 
-- **Portal link code pre-fill**: The `?code=` param is only read on mount via `useState` lazy initialiser in `JoinQuiz.jsx`. Deep-linking to a code does not auto-submit the form — the player still enters their team name and clicks Join. This is intentional so teams don't accidentally skip the team name step.
+- **Portal link code pre-fill**: The code is read once on mount via a `useState` lazy initialiser in `JoinQuiz.jsx` (`codeFromUrl()` → first path segment, else `?code=`). Deep-linking to a code does not auto-submit the form — the player still enters their team name and clicks Join. This is intentional so teams don't accidentally skip the team name step. The 4–8 char alphanumeric regex on the path segment keeps it from mistaking asset/route paths for a code.
+
+- **Wrong join addresses (localhost:port instead of the real domain)**: This happens when the `QUIZZER_URL` / `SLIDESHOW_URL` / `ADMIN_URL` env vars don't reach the **backend** container, so `GET /api/config` returns `null` and every surface falls back to `hostname:port`. The fix is that these vars are passed through the `backend` service `environment:` block in both compose files (`QUIZZER_URL: ${QUIZZER_URL:-}` …). If they were commented out, the `.env` values were silently ignored. After changing `.env`, recreate the backend (`docker-compose up -d`) — no frontend rebuild is needed because the URLs are fetched at runtime from `/api/config`, not baked in at build time. Never bake these into the frontends via `VITE_*` — it breaks host portability.
 
 - **Rounds and quiz builder scroll heights**: `.dnd-split` has `max-height: 55vh` and `.dnd-list` / `.so-round-picker` / `.so-list` are scrollable flex children. If the panels look too short on a large display, increase the max-height in admin.css. The `.quiz-list` (Existing Quizzes) also scrolls at `max-height: 360px`.
 

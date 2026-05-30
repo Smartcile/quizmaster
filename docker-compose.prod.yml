@@ -34,13 +34,13 @@ services:
       DB_NAME: ${DB_NAME:-quiz_master}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
-      # Optional: set custom public URLs so the Admin lobby shows the correct
-      # quizzer/slideshow links when portals are on different domains.
-      # Used by QuizControl to build the portal link buttons (lobby + active).
-      # Leave unset to use the hostname:port fallback.
-      # QUIZZER_URL: ${QUIZZER_URL:-}
-      # SLIDESHOW_URL: ${SLIDESHOW_URL:-}
-      # ADMIN_URL: ${ADMIN_URL:-}
+      # Public portal URLs. Returned by GET /api/config and used by the Admin
+      # Control page + Slideshow lobby to show the correct join links/labels.
+      # Set these in .env (e.g. SLIDESHOW_URL=https://show.website.com). If left
+      # blank the UI falls back to the current hostname with ports 3001/3002/3003.
+      QUIZZER_URL: ${QUIZZER_URL:-}
+      SLIDESHOW_URL: ${SLIDESHOW_URL:-}
+      ADMIN_URL: ${ADMIN_URL:-}
     # Backend is reached internally via the Docker network from the frontend
     # nginx proxies. No host port needed unless you want direct API access.
     depends_on:

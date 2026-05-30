@@ -444,29 +444,27 @@ export default function QuizBuilder() {
 function QuizCard({ quiz, isEditing, onEdit, onDelete }) {
   return (
     <div className={`quiz-card ${isEditing ? 'quiz-card-editing' : ''}`}>
-      <div className="quiz-card-row">
-        <div className="quiz-card-info">
-          <h4>{quiz.name}</h4>
-          <p>Code: <strong>{quiz.code}</strong> · {new Date(quiz.created_at).toLocaleDateString()}</p>
-        </div>
-        <div className="quiz-card-actions">
-          <button
-            type="button"
-            className={`btn btn-sm ${isEditing ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={onEdit}
-            title="Edit this quiz"
-          >
-            {isEditing ? '✏ Editing…' : '✏ Edit'}
-          </button>
-          <button
-            type="button"
-            className="btn btn-sm btn-danger"
-            onClick={onDelete}
-            title="Delete this quiz"
-          >
-            🗑 Delete
-          </button>
-        </div>
+      <div className="quiz-card-info" onClick={onEdit}>
+        <h4>{quiz.name}</h4>
+        <p>Code: <strong>{quiz.code}</strong> · {new Date(quiz.created_at).toLocaleDateString()}</p>
+      </div>
+      <div className="quiz-card-actions">
+        <button
+          type="button"
+          className={`btn btn-sm ${isEditing ? 'btn-primary' : 'btn-secondary'}`}
+          onClick={onEdit}
+          title="Edit this quiz"
+        >
+          {isEditing ? '✏ Editing…' : '✏ Edit'}
+        </button>
+        <button
+          type="button"
+          className="btn btn-sm btn-danger"
+          onClick={onDelete}
+          title="Delete this quiz"
+        >
+          🗑 Delete
+        </button>
       </div>
     </div>
   );

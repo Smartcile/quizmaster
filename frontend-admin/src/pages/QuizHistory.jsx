@@ -34,6 +34,23 @@ export default function QuizHistory() {
     }
   };
 
+  const deleteSession = async (sessionId, quizName, e) => {
+    e.stopPropagation();
+    if (!confirm(`Delete the history for "${quizName}"?\n\nThis permanently removes the session and all its teams, answers, and scores. This cannot be undone.`)) return;
+    try {
+      await api.delete(`/quizzes/sessions/${sessionId}`);
+      setSessions(prev => prev.filter(s => s.session_id !== sessionId));
+      setResults(prev => {
+        const next = { ...prev };
+        delete next[sessionId];
+        return next;
+      });
+      if (expandedId === sessionId) setExpandedId(null);
+    } catch (err) {
+      setError('Failed to delete session: ' + err.message);
+    }
+  };
+
   const formatDate = (iso) => {
     if (!iso) return '—';
     const d = new Date(iso);
@@ -161,6 +178,13 @@ export default function QuizHistory() {
                         }}
                       >
                         ↓ Download CSV
+                      </button>
+                      <button
+                        className="btn btn-danger btn-sm"
+                        onClick={(e) => deleteSession(s.session_id, s.quiz_name, e)}
+                        title="Permanently delete this session and its results"
+                      >
+                        🗑 Delete
                       </button>
                     </div>
                   </div>

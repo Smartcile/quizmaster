@@ -15,7 +15,8 @@ const {
   deleteQuiz,
   updateQuiz,
   getSessionHistory,
-  getSessionResults
+  getSessionResults,
+  deleteSession
 } = require('../controllers/quizController');
 
 router.get('/', getAllQuizzes);
@@ -35,5 +36,6 @@ router.get('/sessions/:sessionId', getSession);
 router.put('/sessions/:sessionId/status', setSessionStatus);
 router.put('/sessions/:sessionId/slide', setSessionSlide);
 router.post('/sessions/:sessionId/restart', restartSession);
+router.delete('/sessions/:sessionId', deleteSession);
 
 module.exports = router;

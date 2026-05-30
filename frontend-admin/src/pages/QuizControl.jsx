@@ -13,6 +13,19 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd }) {
   const slides = useMemo(() => buildSlides(quiz), [quiz]);
   const teamsCount = teams.length;
 
+  // Canonical quizzer base URL: SLIDESHOW/QUIZZER_URL from /api/config, else
+  // fall back to the current hostname on the quizzer port. Trailing slash stripped.
+  const quizzerBase = (
+    portalConfig?.quizzerUrl ||
+    `${window.location.protocol}//${window.location.hostname}:3003`
+  ).replace(/\/+$/, '');
+  const slideshowBase = (
+    portalConfig?.slideshowUrl ||
+    `${window.location.protocol}//${window.location.hostname}:3002`
+  ).replace(/\/+$/, '');
+  // Deep link a team straight to this quiz: https://answer.website.com/ABC123
+  const quizzerJoinUrl = `${quizzerBase}/${quiz.code}`;
+
   // ── Load portal URL config once ──────────────────────────────────────────
   useEffect(() => {
     api.get('/config').then(c => setPortalConfig(c)).catch(() => {});
@@ -232,7 +245,7 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd }) {
         <div className="portal-links">
           <span className="portal-links-label">Open portals:</span>
           <a
-            href={`${portalConfig?.quizzerUrl || `${window.location.protocol}//${window.location.hostname}:3003`}?code=${quiz.code}`}
+            href={quizzerJoinUrl}
             target="_blank"
             rel="noreferrer"
             className="portal-link-btn portal-link-quizzer"
@@ -240,7 +253,7 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd }) {
             📱 Quizzer Portal
           </a>
           <a
-            href={portalConfig?.slideshowUrl || `${window.location.protocol}//${window.location.hostname}:3002`}
+            href={slideshowBase}
             target="_blank"
             rel="noreferrer"
             className="portal-link-btn portal-link-slideshow"
@@ -300,11 +313,8 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd }) {
           <h3>Lobby</h3>
           <p className="lobby-join-instructions">
             Teams visit{' '}
-            <code>
-              {portalConfig?.quizzerUrl ||
-                `${window.location.protocol}//${window.location.host.replace(/:\d+$/, ':3003')}`}
-            </code>{' '}
-            and enter code <strong>{quiz.code}</strong>. Click <strong>Begin Quiz</strong> when ready.
+            <code>{quizzerJoinUrl}</code>{' '}
+            (code <strong>{quiz.code}</strong> is pre-filled). Click <strong>Begin Quiz</strong> when ready.
           </p>
 
           <div className="lobby-teams-panel">

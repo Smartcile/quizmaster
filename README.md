@@ -98,9 +98,20 @@ Health checks: postgres has `pg_isready`, backend has `/api/health`. Frontends `
 | `ADMIN_PORT` | `3001` | Host port for admin dashboard (optional override) |
 | `SLIDESHOW_PORT` | `3002` | Host port for slideshow viewer (optional override) |
 | `QUIZZER_PORT` | `3003` | Host port for quizzer portal (optional override) |
-| `ADMIN_URL` | *(auto)* | Full public URL of admin — shown in lobby when set |
-| `SLIDESHOW_URL` | *(auto)* | Full public URL of slideshow — shown in admin lobby |
-| `QUIZZER_URL` | *(auto)* | Full public URL of quizzer — shown in admin lobby + slideshow lobby |
+| `ADMIN_URL` | *(auto)* | Full public URL of admin dashboard (e.g. `https://admin.website.com`) |
+| `SLIDESHOW_URL` | *(auto)* | Full public URL of slideshow (e.g. `https://show.website.com`) |
+| `QUIZZER_URL` | *(auto)* | Full public URL of quizzer (e.g. `https://answer.website.com`) |
+
+### Portal URLs (join links & on-screen labels)
+
+`ADMIN_URL` / `SLIDESHOW_URL` / `QUIZZER_URL` control the join links and address labels shown on the **admin Control page** and the **slideshow lobby**. They are passed to the **backend** container and served from `GET /api/config`; the frontends fetch them at runtime (nothing is baked in at build time).
+
+- Set the full external URL, e.g. `QUIZZER_URL=https://answer.website.com` — **no trailing slash needed** (it's stripped).
+- The quizzer join link becomes a path-based deep link: `https://answer.website.com/<CODE>` (e.g. `/ABC123`), so teams land with the code pre-filled.
+- If a variable is unset, the UI falls back to the current hostname on ports `3001`/`3002`/`3003`.
+- **After changing these, recreate the backend container** (`docker-compose up -d`). No frontend rebuild is required.
+
+> If your join links show `localhost:3003` (or the wrong host), it means these vars never reached the backend — make sure they're set in `.env` and your compose file is recent enough to pass them through (they live in the `backend` service `environment:` block).
 
 ### Security note
 
@@ -200,7 +211,7 @@ API calls automatically use the same hostname the page was served from — no re
 - Teams can join during lobby phase (not just after Begin Quiz). Lobby team list **auto-refreshes** when the session transitions back to lobby after a restart
 - Admin sees: live team counter, **▶ Begin Quiz** to go live
 - **Active** state — Next/Previous slide nav, Lock Round Answers, slide thumbnails, quick-links to the **Quizzer Portal** and **Slideshow** portals
-- Portal links appear in **both lobby and active** states. The Quizzer link includes `?code=QUIZ_CODE` so players land with the code pre-filled; they still enter their team name before joining
+- Portal links appear in **both lobby and active** states. The Quizzer link is a path-based deep link (`https://answer.yourdomain.com/ABC123`) so players land with the code pre-filled; they still enter their team name before joining
 - **⏸ Back to Lobby** / **↺ Restart Session** / **⏹ End Quiz** controls — End Quiz shows a confirmation dialog before finishing
 - Restart keeps the same teams but resets to slide 0
 - All surfaces recover automatically after a network hiccup — WebSocket auto-rejoins and the server replays authoritative state (slide index, session status, locked rounds)
