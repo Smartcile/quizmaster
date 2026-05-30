@@ -1,10 +1,17 @@
 import { useState } from 'react';
 
+// Read a pre-filled quiz code from the URL. Preferred form is a path segment
+// (e.g. https://answer.website.com/ABC123). A legacy ?code=ABC123 query param
+// is still honoured for older links.
+function codeFromUrl() {
+  const seg = window.location.pathname.replace(/^\/+/, '').split('/')[0];
+  if (/^[A-Za-z0-9]{4,8}$/.test(seg)) return seg.toUpperCase();
+  const param = new URLSearchParams(window.location.search).get('code');
+  return param ? param.toUpperCase() : '';
+}
+
 export default function JoinQuiz({ onJoin, error }) {
-  const [code, setCode] = useState(() => {
-    const param = new URLSearchParams(window.location.search).get('code');
-    return param ? param.toUpperCase() : '';
-  });
+  const [code, setCode] = useState(codeFromUrl);
   const [teamName, setTeamName] = useState('');
   const [teamSize, setTeamSize] = useState(1);
   const [loading, setLoading] = useState(false);

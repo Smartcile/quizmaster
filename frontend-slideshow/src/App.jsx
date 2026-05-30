@@ -143,8 +143,12 @@ function App() {
 
   // LOBBY screen - shown before quiz begins
   if (sessionStatus === 'lobby') {
-    const joinUrl = portalConfig?.quizzerUrl ||
-      `${window.location.protocol}//${window.location.host.replace(/:3002$/, ':3003')}`;
+    const quizzerBase = (
+      portalConfig?.quizzerUrl ||
+      `${window.location.protocol}//${window.location.host.replace(/:3002$/, ':3003')}`
+    ).replace(/\/+$/, '');
+    // Full deep link with the code baked into the path: https://answer.website.com/ABC123
+    const joinUrl = quiz?.code ? `${quizzerBase}/${quiz.code}` : quizzerBase;
     return (
       <div className="slideshow-container">
         <div className="slide lobby-slide">

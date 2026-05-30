@@ -24,10 +24,21 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
     setViewingQuestionId(null);
   }, [currentSlide]);
 
-  // The question slide to display — guest may have navigated away from admin's question
+  // Questions the host has already revealed in this round. Guests may only
+  // navigate to questions up to (and including) the one the host is showing —
+  // never jump ahead to a question that hasn't been displayed yet.
+  const displayedQuestions = useMemo(() => {
+    if (slide?.type !== 'question') return [];
+    return questionsInCurrentRound.filter(q => q.questionNumber <= slide.questionNumber);
+  }, [questionsInCurrentRound, slide]);
+
+  // The question slide to display — guest may have navigated to an earlier
+  // (already-displayed) question. Future questions are never shown.
   const activeSlide = useMemo(() => {
     if (!viewingQuestionId || slide?.type !== 'question') return slide;
-    return questionsInCurrentRound.find(q => q.questionId === viewingQuestionId) || slide;
+    const target = questionsInCurrentRound.find(q => q.questionId === viewingQuestionId);
+    if (target && target.questionNumber <= slide.questionNumber) return target;
+    return slide;
   }, [viewingQuestionId, slide, questionsInCurrentRound]);
 
   // Load existing team answers + scores when joining mid-quiz
@@ -230,12 +241,13 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
         {renderSlide()}
       </div>
 
-      {/* In-round navigation: tap any question to answer/edit it until the round is locked */}
-      {slide?.type === 'question' && questionsInCurrentRound.length > 1 && !isLockedFor(slide.roundId) && (
+      {/* In-round navigation: tap any already-revealed question to answer/edit it
+          until the round is locked. Questions the host hasn't shown yet are hidden. */}
+      {slide?.type === 'question' && displayedQuestions.length > 1 && !isLockedFor(slide.roundId) && (
         <div className="round-nav">
           <p className="round-nav-label">Questions in this round:</p>
           <div className="round-nav-buttons">
-            {questionsInCurrentRound.map((q) => {
+            {displayedQuestions.map((q) => {
               const isViewing     = q.questionId === (viewingQuestionId || slide.questionId);
               const isAnswered    = !!answers[q.questionId];
               const isHostCurrent = q.questionId === slide.questionId && !isViewing;

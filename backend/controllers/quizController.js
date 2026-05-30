@@ -516,6 +516,25 @@ async function getSessionResults(req, res) {
   }
 }
 
+// ── Delete a finished session and all its data (teams/answers/scores cascade) ──
+async function deleteSession(req, res) {
+  try {
+    const { sessionId } = req.params;
+    const check = await db.query('SELECT status FROM quiz_sessions WHERE id = $1', [sessionId]);
+    if (check.rows.length === 0) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+    if (check.rows[0].status !== 'finished') {
+      return res.status(409).json({ error: 'Only finished sessions can be deleted. End the session first.' });
+    }
+    // FK cascades from quiz_sessions → teams → answers/scores/brownie_points
+    await db.query('DELETE FROM quiz_sessions WHERE id = $1', [sessionId]);
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
 module.exports = {
   getAllQuizzes,
   getQuiz,
@@ -532,5 +551,6 @@ module.exports = {
   updateQuiz,
   loadQuizWithRoundsAndWidgets,
   getSessionHistory,
-  getSessionResults
+  getSessionResults,
+  deleteSession
 };
