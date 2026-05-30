@@ -277,6 +277,9 @@ When an env var is unset, `/api/config` returns `null` for it and the UI falls b
 
 **The env vars must reach the backend container.** They are wired through the `backend` service `environment:` block in both `docker-compose.yml` and `docker-compose.prod.yml` as `QUIZZER_URL: ${QUIZZER_URL:-}` etc. Setting `SLIDESHOW_URL=https://show.website.com` in `.env` flows into the container and `/api/config` then returns it. The frontends are **not** rebuilt for this — they fetch `/api/config` at runtime, so a backend recreate (`docker-compose up -d`) is enough.
 
+### Answer-reveal score glow on quizzer
+On the quizzer answer-reveal slide, the team's "Your answer" box border reflects the awarded score once marked: `0` pts → glowing **red** (`.answer-wrong`, `--neon-pink`), `0.5` pts → glowing **yellow** (`.answer-half`, `--neon-yellow`), `1` pt or not-yet-marked → unchanged neutral border. The modifier class is derived from `scores[questionId]` in `QuizParticipant.jsx` and styled in `quizzer.css`.
+
 ### Host-current highlight on quizzer round-nav
 The round-nav button for the question the admin is currently showing gets a `.host-current` amber/orange highlight. This is distinct from `.current` (the question the guest is viewing) and `.answered` (a question with a submitted answer).
 

@@ -201,7 +201,7 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
           <p className="reveal-label">{slide.roundName} · Question {slide.questionNumber}</p>
           <h2 className="reveal-question">{slide.text}</h2>
           {q && answers[slide.questionId] && (
-            <div className="reveal-your-answer">
+            <div className={`reveal-your-answer ${myScore === 0 ? 'answer-wrong' : myScore === 0.5 ? 'answer-half' : ''}`}>
               <span className="reveal-your-label">Your answer:</span>
               <span className="reveal-your-text">{answers[slide.questionId]}</span>
             </div>
