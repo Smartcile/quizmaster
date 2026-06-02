@@ -3295,6 +3295,51 @@ input[type="checkbox"] {
   .panel .quiz-list { grid-template-columns: 1fr; }
 }
 
+/* Duplicate-question warning in the Quiz Builder */
+.quiz-dup-warning {
+  background: rgba(255, 157, 0, 0.1);
+  border: 1px solid var(--neon-orange, #ff9d00);
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+  margin: 14px 0;
+}
+.quiz-dup-warning-title {
+  display: block;
+  color: var(--neon-orange, #ff9d00);
+  font-weight: 700;
+  font-size: 0.9rem;
+  margin-bottom: 8px;
+}
+.quiz-dup-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.quiz-dup-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.85rem;
+}
+.quiz-dup-q {
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+.quiz-dup-rounds {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 /* Edit mode highlight on the builder panel */
 .panel-editing {
   border: 1px solid rgba(184, 41, 255, 0.5) !important;

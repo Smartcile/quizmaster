@@ -144,6 +144,35 @@ export default function QuizBuilder() {
     return allRounds.filter(r => !usedIds.has(r.id));
   }, [allRounds, orderItems]);
 
+  // Detect questions that appear more than once across the quiz — whether in
+  // two different rounds OR twice within the same round. Each round only carries
+  // a question count in orderItems, so we look up the full round (with its
+  // questions) from allRounds by id. Per-round occurrence counts are tracked so
+  // an intra-round repeat can be shown as e.g. "Round 1 ×2".
+  const duplicateQuestions = useMemo(() => {
+    const byId = new Map(allRounds.map(r => [r.id, r]));
+    const occ = new Map(); // questionId -> { text, total, rounds: Map(name -> count) }
+    orderItems
+      .filter(i => i.kind === 'round')
+      .forEach(item => {
+        const round = byId.get(item.roundId);
+        if (!round) return;
+        (round.questions || []).filter(q => q?.id).forEach(q => {
+          if (!occ.has(q.id)) occ.set(q.id, { text: q.text, total: 0, rounds: new Map() });
+          const entry = occ.get(q.id);
+          entry.total += 1;
+          entry.rounds.set(round.name, (entry.rounds.get(round.name) || 0) + 1);
+        });
+      });
+    return [...occ.values()]
+      .filter(v => v.total > 1)
+      .map(v => ({
+        text: v.text,
+        // "Round 1", "Round 1 ×2", etc. — count shown only when repeated in a round
+        rounds: [...v.rounds.entries()].map(([name, count]) => count > 1 ? `${name} ×${count}` : name)
+      }));
+  }, [orderItems, allRounds]);
+
   // ── New quiz handlers ──────────────────────────────────────────────────────
   const addRound = (round) => {
     setOrderItems(prev => [...prev, {
@@ -197,6 +226,12 @@ export default function QuizBuilder() {
   // ── Create or update quiz ──────────────────────────────────────────────────
   const handleSubmit = async (e) => {
     e.preventDefault();
+    // Guard: never save a quiz that has the same question in more than one round
+    // (also covers an Enter-key submit while the button is disabled).
+    if (duplicateQuestions.length > 0) {
+      setError('Resolve duplicate questions before saving — the same question appears in more than one round.');
+      return;
+    }
     try {
       // Send a single unified items array — preserves the interleaved round/widget order
       const items = orderItems.map(i =>
@@ -301,12 +336,29 @@ export default function QuizBuilder() {
             <button
               type="submit"
               className="btn btn-primary"
-              disabled={!name || orderItems.length === 0}
+              disabled={!name || orderItems.length === 0 || duplicateQuestions.length > 0}
+              title={duplicateQuestions.length > 0 ? 'Resolve duplicate questions before saving' : undefined}
             >
               {editingQuiz ? `Save Changes (${orderItems.length} items)` : `Create Quiz (${orderItems.length} items)`}
             </button>
           </form>
         </div>
+
+        {duplicateQuestions.length > 0 && (
+          <div className="quiz-dup-warning">
+            <span className="quiz-dup-warning-title">
+              ⚠ {duplicateQuestions.length} duplicate question{duplicateQuestions.length !== 1 ? 's' : ''} — resolve before saving:
+            </span>
+            <ul className="quiz-dup-list">
+              {duplicateQuestions.map((d, i) => (
+                <li key={i}>
+                  <span className="quiz-dup-q">{d.text}</span>
+                  <span className="quiz-dup-rounds">{d.rounds.join(' · ')}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         <div className="dnd-split">
           {/* Left panel: round picker + widget buttons */}
