@@ -98,6 +98,9 @@ export default function QuestionManager() {
   const [filterCategory, setFilterCategory] = useState('all');
   const [filterDifficulty, setFilterDifficulty] = useState('all');
   const [filterApproved, setFilterApproved] = useState('all');
+  const [filterType, setFilterType] = useState('all');
+  const [filterAnswerMode, setFilterAnswerMode] = useState('all');
+  const [filterFormat, setFilterFormat] = useState('all');
   const [form, setForm] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState(null);
   const [error, setError] = useState(null);
@@ -145,6 +148,9 @@ export default function QuestionManager() {
     return questions.filter(q => {
       if (filterCategory !== 'all' && q.category !== filterCategory) return false;
       if (filterDifficulty !== 'all' && (q.difficulty || 'medium') !== filterDifficulty) return false;
+      if (filterType !== 'all' && (q.type || 'text') !== filterType) return false;
+      if (filterAnswerMode !== 'all' && (q.answer_mode || 'text') !== filterAnswerMode) return false;
+      if (filterFormat !== 'all' && (q.question_format || 'standard') !== filterFormat) return false;
       if (filterApproved === 'approved' && !q.approved) return false;
       if (filterApproved === 'unapproved' && q.approved) return false;
       if (search) {
@@ -153,7 +159,7 @@ export default function QuestionManager() {
       }
       return true;
     });
-  }, [questions, search, filterCategory, filterDifficulty, filterApproved]);
+  }, [questions, search, filterCategory, filterDifficulty, filterType, filterAnswerMode, filterFormat, filterApproved]);
 
   const selectQuestion = (q) => {
     setEditingId(q.id);
@@ -340,6 +346,18 @@ export default function QuestionManager() {
                 <option value="all">All status</option>
                 <option value="approved">Approved</option>
                 <option value="unapproved">Unapproved</option>
+              </select>
+              <select value={filterType} onChange={(e) => setFilterType(e.target.value)}>
+                <option value="all">All media types</option>
+                {QUESTION_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </select>
+              <select value={filterAnswerMode} onChange={(e) => setFilterAnswerMode(e.target.value)}>
+                <option value="all">All answer modes</option>
+                {ANSWER_MODES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+              </select>
+              <select value={filterFormat} onChange={(e) => setFilterFormat(e.target.value)}>
+                <option value="all">All formats</option>
+                {QUESTION_FORMATS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
               </select>
             </div>
           </div>

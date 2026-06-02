@@ -2,6 +2,21 @@ const db = require('../config/database');
 
 const QUESTION_FIELDS = 'text, answer, type, media_url, points, tags, category, options, difficulty, answer_mode, approved, question_format';
 
+// A question that carries MCQ options must never be a plain 'text' question —
+// the options would be hidden from the quizzer. Such a question is promoted to
+// 'mcq' / 'multichoice'. The 'both' mode is intentional (the quizzer chooses
+// whether the question is shown as multiple-choice or free-text) and is always
+// preserved. Returns the resolved { answer_mode, question_format } pair.
+function resolveMcqMode(options, answer_mode, question_format) {
+  const opts = Array.isArray(options) ? options.filter(o => String(o).trim()) : [];
+  const mode = answer_mode || 'text';
+  const fmt = question_format || 'standard';
+  if (opts.length > 0 && mode !== 'both') {
+    return { answer_mode: 'mcq', question_format: 'multichoice' };
+  }
+  return { answer_mode: mode, question_format: fmt };
+}
+
 async function getAllQuestions(req, res) {
   try {
     const { category, search, difficulty, approved } = req.query;
@@ -95,12 +110,13 @@ async function getQuestion(req, res) {
 async function createQuestion(req, res) {
   try {
     const { text, answer, type, media_url, points, tags, category, options, difficulty, answer_mode, approved, question_format } = req.body;
+    const mode = resolveMcqMode(options, answer_mode, question_format);
     const result = await db.query(
       `INSERT INTO questions (${QUESTION_FIELDS})
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
       [text, answer, type || 'text', media_url, points, tags, category,
-       JSON.stringify(options || []), difficulty || 'medium', answer_mode || 'text',
-       approved ?? false, question_format || 'standard']
+       JSON.stringify(options || []), difficulty || 'medium', mode.answer_mode,
+       approved ?? false, mode.question_format]
     );
     res.status(201).json(result.rows[0]);
   } catch (error) {
@@ -111,14 +127,15 @@ async function createQuestion(req, res) {
 async function updateQuestion(req, res) {
   try {
     const { text, answer, type, media_url, points, tags, category, options, difficulty, answer_mode, approved, question_format } = req.body;
+    const mode = resolveMcqMode(options, answer_mode, question_format);
     const result = await db.query(
       `UPDATE questions SET text=$1, answer=$2, type=$3, media_url=$4, points=$5,
        tags=$6, category=$7, options=$8, difficulty=$9, answer_mode=$10,
        approved=$11, question_format=$12
        WHERE id=$13 RETURNING *`,
       [text, answer, type || 'text', media_url, points, tags, category,
-       JSON.stringify(options || []), difficulty || 'medium', answer_mode || 'text',
-       approved ?? false, question_format || 'standard',
+       JSON.stringify(options || []), difficulty || 'medium', mode.answer_mode,
+       approved ?? false, mode.question_format,
        req.params.id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Question not found' });
@@ -184,20 +201,23 @@ async function importQuestions(req, res) {
     return res.status(400).json({ error: 'items must be an array' });
   }
 
-  const norm = (q) => ({
-    text: q.text,
-    answer: q.answer,
-    type: q.type || 'text',
-    media_url: q.media_url || null,
-    points: q.points ?? 1,
-    tags: q.tags || null,
-    category: q.category || null,
-    options: JSON.stringify(Array.isArray(q.options) ? q.options : []),
-    difficulty: q.difficulty || 'medium',
-    answer_mode: q.answer_mode || 'text',
-    approved: q.approved ?? false,
-    question_format: q.question_format || 'standard'
-  });
+  const norm = (q) => {
+    const mode = resolveMcqMode(q.options, q.answer_mode, q.question_format);
+    return {
+      text: q.text,
+      answer: q.answer,
+      type: q.type || 'text',
+      media_url: q.media_url || null,
+      points: q.points ?? 1,
+      tags: q.tags || null,
+      category: q.category || null,
+      options: JSON.stringify(Array.isArray(q.options) ? q.options : []),
+      difficulty: q.difficulty || 'medium',
+      answer_mode: mode.answer_mode,
+      approved: q.approved ?? false,
+      question_format: mode.question_format
+    };
+  };
 
   const summary = { added: [], copied: [], overwritten: [], ignored: 0 };
   const client = await db.getClient();
