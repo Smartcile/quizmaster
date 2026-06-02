@@ -40,6 +40,7 @@ function QuestionRepos({ onError }) {
   const [repos, setRepos]       = useState([]);
   const [loading, setLoading]   = useState(true);
   const [addOpen, setAddOpen]   = useState(false);
+  const [editRepo, setEditRepo] = useState(null); // repo being edited, or null
   const [expandedId, setExpandedId] = useState(null);
   const [syncingId, setSyncingId]   = useState(null);
   const [results, setResults]   = useState({}); // repoId -> summary | { error }
@@ -64,6 +65,16 @@ function QuestionRepos({ onError }) {
       await load();
     } catch (err) {
       onError('Add failed: ' + err.message);
+    }
+  };
+
+  const saveRepo = async (id, payload) => {
+    try {
+      await api.put(`/repos/${id}`, payload);
+      setEditRepo(null);
+      await load();
+    } catch (err) {
+      onError('Save failed: ' + err.message);
     }
   };
 
@@ -132,6 +143,7 @@ function QuestionRepos({ onError }) {
                     >
                       {syncingId === r.id ? 'Syncing…' : '⟳ Sync'}
                     </button>
+                    <button className="btn btn-sm btn-secondary" onClick={() => setEditRepo(r)}>✏ Edit</button>
                     <button className="btn btn-sm btn-danger" onClick={() => deleteRepo(r.id, r.label)}>🗑</button>
                   </div>
                 </div>
@@ -162,29 +174,37 @@ function QuestionRepos({ onError }) {
         </ul>
       )}
 
-      {addOpen && <AddRepoModal onAdd={addRepo} onClose={() => setAddOpen(false)} />}
+      {addOpen && <RepoModal onSubmit={addRepo} onClose={() => setAddOpen(false)} />}
+      {editRepo && (
+        <RepoModal
+          repo={editRepo}
+          onSubmit={(payload) => saveRepo(editRepo.id, payload)}
+          onClose={() => setEditRepo(null)}
+        />
+      )}
     </div>
   );
 }
 
-// ── Add repository popup ──────────────────────────────────────────────────────
-function AddRepoModal({ onAdd, onClose }) {
-  const [url, setUrl]       = useState('');
-  const [label, setLabel]   = useState('');
-  const [branch, setBranch] = useState('');
-  const [path, setPath]     = useState('');
+// ── Add / edit repository popup ───────────────────────────────────────────────
+function RepoModal({ repo, onSubmit, onClose }) {
+  const editing = !!repo;
+  const [url, setUrl]       = useState(repo?.url || '');
+  const [label, setLabel]   = useState(repo?.label || '');
+  const [branch, setBranch] = useState(repo?.branch || '');
+  const [path, setPath]     = useState(repo?.path || '');
 
   const submit = (e) => {
     e.preventDefault();
     if (!url.trim()) return;
-    onAdd({ url: url.trim(), label: label.trim(), branch: branch.trim(), path: path.trim() });
+    onSubmit({ url: url.trim(), label: label.trim(), branch: branch.trim(), path: path.trim() });
   };
 
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h3>Add question repository</h3>
+          <h3>{editing ? 'Edit repository' : 'Add question repository'}</h3>
           <button onClick={onClose} className="btn-close">×</button>
         </div>
         <form onSubmit={submit}>
@@ -217,7 +237,7 @@ function AddRepoModal({ onAdd, onClose }) {
           </div>
           <div className="modal-footer">
             <button type="button" onClick={onClose} className="btn btn-secondary">Cancel</button>
-            <button type="submit" className="btn btn-primary" disabled={!url.trim()}>Add</button>
+            <button type="submit" className="btn btn-primary" disabled={!url.trim()}>{editing ? 'Save' : 'Add'}</button>
           </div>
         </form>
       </div>

@@ -137,6 +137,35 @@ async function addRepo(req, res) {
   }
 }
 
+async function updateRepo(req, res) {
+  try {
+    const { label, url, branch, path } = req.body;
+    if (!url || !String(url).trim()) return res.status(400).json({ error: 'A GitHub URL is required' });
+
+    const parsed = parseGitHubUrl(url);
+    if (!parsed) return res.status(400).json({ error: 'Not a recognised GitHub URL' });
+
+    const result = await db.query(
+      `UPDATE question_repos
+       SET label = $1, url = $2, owner = $3, repo = $4, branch = $5, path = $6
+       WHERE id = $7 RETURNING *`,
+      [
+        (label && label.trim()) || `${parsed.owner}/${parsed.repo}`,
+        url.trim(),
+        parsed.owner,
+        parsed.repo,
+        branch || parsed.branch || 'main',
+        (path != null && path !== '') ? path : (parsed.path || ''),
+        req.params.id
+      ]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Repository not found' });
+    res.json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
 async function deleteRepo(req, res) {
   try {
     const result = await db.query('DELETE FROM question_repos WHERE id = $1 RETURNING id', [req.params.id]);
@@ -218,4 +247,4 @@ async function syncRepo(req, res) {
   }
 }
 
-module.exports = { listRepos, addRepo, deleteRepo, syncRepo };
+module.exports = { listRepos, addRepo, updateRepo, deleteRepo, syncRepo };
