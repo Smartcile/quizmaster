@@ -314,6 +314,19 @@ CREATE INDEX IF NOT EXISTS idx_media_files_filename ON media_files(filename);
 -- (pulled from a configured GitHub repo), or 'both' (exists in both places).
 ALTER TABLE questions ADD COLUMN IF NOT EXISTS source VARCHAR(10) NOT NULL DEFAULT 'local';
 
+-- Any question that carries MCQ options must be flagged as multiple choice so
+-- the options are never hidden behind a plain 'text' answer mode. The 'both'
+-- mode is intentional (the quizzer chooses MCQ vs free-text display) and is
+-- left untouched. Runs every startup and converges (only touches rows that
+-- aren't already mcq/multichoice and aren't 'both').
+UPDATE questions
+SET answer_mode = 'mcq', question_format = 'multichoice'
+WHERE options IS NOT NULL
+  AND jsonb_typeof(options) = 'array'
+  AND jsonb_array_length(options) > 0
+  AND answer_mode <> 'both'
+  AND (answer_mode <> 'mcq' OR question_format <> 'multichoice');
+
 -- question_repos: GitHub repositories that hold question CSVs. Synced on demand
 -- from the Settings page; raw CSVs are fetched over HTTPS (no git binary).
 CREATE TABLE IF NOT EXISTS question_repos (

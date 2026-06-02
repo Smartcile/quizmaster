@@ -211,12 +211,19 @@ async function syncRepo(req, res) {
       await client.query('BEGIN');
       for (const q of parsed) {
         const match = byText.get(norm(q.text));
+        // Questions carrying MCQ options are flagged multiple choice so the
+        // options can't be hidden behind a plain 'text' answer mode. The 'both'
+        // mode (quizzer chooses MCQ vs free-text) is preserved as-is.
+        const hasOpts = Array.isArray(q.options) && q.options.filter(o => String(o).trim()).length > 0;
+        const promote = hasOpts && q.answer_mode !== 'both';
+        const answerMode = promote ? 'mcq' : q.answer_mode;
+        const qFormat = promote ? 'multichoice' : q.question_format;
         if (!match) {
           await client.query(
             `INSERT INTO questions (${QUESTION_FIELDS})
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'repo')`,
             [q.text, q.answer, q.type, q.media_url, q.points, null, q.category,
-             JSON.stringify(q.options || []), q.difficulty, q.answer_mode, q.approved, q.question_format]
+             JSON.stringify(q.options || []), q.difficulty, answerMode, q.approved, qFormat]
           );
           summary.added++;
           // Track so a later CSV in the same sync doesn't re-insert it
