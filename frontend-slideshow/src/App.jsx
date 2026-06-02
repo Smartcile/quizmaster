@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { QRCodeSVG } from 'qrcode.react';
 import { useWebSocket } from './hooks/useWebSocket';
 import { api } from './services/api';
 import { buildSlides } from './utils/buildSlides';
@@ -205,12 +206,29 @@ function App() {
     );
   };
 
+  // Quizzer join deep link for the on-screen QR code (code baked into the path)
+  const quizzerBase = (
+    portalConfig?.quizzerUrl ||
+    `${window.location.protocol}//${window.location.host.replace(/:3002$/, ':3003')}`
+  ).replace(/\/+$/, '');
+  const quizzerJoinUrl = quiz?.code ? `${quizzerBase}/${quiz.code}` : null;
+  // Show the join QR once a quiz is loaded, except on the finished screen
+  const showJoinQr = quizzerJoinUrl && (sessionStatus === 'lobby' || sessionStatus === 'active');
+
   return (
     <>
       {renderView()}
       {scoreboardVisible && sessionId && (
         <div className="sb-overlay">
           <LiveScoreboard sessionId={sessionId} socket={socket} title={`${quiz?.name || 'Quiz'} — Scoreboard`} />
+        </div>
+      )}
+      {showJoinQr && (
+        <div className="join-qr">
+          <div className="join-qr-code">
+            <QRCodeSVG value={quizzerJoinUrl} size={132} bgColor="#ffffff" fgColor="#07091a" level="M" />
+          </div>
+          <p className="join-qr-label">Scan to join</p>
         </div>
       )}
     </>
