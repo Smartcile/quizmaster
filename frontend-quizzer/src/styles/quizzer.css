@@ -852,3 +852,62 @@ body {
   background: rgba(0, 240, 255, 0.18);
   box-shadow: 0 0 12px rgba(0, 240, 255, 0.3);
 }
+
+/* ===== Per-round scoreboard (overlay on the quizzer) ===== */
+.sb-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  background: rgba(7, 9, 26, 0.97);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 20px 12px;
+  overflow: auto;
+}
+.sb-panel {
+  width: 100%;
+  max-width: 720px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+.sb-title {
+  font-size: 1.4rem;
+  color: var(--text-primary);
+  margin: 0;
+  text-align: center;
+}
+.sb-msg { color: var(--text-muted); font-size: 1rem; }
+.sb-table-wrap { width: 100%; overflow-x: auto; }
+.sb-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+.sb-table th,
+.sb-table td {
+  padding: 8px 9px;
+  text-align: center;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.sb-table thead th {
+  color: var(--neon-cyan);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 700;
+  border-bottom: 2px solid rgba(0, 240, 255, 0.3);
+}
+.sb-col-rank { width: 34px; }
+.sb-col-team { text-align: left; font-weight: 600; color: var(--text-primary); }
+.sb-col-num  { font-variant-numeric: tabular-nums; color: var(--text-primary); }
+.sb-col-total { font-weight: 800; color: var(--neon-green); }
+.sb-table thead .sb-col-total { color: var(--neon-green); }
+.sb-row-leader td {
+  background: linear-gradient(135deg, rgba(255, 230, 0, 0.16), rgba(255, 157, 0, 0.06));
+}
+.sb-row-leader .sb-col-team { color: var(--neon-yellow); }

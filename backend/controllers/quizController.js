@@ -296,6 +296,49 @@ async function getSession(req, res) {
   }
 }
 
+// ── Scoreboard visibility ─────────────────────────────────────────────────────
+// PUT /api/quizzes/sessions/:sessionId/scoreboard-visibility
+// Body: { surface: 'slideshow'|'quizzer'|'admin', visible: bool }  (toggle one)
+//   OR: { visibility: { slideshow, quizzer, admin } }              (set all)
+// Persists the flags and broadcasts scoreboard_visibility_changed to the room
+// so every surface shows/hides its live scoreboard in real time.
+async function setScoreboardVisibility(req, res) {
+  try {
+    const { sessionId } = req.params;
+    const { surface, visible, visibility } = req.body;
+    const VALID = ['slideshow', 'quizzer', 'admin'];
+
+    const cur = await db.query('SELECT scoreboard_visibility FROM quiz_sessions WHERE id = $1', [sessionId]);
+    if (cur.rows.length === 0) return res.status(404).json({ error: 'Session not found' });
+
+    const next = { slideshow: false, quizzer: false, admin: false, ...(cur.rows[0].scoreboard_visibility || {}) };
+    if (visibility && typeof visibility === 'object') {
+      VALID.forEach(k => { if (k in visibility) next[k] = !!visibility[k]; });
+    } else if (VALID.includes(surface)) {
+      next[surface] = !!visible;
+    } else {
+      return res.status(400).json({ error: 'surface must be one of slideshow, quizzer, admin' });
+    }
+
+    const result = await db.query(
+      'UPDATE quiz_sessions SET scoreboard_visibility = $1 WHERE id = $2 RETURNING *',
+      [JSON.stringify(next), sessionId]
+    );
+
+    const io = getIo();
+    if (io) {
+      io.to(`quiz-${sessionId}`).emit('scoreboard_visibility_changed', {
+        visibility: next,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
 // ── Reorder: unified items OR legacy roundIds/widgetIds ───────────────────────
 // New body: { items: [{kind:'round', roundId:...} | {kind:'widget', widgetId:...}] }
 // Legacy body: { roundIds: [...], widgetIds: [...] }
@@ -552,5 +595,6 @@ module.exports = {
   loadQuizWithRoundsAndWidgets,
   getSessionHistory,
   getSessionResults,
-  deleteSession
+  deleteSession,
+  setScoreboardVisibility
 };

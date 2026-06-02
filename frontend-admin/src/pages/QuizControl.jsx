@@ -2,6 +2,9 @@ import { useState, useEffect, useMemo } from 'react';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { buildSlides, slideShortLabel } from '../utils/buildSlides';
 import { api } from '../services/api';
+import LiveScoreboard from '../components/LiveScoreboard';
+
+const EMPTY_VIS = { slideshow: false, quizzer: false, admin: false };
 
 export default function QuizControl({ sessionId, quiz, onSessionEnd }) {
   const [currentSlide, setCurrentSlide] = useState(0);
@@ -9,6 +12,7 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd }) {
   const [teams, setTeams] = useState([]);
   const [lockedRounds, setLockedRounds] = useState(new Set());
   const [portalConfig, setPortalConfig] = useState(null);
+  const [scoreboardVis, setScoreboardVis] = useState(EMPTY_VIS);
   const socket = useWebSocket();
   const slides = useMemo(() => buildSlides(quiz), [quiz]);
   const teamsCount = teams.length;
@@ -39,6 +43,7 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd }) {
       setCurrentSlide(s.current_slide_index || 0);
       const locked = Array.isArray(s.locked_round_ids) ? s.locked_round_ids : [];
       setLockedRounds(new Set(locked));
+      if (s.scoreboard_visibility) setScoreboardVis({ ...EMPTY_VIS, ...s.scoreboard_visibility });
     }).catch(() => {});
 
     api.get(`/teams/session/${sessionId}`).then(setTeams).catch(() => {});
@@ -56,6 +61,11 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd }) {
       if (typeof data.slideIndex === 'number') setCurrentSlide(data.slideIndex);
       if (data.status) setSessionStatus(data.status);
       if (Array.isArray(data.lockedRoundIds)) setLockedRounds(new Set(data.lockedRoundIds));
+      if (data.scoreboardVisibility) setScoreboardVis({ ...EMPTY_VIS, ...data.scoreboardVisibility });
+    };
+
+    const onScoreboardVis = (data) => {
+      if (data?.visibility) setScoreboardVis({ ...EMPTY_VIS, ...data.visibility });
     };
 
     const onSlide = (data) => {
@@ -93,6 +103,7 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd }) {
     socket.on('team_joined',            onTeamJoin);
     socket.on('answer_locked',          onLocked);
     socket.on('answer_unlocked',        onUnlocked);
+    socket.on('scoreboard_visibility_changed', onScoreboardVis);
 
     // If socket is already connected when the effect runs, join immediately
     if (socket.connected) rejoin();
@@ -105,8 +116,22 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd }) {
       socket.off('team_joined',            onTeamJoin);
       socket.off('answer_locked',          onLocked);
       socket.off('answer_unlocked',        onUnlocked);
+      socket.off('scoreboard_visibility_changed', onScoreboardVis);
     };
   }, [sessionId, socket]);
+
+  // ── Toggle scoreboard visibility on a surface (persists + broadcasts) ──────
+  const toggleScoreboard = async (surface) => {
+    const next = { ...scoreboardVis, [surface]: !scoreboardVis[surface] };
+    setScoreboardVis(next); // optimistic
+    try {
+      await api.put(`/quizzes/sessions/${sessionId}/scoreboard-visibility`, {
+        surface, visible: next[surface]
+      });
+    } catch {
+      setScoreboardVis(scoreboardVis); // revert on failure
+    }
+  };
 
   // ── Slide advance via REST (guaranteed DB write + broadcast) ────────────
   // Falls back to WS emit if the REST call fails so the show can go on.
@@ -260,6 +285,39 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd }) {
           >
             🖥 Display / Slideshow
           </a>
+        </div>
+      )}
+
+      {(sessionStatus === 'active' || sessionStatus === 'finished') && (
+        <div className="scoreboard-controls">
+          <span className="scoreboard-controls-label">📊 Scoreboard — show on:</span>
+          <button
+            type="button"
+            className={`sb-toggle ${scoreboardVis.slideshow ? 'on' : ''}`}
+            onClick={() => toggleScoreboard('slideshow')}
+          >
+            🖥 Display {scoreboardVis.slideshow ? '✓' : ''}
+          </button>
+          <button
+            type="button"
+            className={`sb-toggle ${scoreboardVis.quizzer ? 'on' : ''}`}
+            onClick={() => toggleScoreboard('quizzer')}
+          >
+            📱 Quizzers {scoreboardVis.quizzer ? '✓' : ''}
+          </button>
+          <button
+            type="button"
+            className={`sb-toggle ${scoreboardVis.admin ? 'on' : ''}`}
+            onClick={() => toggleScoreboard('admin')}
+          >
+            👁 This screen {scoreboardVis.admin ? '✓' : ''}
+          </button>
+        </div>
+      )}
+
+      {(sessionStatus === 'active' || sessionStatus === 'finished') && scoreboardVis.admin && (
+        <div className="panel scoreboard-admin-panel">
+          <LiveScoreboard sessionId={sessionId} socket={socket} title="Live Scoreboard" />
         </div>
       )}
 

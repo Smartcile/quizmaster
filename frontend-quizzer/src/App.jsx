@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useWebSocket } from './hooks/useWebSocket';
 import JoinQuiz from './pages/JoinQuiz';
 import QuizParticipant from './pages/QuizParticipant';
+import LiveScoreboard from './components/LiveScoreboard';
 import { api } from './services/api';
 
 function App() {
@@ -12,6 +13,7 @@ function App() {
   const [team, setTeam] = useState(null);
   const [currentSlide, setCurrentSlide] = useState(0);
   const [error, setError] = useState(null);
+  const [scoreboardVisible, setScoreboardVisible] = useState(false);
   const socket = useWebSocket();
 
   // ── Restore team identity from sessionStorage after page refresh ──────────
@@ -98,12 +100,16 @@ function App() {
     // session_state: full authoritative state sent by server on every join_quiz
     const onSessionState = (data) => {
       if (typeof data.slideIndex === 'number') setCurrentSlide(data.slideIndex);
+      if (data.scoreboardVisibility) setScoreboardVisible(!!data.scoreboardVisibility.quizzer);
       if (data.status) {
         setSessionStatus(data.status);
         if (data.status === 'active')        setPhase('playing');
         else if (data.status === 'lobby')    setPhase('waiting');
         else if (data.status === 'finished') setPhase('finished');
       }
+    };
+    const onScoreboardVis = (data) => {
+      if (data?.visibility) setScoreboardVisible(!!data.visibility.quizzer);
     };
     const onSlide = (data) => {
       if (typeof data.slideIndex === 'number') setCurrentSlide(data.slideIndex);
@@ -120,6 +126,7 @@ function App() {
     socket.on('session_state',          onSessionState);
     socket.on('slide_changed',          onSlide);
     socket.on('session_status_changed', onStatus);
+    socket.on('scoreboard_visibility_changed', onScoreboardVis);
 
     // If socket is already connected when the effect runs, join immediately
     if (socket.connected) rejoin();
@@ -129,46 +136,60 @@ function App() {
       socket.off('session_state',          onSessionState);
       socket.off('slide_changed',          onSlide);
       socket.off('session_status_changed', onStatus);
+      socket.off('scoreboard_visibility_changed', onScoreboardVis);
     };
   }, [socket, sessionId, team]);
 
-  if (phase === 'join') {
-    return <JoinQuiz onJoin={handleJoin} error={error} />;
-  }
+  const renderView = () => {
+    if (phase === 'join') {
+      return <JoinQuiz onJoin={handleJoin} error={error} />;
+    }
 
-  if (phase === 'waiting') {
-    return (
-      <div className="waiting-screen">
-        <div className="waiting-card">
-          <h1>🎯 {quiz?.name}</h1>
-          <p className="waiting-team">Team: <strong>{team?.name}</strong></p>
-          <div className="waiting-spinner" />
-          <p className="waiting-status">Waiting for the quiz master to begin...</p>
+    if (phase === 'waiting') {
+      return (
+        <div className="waiting-screen">
+          <div className="waiting-card">
+            <h1>🎯 {quiz?.name}</h1>
+            <p className="waiting-team">Team: <strong>{team?.name}</strong></p>
+            <div className="waiting-spinner" />
+            <p className="waiting-status">Waiting for the quiz master to begin...</p>
+          </div>
         </div>
-      </div>
-    );
-  }
+      );
+    }
 
-  if (phase === 'finished') {
-    return (
-      <div className="waiting-screen">
-        <div className="waiting-card">
-          <h1>🏁 Quiz Complete</h1>
-          <p className="waiting-team">Thanks for playing, <strong>{team?.name}</strong>!</p>
+    if (phase === 'finished') {
+      return (
+        <div className="waiting-screen">
+          <div className="waiting-card">
+            <h1>🏁 Quiz Complete</h1>
+            <p className="waiting-team">Thanks for playing, <strong>{team?.name}</strong>!</p>
+          </div>
         </div>
-      </div>
+      );
+    }
+
+    return (
+      <QuizParticipant
+        quiz={quiz}
+        sessionId={sessionId}
+        sessionStatus={sessionStatus}
+        team={team}
+        currentSlide={currentSlide}
+        socket={socket}
+      />
     );
-  }
+  };
 
   return (
-    <QuizParticipant
-      quiz={quiz}
-      sessionId={sessionId}
-      sessionStatus={sessionStatus}
-      team={team}
-      currentSlide={currentSlide}
-      socket={socket}
-    />
+    <>
+      {renderView()}
+      {scoreboardVisible && sessionId && (
+        <div className="sb-overlay">
+          <LiveScoreboard sessionId={sessionId} socket={socket} title="Scoreboard" />
+        </div>
+      )}
+    </>
   );
 }
 

@@ -16,7 +16,8 @@ const {
   updateQuiz,
   getSessionHistory,
   getSessionResults,
-  deleteSession
+  deleteSession,
+  setScoreboardVisibility
 } = require('../controllers/quizController');
 
 router.get('/', getAllQuizzes);
@@ -36,6 +37,7 @@ router.get('/sessions/:sessionId', getSession);
 router.put('/sessions/:sessionId/status', setSessionStatus);
 router.put('/sessions/:sessionId/slide', setSessionSlide);
 router.post('/sessions/:sessionId/restart', restartSession);
+router.put('/sessions/:sessionId/scoreboard-visibility', setScoreboardVisibility);
 router.delete('/sessions/:sessionId', deleteSession);
 
 module.exports = router;

@@ -183,7 +183,7 @@ Key tables and their purposes:
 | `quizzes` | Assembled quiz with a unique 6-char `code`, optional `master_id` FK to `slide_masters`, and `team_size_scoring BOOLEAN` (enables handicap scoring). |
 | `quiz_rounds` | Junction: rounds within a quiz. `position` column stores global interleaved order (shared namespace with `quiz_widgets.position`). Legacy `"order"` column kept for backward compat. |
 | `quiz_widgets` | Custom slides (scoreboard/rules/custom) attached to a quiz, with `data` JSONB. `position` column stores global interleaved order. |
-| `quiz_sessions` | A running instance of a quiz. `status`: `lobby` → `active` → `finished`. `current_slide_index` drives sync. `locked_round_ids` JSONB array tracks which rounds' answers are locked. |
+| `quiz_sessions` | A running instance of a quiz. `status`: `lobby` → `active` → `finished`. `current_slide_index` drives sync. `locked_round_ids` JSONB array tracks which rounds' answers are locked. `scoreboard_visibility` JSONB `{slideshow,quizzer,admin}` tracks per-surface scoreboard show/hide. |
 | `teams` | Teams in a session (name + size). Find-or-create by case-insensitive name enables rejoining. |
 | `answers` | Team answer submissions (auto-saved on every keystroke via socket) |
 | `scores` | Admin-marked scores: 0, 0.5, or 1 per question per team. Auto-populated when submitted answer matches the correct answer (normalised). `auto_marked BOOLEAN` distinguishes system marks from manual overrides. |
@@ -217,14 +217,15 @@ All clients join room `quiz-${sessionId}` after connecting. The server sends `se
 | Event | Direction | Payload | Effect |
 |---|---|---|---|
 | `join_quiz` | Client → Server | `{ sessionId, role, teamId?, teamName? }` | Joins room; server immediately emits `session_state` back |
-| `session_state` | Server → Client | `{ slideIndex, status, lockedRoundIds }` | Client restores full state (used on reconnect) |
+| `session_state` | Server → Client | `{ slideIndex, status, lockedRoundIds, scoreboardVisibility }` | Client restores full state (used on reconnect) |
 | `slide_changed` | Server → Clients | `{ slideIndex }` | All viewers update their current slide |
 | `session_status_changed` | Server → Clients | `{ status, currentSlideIndex }` | Lobby/active/finished state change |
 | `submit_answer` | Quizzer → Server | `{ teamId, roundId, questionId, answer }` | Upsert answer in DB; triggers auto-mark if answer matches |
 | `answer_locked` | Server → Clients | `{ roundId }` | Quizzer disables inputs for that round; persisted in `locked_round_ids` |
 | `answer_unlocked` | Server → Clients | `{ roundId }` | Re-enables quizzer inputs for that round |
-| `answer_marked` | Server → Clients | `{ teamId, questionId, points, autoMarked? }` | Quizzer shows awarded score; admin marking page updates optimistically |
+| `answer_marked` | Server → Clients | `{ teamId, questionId, points, autoMarked? }` | Quizzer shows awarded score; admin marking page updates optimistically; live scoreboards re-fetch |
 | `team_joined` | Server → Room | `{ teamId, teamName, teamSize }` | Admin lobby counter increments; slideshow team count updates |
+| `scoreboard_visibility_changed` | Server → Clients | `{ visibility: { slideshow, quizzer, admin } }` | Each surface shows/hides its live scoreboard. Persisted in `quiz_sessions.scoreboard_visibility` + replayed in `session_state` |
 
 ---
 
@@ -252,8 +253,30 @@ In AnswerMarking, clicking an already-active score button (0, 0.5, or 1) sends `
 ### Lobby team list auto-refresh
 When the session transitions back to `lobby` (via `session_status_changed` WebSocket event or after a restart), QuizControl reloads the team list from `GET /api/teams/session/:id` so newly joined teams appear without a manual refresh.
 
-### Scoreboard widget
-The slideshow renders a live `ScoreboardWidget` that fetches `/api/teams/session/:id/scoreboard` and re-fetches on `answer_marked` and `team_joined` events. The endpoint returns teams ordered by `scores + brownie_points` total descending.
+### Scoreboard (per-round breakdown, all surfaces)
+`GET /api/teams/session/:id/scoreboard` returns a **detailed breakdown** object (not a flat array):
+
+```json
+{
+  "teamSizeScoring": true,
+  "hasBrownie": false,
+  "rounds": [{ "id": 12, "name": "Round 1", "format": "standard" }, ...],
+  "teams": [{
+    "id", "name", "size",
+    "size_points",                 // handicap (Starting column)
+    "brownie_total",               // Bonus column (only shown if hasBrownie)
+    "round_scores": { "12": 3, "15": 5 },
+    "round_total", "total"         // total = size_points + brownie_total + Σ round_scores
+  }]                               // sorted by total desc
+}
+```
+
+Per-round attribution joins `scores → round_questions → quiz_rounds` for the session's quiz. The shared **`LiveScoreboard`** component (duplicated in all three frontends under `src/components/`) renders columns: `# | Team | [Starting] | <round name>… | [Bonus] | Total`. Starting shows only when `teamSizeScoring`; Bonus only when any brownie points exist. Round column headers use the actual round names (so a "Who Am I?" / "Puzzle" round appears as its own column). It re-fetches on `answer_marked` / `team_joined` / `answer_locked` / `answer_unlocked`.
+
+It is rendered in three places: the slideshow **scoreboard widget slide**, a toggle-driven **full-screen overlay** on slideshow + quizzer, and an **inline panel** on the admin Control page.
+
+### Scoreboard visibility toggles
+The host controls scoreboard visibility **per surface** from the Control page (three buttons: Display / Quizzers / This screen). State is persisted in `quiz_sessions.scoreboard_visibility` (JSONB `{slideshow,quizzer,admin}`) via `PUT /api/quizzes/sessions/:id/scoreboard-visibility` (body `{ surface, visible }` or `{ visibility }`), which broadcasts `scoreboard_visibility_changed`. Each surface shows/hides its scoreboard live and restores the correct state on reconnect from `session_state.scoreboardVisibility`.
 
 ### Custom pages in Masters
 Each master can store custom page templates in `slide_masters.templates.custom` (array). When a quiz is built using that master, these custom pages appear as pre-filled widget options in QuizBuilder so they can be added to the quiz order without re-typing content each time.
@@ -391,6 +414,10 @@ Copy `.env.example` to `.env` before running locally.
 - **Media library N+1 queries**: `listMedia` in mediaController.js does two COUNT queries per file to build the usage labels. This is acceptable for small libraries. If the library grows large, replace with two bulk queries (one for all question media_urls, one for all slide_master background_image_urls) and annotate in-memory.
 
 - **Portal link code pre-fill**: The code is read once on mount via a `useState` lazy initialiser in `JoinQuiz.jsx` (`codeFromUrl()` → first path segment, else `?code=`). Deep-linking to a code does not auto-submit the form — the player still enters their team name and clicks Join. This is intentional so teams don't accidentally skip the team name step. The 4–8 char alphanumeric regex on the path segment keeps it from mistaking asset/route paths for a code.
+
+- **Scoreboard endpoint shape**: `GET /api/teams/session/:id/scoreboard` returns an **object** `{ teamSizeScoring, hasBrownie, rounds, teams }` — not the old flat array. The `LiveScoreboard` component is duplicated in all three frontends (`src/components/LiveScoreboard.jsx`); keep them in sync if you change the rendering. Per-round attribution assumes a question appears in only one round of a given quiz; if a question is shared across two rounds in the same quiz its points count in both round columns (the displayed `total` is computed as the sum of the round columns + Starting + Bonus, so columns always add up).
+
+- **Scoreboard visibility is per-surface**: `quiz_sessions.scoreboard_visibility` is JSONB `{slideshow,quizzer,admin}`. Toggled from the Control page, persisted via `PUT /sessions/:id/scoreboard-visibility`, broadcast as `scoreboard_visibility_changed`, and replayed in `session_state`. Slideshow + quizzer render a full-screen overlay; admin renders an inline panel.
 
 - **Wrong join addresses (localhost:port instead of the real domain)**: This happens when the `QUIZZER_URL` / `SLIDESHOW_URL` / `ADMIN_URL` env vars don't reach the **backend** container, so `GET /api/config` returns `null` and every surface falls back to `hostname:port`. The fix is that these vars are passed through the `backend` service `environment:` block in both compose files (`QUIZZER_URL: ${QUIZZER_URL:-}` …). If they were commented out, the `.env` values were silently ignored. After changing `.env`, recreate the backend (`docker-compose up -d`) — no frontend rebuild is needed because the URLs are fetched at runtime from `/api/config`, not baked in at build time. Never bake these into the frontends via `VITE_*` — it breaks host portability.
 

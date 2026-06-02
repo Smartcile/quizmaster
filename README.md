@@ -260,6 +260,12 @@ API calls automatically use the same hostname the page was served from — no re
 - Real-time broadcast to all clients via WebSocket
 - Download answers + scores as CSV (full session or per round)
 
+### Live Scoreboard (per-round breakdown)
+- Shows the **whole quiz structure as columns**: `Team | Starting | Round 1 | Round 2 | … | <Who Am I?/Puzzle> | Total` — round columns use the actual round names
+- **Starting** column appears only when team-size handicap scoring is enabled; a **Bonus** column appears only when brownie points have been awarded. Teams are ranked by total (highest first, 🥇🥈🥉)
+- Updates live as you mark answers, and is **shown on all three surfaces** — slideshow, quizzer phones, and the admin Control page
+- The host controls visibility **per screen** from the Control page (three toggles: 🖥 Display / 📱 Quizzers / 👁 This screen) so results can be revealed or hidden independently. State persists across reconnects
+
 ### Quiz History
 - **History** section in the admin nav shows all finished sessions
 - Per-session: date/time started, team count, expandable team scoreboard (quiz pts + brownie pts + handicap pts + total), 🥇🥈🥉 ranking

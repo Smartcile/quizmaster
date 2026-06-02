@@ -110,6 +110,9 @@ ALTER TABLE quiz_sessions ADD COLUMN IF NOT EXISTS started_at TIMESTAMP;
 -- locked_round_ids: JSONB array of round IDs whose answers have been locked by the admin.
 -- Persisted so rejoining clients know which rounds are already locked.
 ALTER TABLE quiz_sessions ADD COLUMN IF NOT EXISTS locked_round_ids JSONB NOT NULL DEFAULT '[]';
+-- scoreboard_visibility: per-surface show/hide flags for the live scoreboard,
+-- toggled by the host from the Control page and broadcast to all clients.
+ALTER TABLE quiz_sessions ADD COLUMN IF NOT EXISTS scoreboard_visibility JSONB NOT NULL DEFAULT '{"slideshow":false,"quizzer":false,"admin":false}';
 
 -- Create indexes
 CREATE INDEX IF NOT EXISTS idx_questions_type ON questions(type);
