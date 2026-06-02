@@ -12,8 +12,28 @@ export function buildSlides(quiz) {
     ...(quiz.widgets || []).map(w => ({ kind: 'widget', ...w }))
   ];
 
+  // A quiz may carry one "Who Am I?" — a widget with a shared answer + a list of
+  // clues. One clue is revealed before each round (round i → clue i); the answer
+  // is revealed on the end slide. Skip rendering it as a normal widget slide.
+  const whoami = parseWhoami(items);
+  let roundIndex = 0;
+
   items.forEach(item => {
     if (item.kind === 'round') {
+      if (whoami && roundIndex < whoami.clues.length) {
+        const clue = whoami.clues[roundIndex] || {};
+        slides.push({
+          type: 'whoami_clue',
+          clueIndex: roundIndex,
+          totalClues: whoami.clues.length,
+          title: whoami.title,
+          text: clue.text || '',
+          points: clue.points,
+          revealed: whoami.clues.slice(0, roundIndex + 1)
+        });
+      }
+      roundIndex++;
+
       const round = item;
       slides.push({ type: 'round_intro', roundId: round.id, title: round.name });
 
@@ -59,12 +79,32 @@ export function buildSlides(quiz) {
       });
 
     } else if (item.kind === 'widget') {
+      if (item.type === 'whoami') return; // distributed as clue slides above
       const w = item;
       slides.push({ type: 'widget', widgetType: w.type, data: w.data || {} });
     }
   });
 
-  slides.push({ type: 'end', title: 'Quiz Complete!', subtitle: 'Thanks for playing' });
+  slides.push({
+    type: 'end',
+    title: 'Quiz Complete!',
+    subtitle: 'Thanks for playing',
+    whoami: whoami ? { title: whoami.title, answer: whoami.answer } : null
+  });
 
   return slides;
+}
+
+// Extract the single Who-Am-I config from a quiz's items (or null).
+// MUST behave identically across all three frontend copies.
+function parseWhoami(items) {
+  const item = (items || []).find(i => i.kind === 'widget' && i.type === 'whoami');
+  if (!item) return null;
+  let d = item.data || {};
+  if (typeof d === 'string') { try { d = JSON.parse(d); } catch { d = {}; } }
+  return {
+    title:  d.title  || 'Who Am I?',
+    answer: d.answer || '',
+    clues:  Array.isArray(d.clues) ? d.clues : []
+  };
 }

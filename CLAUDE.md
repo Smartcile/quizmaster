@@ -124,14 +124,18 @@ Each round group always expands into the same internal sequence:
 intro
   └─ for each item in quiz.items (rounds and widgets freely mixed):
        if kind === 'round':
+         whoami_clue         ← only if the quiz has a Who Am I? (one clue per round, in order)
          round_intro
          question × N
          mark_answers        ← teams review/submit before lock
          answer × N          ← advancing here auto-locks the round
        if kind === 'widget':
-         widget
-end
+         if type === 'whoami': skipped (distributed as whoami_clue slides above)
+         else: widget
+end                          ← reveals the Who Am I? answer if the quiz has one
 ```
+
+**Who Am I?**: A quiz may carry a single `whoami` widget (`data = { title, answer, clues:[{text,points}] }`). It is *not* rendered at its drop position — `buildSlides` inserts one `whoami_clue` slide before each round's `round_intro` (round *i* → clue *i*, bounded by `min(rounds, clues.length)`), and the shared answer is revealed on the `end` slide. The `parseWhoami(items)` helper in all three `buildSlides` copies must stay in sync. See the "Who Am I?" behaviour section.
 
 **Backward compat**: Older quizzes without `quiz.items` fall back to `quiz.rounds` (all rounds first) then `quiz.widgets` (all widgets after), which matches the previous fixed ordering.
 
@@ -192,6 +196,7 @@ Key tables and their purposes:
 | `slides` | Per-quiz Fabric.js canvas slides (intro/custom types) linked to a master for styling |
 | `media_files` | Registry of uploaded media files. Fields: `filename` (unique), `original_name`, `mime_type`, `size_bytes`, `url`, `uploaded_at`. Populated by `POST /api/upload/media` via `ON CONFLICT DO NOTHING`. |
 | `question_repos` | Configured GitHub repos that hold question CSVs. Fields: `label`, `url`, `owner`, `repo`, `branch`, `path`, `last_synced_at`, `last_count`. Synced on demand from the Settings page. |
+| `whoami_guesses` | Per-team lock-in for a quiz's single "Who Am I?" (a quiz has no real questions row for it). Fields: `team_id` (UNIQUE), `guess_text`, `locked_clue_index`, `points_possible`, `points_awarded`, `auto_marked`, `locked`. The Who-Am-I config itself lives in a `quiz_widgets` row of `type='whoami'`. |
 
 ---
 
@@ -228,6 +233,8 @@ All clients join room `quiz-${sessionId}` after connecting. The server sends `se
 | `answer_marked` | Server → Clients | `{ teamId, questionId, points, autoMarked? }` | Quizzer shows awarded score; admin marking page updates optimistically; live scoreboards re-fetch |
 | `team_joined` | Server → Room | `{ teamId, teamName, teamSize }` | Admin lobby counter increments; slideshow team count updates |
 | `scoreboard_visibility_changed` | Server → Clients | `{ visibility: { slideshow, quizzer, admin } }` | Each surface shows/hides its live scoreboard. Persisted in `quiz_sessions.scoreboard_visibility` + replayed in `session_state` |
+| `whoami_locked` | Server → Clients | `{ teamId, lockedClueIndex }` | A team locked in their Who Am I? guess; quizzer disables the lock-in form |
+| `whoami_marked` | Server → Clients | `{ teamId, points }` | Who-Am-I score awarded/changed (auto on lock or admin override); quizzer + scoreboards + marking page update |
 
 ---
 
@@ -237,6 +244,8 @@ All clients join room `quiz-${sessionId}` after connecting. The server sends `se
 When a team submits an answer, the backend normalises both the submitted text and the stored correct answer (lowercase, trim, collapse whitespace, strip leading "the ") and inserts a score of 1 if they match — but only if no score row already exists. The admin can always override by marking manually. No page refresh needed; the socket `answer_marked` event updates all clients immediately.
 
 **Auto-mark reset**: If a team changes a previously correct auto-marked answer to an incorrect one, `maybeAutoMark` detects this (via `scores.auto_marked = true`) and resets the score to 0. Manually-marked scores (`auto_marked = false`) are never touched by this logic.
+
+**Auto-zero unanswered on lock**: When a round is locked (the `answer_locked` socket handler), every team that has *no answer and no score* for a question in that round gets an explicit `0` inserted (`auto_marked = true`), broadcast via `answer_marked`. This makes unanswered questions show as 0 in the marking page, scoreboard, and as a red "(no answer)" glow on the quizzer reveal — rather than silently counting as nothing.
 
 ### Mark Your Answers slide
 `buildSlides` inserts a `mark_answers` slide between the last question and the first answer reveal for every round. The quizzer shows a review list of all answers in that round. Advancing past this slide (into the first `answer` slide) automatically emits `answer_locked` for the round, preventing further edits.
@@ -303,7 +312,16 @@ When an env var is unset, `/api/config` returns `null` for it and the UI falls b
 **The env vars must reach the backend container.** They are wired through the `backend` service `environment:` block in both `docker-compose.yml` and `docker-compose.prod.yml` as `QUIZZER_URL: ${QUIZZER_URL:-}` etc. Setting `SLIDESHOW_URL=https://show.website.com` in `.env` flows into the container and `/api/config` then returns it. The frontends are **not** rebuilt for this — they fetch `/api/config` at runtime, so a backend recreate (`docker-compose up -d`) is enough.
 
 ### Answer-reveal score glow on quizzer
-On the quizzer answer-reveal slide, the team's "Your answer" box border reflects the awarded score once marked: `0` pts → glowing **red** (`.answer-wrong`, `--neon-pink`), `0.5` pts → glowing **yellow** (`.answer-half`, `--neon-yellow`), `1` pt or not-yet-marked → unchanged neutral border. The modifier class is derived from `scores[questionId]` in `QuizParticipant.jsx` and styled in `quizzer.css`.
+On the quizzer answer-reveal slide, the team's "Your answer" box border reflects the awarded score once marked: `0` pts → glowing **red** (`.answer-wrong`, `--neon-pink`), `0.5` pts → glowing **yellow** (`.answer-half`, `--neon-yellow`), `1` pt (full) → glowing **green** (`.answer-correct`, `--neon-green`), not-yet-marked → unchanged neutral border. The modifier class is derived from `scores[questionId]` in `QuizParticipant.jsx` and styled in `quizzer.css`. The box now also renders for unanswered questions once a score exists (auto-zero), showing "(no answer)" with the red glow.
+
+### Who Am I?
+A quiz can carry one **Who Am I?** element — a shared answer revealed gradually through clues, one clue shown **before each round**. Added in QuizBuilder as a standalone single-instance item (a `quiz_widgets` row of `type='whoami'`, `data = { title, answer, clues:[{text,points}] }`); it can't be added inside a normal round. The clue count auto-follows the round count, with points defaulting to a descending scale (N for the first/hardest clue down to 1 for the last); points are editable. On save the clue list is re-synced to the current round count.
+
+- **Slides**: `buildSlides` distributes the clues — a `whoami_clue` slide before each `round_intro` (round *i* → clue *i*) — and reveals the answer on the `end` slide. The widget is never rendered at its own position. `parseWhoami(items)` must stay identical across all three `buildSlides` copies.
+- **Lock-in scoring**: a team submits **one guess** via the quizzer's `whoami_clue` slide ("Lock In"). `POST /api/whoami/lock { sessionId, teamId, clueIndex, guess }` — the server looks up the clue's points from the widget config (client only sends the index), auto-marks (correct → clue points, wrong → 0), and stores it in `whoami_guesses` with `locked=true` (immutable). Earlier lock-in = more points.
+- **Marking**: AnswerMarking shows a Who Am I? section per team (guess, clue locked on, override **0** / **full points** via `POST /api/whoami/mark`).
+- **Scoreboard**: `getSessionScoreboard` adds `hasWhoami` + per-team `whoami_points` folded into `total`; `LiveScoreboard` (all three copies) shows a "Who Am I?" column when present. History (`getSessionResults`) likewise includes `whoami_points`.
+- **Events**: `whoami_locked` (quizzer disables form) and `whoami_marked` (quizzer/scoreboards/marking update). Routes live in `routes/whoami.js` mounted **public** at `/api/whoami` (like `/api/answers`, so the quizzer can lock in without a token).
 
 ### Host-current highlight on quizzer round-nav
 The round-nav button for the question the admin is currently showing gets a `.host-current` amber/orange highlight. This is distinct from `.current` (the question the guest is viewing) and `.answered` (a question with a submitted answer).

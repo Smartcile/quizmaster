@@ -4,6 +4,7 @@ import { useWebSocket } from '../hooks/useWebSocket';
 
 export default function AnswerMarking({ sessionId }) {
   const [data,       setData]      = useState(null);
+  const [whoami,     setWhoami]    = useState(null);   // { whoami:{title,answer,clues}, guesses:[] }
   const [loading,    setLoading]   = useState(false);
   const [csvRoundId, setCsvRound]  = useState('all');
   const socket = useWebSocket();
@@ -12,8 +13,12 @@ export default function AnswerMarking({ sessionId }) {
     if (!sessionId) return;
     setLoading(true);
     try {
-      const result = await api.get(`/answers/session/${sessionId}`);
+      const [result, wa] = await Promise.all([
+        api.get(`/answers/session/${sessionId}`),
+        api.get(`/whoami/session/${sessionId}`).catch(() => ({ whoami: null, guesses: [] }))
+      ]);
       setData(result);
+      setWhoami(wa);
     } catch (err) {
       console.error('Failed to load marking data:', err);
     } finally {
@@ -52,11 +57,28 @@ export default function AnswerMarking({ sessionId }) {
       }
     };
     const onSubmitted = () => loadData();  // refresh answer text when a team submits
+    const onWhoamiMarked = (m) => {
+      if (m && m.teamId != null) {
+        const pts = m.points === null || m.points === undefined ? null : parseFloat(m.points);
+        setWhoami(prev => {
+          if (!prev) return prev;
+          const guesses = [...(prev.guesses || [])];
+          const idx = guesses.findIndex(g => g.team_id === parseInt(m.teamId));
+          if (idx >= 0) guesses[idx] = { ...guesses[idx], points_awarded: pts };
+          else          guesses.push({ team_id: parseInt(m.teamId), points_awarded: pts });
+          return { ...prev, guesses };
+        });
+      }
+    };
     socket.on('answer_marked',     onMarked);
     socket.on('answer_submitted',  onSubmitted);
+    socket.on('whoami_locked',     onSubmitted);  // refresh guess text on lock-in
+    socket.on('whoami_marked',     onWhoamiMarked);
     return () => {
       socket.off('answer_marked',    onMarked);
       socket.off('answer_submitted', onSubmitted);
+      socket.off('whoami_locked',    onSubmitted);
+      socket.off('whoami_marked',    onWhoamiMarked);
     };
   }, [socket, applyMarkLocal, loadData]);
 
@@ -68,6 +90,24 @@ export default function AnswerMarking({ sessionId }) {
     } catch (err) {
       console.error('Marking failed:', err);
       // Re-sync from server on failure so we don't leave stale optimistic state.
+      loadData();
+    }
+  };
+
+  // Manual override for a team's Who-Am-I score (null clears it).
+  const markWhoami = async (teamId, points) => {
+    setWhoami(prev => {
+      if (!prev) return prev;
+      const guesses = [...(prev.guesses || [])];
+      const idx = guesses.findIndex(g => g.team_id === teamId);
+      if (idx >= 0) guesses[idx] = { ...guesses[idx], points_awarded: points };
+      else          guesses.push({ team_id: teamId, points_awarded: points });
+      return { ...prev, guesses };
+    });
+    try {
+      await api.post('/whoami/mark', { teamId, points, sessionId });
+    } catch (err) {
+      console.error('Who Am I marking failed:', err);
       loadData();
     }
   };
@@ -197,6 +237,55 @@ export default function AnswerMarking({ sessionId }) {
           </div>
         );
       })}
+
+      {/* ── Who Am I? marking ── */}
+      {whoami?.whoami && (
+        <div className="marking-round marking-whoami">
+          <div className="marking-divider"><span>🕵 Who Am I?</span></div>
+          <h3 className="marking-round-title">
+            <span className="round-badge">🕵</span>
+            {whoami.whoami.title}
+            <span className="marking-q-answer">✓ {whoami.whoami.answer || '(no answer set)'}</span>
+          </h3>
+          <div className="marking-team-rows">
+            {teams.length === 0 ? (
+              <p className="marking-empty">No teams yet</p>
+            ) : teams.map(t => {
+              const g = (whoami.guesses || []).find(x => x.team_id === t.id);
+              const possible = g?.points_possible != null ? parseFloat(g.points_possible) : null;
+              const awarded  = g?.points_awarded  != null ? parseFloat(g.points_awarded)  : null;
+              return (
+                <div key={t.id} className="marking-team-row">
+                  <span className="marking-team-name">{t.name}</span>
+                  <span className={`marking-answer-text ${!g?.guess_text ? 'no-answer' : ''}`}>
+                    {g?.guess_text || '(no guess)'}
+                    {g?.locked_clue_index != null && (
+                      <em className="whoami-mark-clue"> · locked on clue {g.locked_clue_index + 1}</em>
+                    )}
+                  </span>
+                  <div className="marking-score-btns">
+                    <button
+                      onClick={() => markWhoami(t.id, awarded === 0 ? null : 0)}
+                      className={`score-btn ${awarded === 0 ? 'score-btn-active' : ''}`}
+                      title="Award 0"
+                    >0</button>
+                    {possible != null && possible > 0 && (
+                      <button
+                        onClick={() => markWhoami(t.id, awarded === possible ? null : possible)}
+                        className={`score-btn ${awarded === possible ? 'score-btn-active' : ''}`}
+                        title={`Award the full ${possible} points for the clue they locked on`}
+                      >{possible}</button>
+                    )}
+                    {awarded != null && (
+                      <span className={`score-pill ${awarded > 0 ? 'pill-full' : 'pill-zero'}`}>{awarded}pt</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {rounds.length === 0 && data && (
         <p className="marking-empty">No rounds found for this session.</p>

@@ -101,6 +101,42 @@ function setupWebSocketHandlers(io) {
         timestamp: new Date().toISOString()
       });
 
+      // Auto-zero: any team that never answered a question in this round (and
+      // has no score yet) is explicitly marked 0 so it shows as 0 everywhere
+      // (marking page, scoreboard, and the red "wrong" glow on the reveal).
+      try {
+        const zeroed = await db.query(
+          `INSERT INTO scores (team_id, question_id, points_awarded, auto_marked)
+           SELECT t.id, rq.question_id, 0, true
+           FROM teams t
+           CROSS JOIN round_questions rq
+           WHERE t.quiz_session_id = $1
+             AND rq.round_id = $2
+             AND NOT EXISTS (
+               SELECT 1 FROM scores s WHERE s.team_id = t.id AND s.question_id = rq.question_id
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM answers a WHERE a.team_id = t.id AND a.question_id = rq.question_id
+             )
+           RETURNING team_id, question_id`,
+          [sessionId, roundId]
+        );
+        for (const r of zeroed.rows) {
+          io.to(roomKey).emit('answer_marked', {
+            teamId:     r.team_id,
+            questionId: r.question_id,
+            points:     0,
+            autoMarked: true,
+            timestamp:  new Date().toISOString()
+          });
+        }
+        if (zeroed.rows.length) {
+          console.log(`Session ${sessionId}: auto-zeroed ${zeroed.rows.length} unanswered in round ${roundId}`);
+        }
+      } catch (err) {
+        console.error('answer_locked: auto-zero error:', err);
+      }
+
       console.log(`Session ${sessionId}: round ${roundId} locked`);
     });
 

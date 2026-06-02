@@ -685,6 +685,102 @@ html, body, #root {
   max-width: 1500px;
   overflow-x: auto;
 }
+/* ── Who Am I? clue slide + reveal ── */
+.slide-whoami {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 1.2rem;
+  padding: 2rem;
+}
+.whoami-label {
+  font-size: 1.6rem;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--neon-purple);
+  text-shadow: 0 0 16px var(--neon-purple);
+  margin: 0;
+}
+.whoami-points-badge {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--neon-yellow);
+  border: 2px solid var(--neon-yellow);
+  border-radius: 999px;
+  padding: 0.4em 1.2em;
+  box-shadow: 0 0 18px rgba(255, 230, 0, 0.4);
+}
+.whoami-current-clue {
+  font-size: 3rem;
+  color: #fff;
+  margin: 0.4rem 0;
+  max-width: 1100px;
+}
+.whoami-revealed {
+  margin-top: 1rem;
+  max-width: 900px;
+}
+.whoami-revealed-label {
+  font-size: 1rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+}
+.whoami-revealed ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  text-align: left;
+}
+.whoami-revealed li {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  font-size: 1.3rem;
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+.whoami-revealed li.current {
+  color: #fff;
+  opacity: 1;
+}
+.whoami-clue-pts {
+  flex-shrink: 0;
+  min-width: 2.2em;
+  text-align: center;
+  font-weight: 700;
+  color: var(--neon-cyan);
+  border: 1px solid var(--neon-cyan);
+  border-radius: 6px;
+  padding: 0.1em 0.4em;
+  font-size: 1rem;
+}
+.whoami-hint {
+  font-size: 1.1rem;
+  color: var(--text-muted);
+}
+.whoami-reveal {
+  margin-top: 2.5rem;
+}
+.whoami-reveal-label {
+  font-size: 1.2rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--neon-purple);
+  margin-bottom: 0.5rem;
+}
+.whoami-reveal-answer {
+  font-size: 3.4rem;
+  font-weight: 800;
+  color: var(--neon-green);
+  text-shadow: 0 0 24px var(--neon-green);
+}
+
 .sb-table {
   width: 100%;
   border-collapse: collapse;

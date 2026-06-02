@@ -341,3 +341,26 @@ CREATE TABLE IF NOT EXISTS question_repos (
   last_count     INT DEFAULT 0,
   created_at     TIMESTAMP DEFAULT NOW()
 );
+
+-- whoami_guesses: per-team lock-in for a quiz's single "Who Am I?" element.
+-- A Who-Am-I has no real questions row, so its guess + score live here rather
+-- than in answers/scores (which are FK-locked to questions). One row per team.
+--   locked_clue_index  — which clue was the latest revealed when they locked in
+--   points_possible    — that clue's point value (looked up server-side at lock)
+--   points_awarded      — final score: points_possible if correct, else 0
+--   auto_marked        — true when scored by the auto-mark on lock-in
+--   locked             — once true the team can no longer change their guess
+CREATE TABLE IF NOT EXISTS whoami_guesses (
+  id                SERIAL PRIMARY KEY,
+  team_id           INT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+  guess_text        TEXT,
+  locked_clue_index INT,
+  points_possible   DECIMAL(3, 1) DEFAULT 0,
+  points_awarded    DECIMAL(3, 1),
+  auto_marked       BOOLEAN NOT NULL DEFAULT FALSE,
+  locked            BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at        TIMESTAMP DEFAULT NOW(),
+  updated_at        TIMESTAMP DEFAULT NOW(),
+  UNIQUE (team_id)
+);
+CREATE INDEX IF NOT EXISTS idx_whoami_guesses_team_id ON whoami_guesses(team_id);

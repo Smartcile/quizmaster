@@ -7,6 +7,8 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
   const [lockedRounds,     setLockedRounds]      = useState(new Set());
   const [scores,           setScores]            = useState({});
   const [viewingQuestionId, setViewingQuestionId] = useState(null); // null = follow admin
+  const [whoamiGuess,      setWhoamiGuess]       = useState('');
+  const [whoamiLock,       setWhoamiLock]        = useState(null);   // null = not locked yet
 
   const slides = useMemo(() => buildSlides(quiz), [quiz]);
   const slide = slides[currentSlide];
@@ -58,6 +60,26 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
     })();
   }, [team?.id]);
 
+  // Restore this team's Who-Am-I lock state on (re)join
+  useEffect(() => {
+    if (!team?.id || !sessionId) return;
+    (async () => {
+      try {
+        const res = await api.get(`/whoami/session/${sessionId}`);
+        const g = (res?.guesses || []).find(x => x.team_id === team.id);
+        if (g && g.locked) {
+          setWhoamiLock({
+            guess: g.guess_text,
+            lockedClueIndex: g.locked_clue_index,
+            pointsPossible: g.points_possible,
+            pointsAwarded: g.points_awarded
+          });
+          setWhoamiGuess(g.guess_text || '');
+        }
+      } catch {}
+    })();
+  }, [team?.id, sessionId]);
+
   // WebSocket events
   useEffect(() => {
     if (!socket) return;
@@ -82,17 +104,51 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
         setScores(prev => ({ ...prev, [data.questionId]: parseFloat(data.points) }));
       }
     };
+    const onWhoamiLocked = (data) => {
+      if (data.teamId === team?.id) {
+        setWhoamiLock(prev => prev || { lockedClueIndex: data.lockedClueIndex });
+      }
+    };
+    const onWhoamiMarked = (data) => {
+      if (data.teamId === team?.id) {
+        setWhoamiLock(prev => ({
+          ...(prev || {}),
+          pointsAwarded: data.points == null ? null : parseFloat(data.points)
+        }));
+      }
+    };
     socket.on('session_state',   onSessionState);
     socket.on('answer_locked',   onLocked);
     socket.on('answer_unlocked', onUnlocked);
     socket.on('answer_marked',   onMarked);
+    socket.on('whoami_locked',   onWhoamiLocked);
+    socket.on('whoami_marked',   onWhoamiMarked);
     return () => {
       socket.off('session_state',   onSessionState);
       socket.off('answer_locked',   onLocked);
       socket.off('answer_unlocked', onUnlocked);
       socket.off('answer_marked',   onMarked);
+      socket.off('whoami_locked',   onWhoamiLocked);
+      socket.off('whoami_marked',   onWhoamiMarked);
     };
   }, [socket, team?.id]);
+
+  // Lock in the team's Who-Am-I guess. Points come from the server (the clue
+  // currently shown). Immutable once locked.
+  const lockWhoami = async (clueIndex) => {
+    if (!team || whoamiLock) return;
+    try {
+      const res = await api.post('/whoami/lock', {
+        sessionId, teamId: team.id, clueIndex, guess: whoamiGuess
+      });
+      setWhoamiLock({
+        guess: res.guess_text,
+        lockedClueIndex: res.locked_clue_index,
+        pointsPossible: res.points_possible,
+        pointsAwarded: res.points_awarded
+      });
+    } catch {}
+  };
 
   const submitAnswer = async (questionId, value) => {
     setAnswers(prev => ({ ...prev, [questionId]: value }));
@@ -131,6 +187,18 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
           score={scores[activeSlide.questionId]}
           locked={isLockedFor(activeSlide.roundId)}
           onChange={(v) => submitAnswer(activeSlide.questionId, v)}
+        />
+      );
+    }
+
+    if (slide.type === 'whoami_clue') {
+      return (
+        <WhoamiView
+          slide={slide}
+          guess={whoamiGuess}
+          lock={whoamiLock}
+          onGuessChange={setWhoamiGuess}
+          onLock={() => lockWhoami(slide.clueIndex)}
         />
       );
     }
@@ -194,16 +262,23 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
     }
 
     if (slide.type === 'answer') {
-      const q = getQuestionById(slide.questionId);
       const myScore = scores[slide.questionId];
+      const myAns = answers[slide.questionId];
+      // 0 → red, 0.5 → yellow, 1 (full) → green
+      const hueClass = myScore === 0 ? 'answer-wrong'
+        : myScore === 0.5 ? 'answer-half'
+        : myScore === 1 ? 'answer-correct' : '';
+      // Show the box whenever the team answered OR a score exists (auto-zero for
+      // unanswered questions then glows red as "(no answer)").
+      const showYour = (myAns !== undefined && myAns !== '') || myScore !== undefined;
       return (
         <div className="reveal-card">
           <p className="reveal-label">{slide.roundName} · Question {slide.questionNumber}</p>
           <h2 className="reveal-question">{slide.text}</h2>
-          {q && answers[slide.questionId] && (
-            <div className={`reveal-your-answer ${myScore === 0 ? 'answer-wrong' : myScore === 0.5 ? 'answer-half' : ''}`}>
+          {showYour && (
+            <div className={`reveal-your-answer ${hueClass}`}>
               <span className="reveal-your-label">Your answer:</span>
-              <span className="reveal-your-text">{answers[slide.questionId]}</span>
+              <span className="reveal-your-text">{myAns || '(no answer)'}</span>
             </div>
           )}
           <div className="reveal-correct">
@@ -224,7 +299,26 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
     }
 
     if (slide.type === 'end') {
-      return <WaitingMessage text="Quiz Complete!" subtext="Thanks for playing." />;
+      return (
+        <div className="waiting-inline">
+          <h2>Quiz Complete!</h2>
+          <p>Thanks for playing.</p>
+          {slide.whoami && slide.whoami.answer && (
+            <div className="whoami-reveal-card">
+              <p className="whoami-reveal-label">{slide.whoami.title} — the answer was</p>
+              <p className="whoami-reveal-answer">{slide.whoami.answer}</p>
+              {whoamiLock && (
+                <div className={`whoami-result ${whoamiLock.pointsAwarded > 0 ? 'win' : 'miss'}`}>
+                  You guessed “{whoamiLock.guess || '—'}” ·{' '}
+                  {whoamiLock.pointsAwarded != null
+                    ? `${whoamiLock.pointsAwarded} pt${whoamiLock.pointsAwarded !== 1 ? 's' : ''}`
+                    : 'awaiting marking'}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      );
     }
 
     return <WaitingMessage text="..." />;
@@ -327,6 +421,69 @@ function QuestionView({ slide, answer, score, locked, onChange }) {
       {locked && (
         <div className={`score-badge ${score === 1 ? 'score-full' : score === 0.5 ? 'score-half' : score === 0 ? 'score-zero' : 'score-pending'}`}>
           {score !== undefined ? `${score} pt awarded` : 'Locked — awaiting marking'}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Who Am I? clue + lock-in ───────────────────────────────────────────────────
+function WhoamiView({ slide, guess, lock, onGuessChange, onLock }) {
+  const locked = !!lock;
+  const awarded = lock?.pointsAwarded;
+
+  return (
+    <div className="whoami-card">
+      <p className="whoami-card-label">{slide.title}</p>
+      <div className="whoami-card-points">
+        {locked
+          ? `Locked in on clue ${(lock.lockedClueIndex ?? slide.clueIndex) + 1}`
+          : `Lock in now for ${slide.points} point${slide.points !== 1 ? 's' : ''}`}
+      </div>
+
+      <h2 className="whoami-card-clue">{slide.text}</h2>
+
+      {slide.revealed && slide.revealed.length > 1 && (
+        <ol className="whoami-card-revealed">
+          {slide.revealed.map((c, i) => (
+            <li key={i} className={i === slide.clueIndex ? 'current' : ''}>
+              <span className="whoami-card-pts">{c.points}</span>
+              <span>{c.text}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+
+      {locked ? (
+        <div className={`whoami-locked-box ${awarded > 0 ? 'win' : awarded === 0 ? 'miss' : ''}`}>
+          <span className="whoami-locked-label">Your locked guess</span>
+          <span className="whoami-locked-guess">{lock.guess || '—'}</span>
+          {awarded != null && (
+            <span className="whoami-locked-pts">
+              {awarded} pt{awarded !== 1 ? 's' : ''}
+            </span>
+          )}
+        </div>
+      ) : (
+        <div className="whoami-lockin">
+          <input
+            type="text"
+            className="answer-input"
+            placeholder="Your guess…"
+            value={guess}
+            onChange={(e) => onGuessChange(e.target.value)}
+          />
+          <button
+            className="whoami-lock-btn"
+            onClick={onLock}
+            disabled={!guess.trim()}
+          >
+            🔒 Lock in for {slide.points} pt{slide.points !== 1 ? 's' : ''}
+          </button>
+          <p className="whoami-lock-warn">
+            Once you lock in you can't change it — but you keep these points if you're right.
+            Wait for a later clue and it's worth less.
+          </p>
         </div>
       )}
     </div>

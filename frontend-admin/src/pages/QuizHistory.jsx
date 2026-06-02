@@ -59,7 +59,8 @@ export default function QuizHistory() {
   };
 
   const totalScore = (t) =>
-    (parseFloat(t.score_total) || 0) + (parseFloat(t.brownie_total) || 0) + (parseFloat(t.size_points) || 0);
+    (parseFloat(t.score_total) || 0) + (parseFloat(t.brownie_total) || 0) +
+    (parseFloat(t.size_points) || 0) + (parseFloat(t.whoami_points) || 0);
 
   if (loading) {
     return (
@@ -125,6 +126,7 @@ export default function QuizHistory() {
 
                     {!isLoading && teamData && teamData.teams.length > 0 && (() => {
                       const hasSizePoints = teamData.teams.some(t => (parseFloat(t.size_points) || 0) !== 0);
+                      const hasWhoami     = teamData.teams.some(t => (parseFloat(t.whoami_points) || 0) !== 0);
                       return (
                         <table className="history-teams-table">
                           <thead>
@@ -134,6 +136,7 @@ export default function QuizHistory() {
                               <th className="col-size">Size</th>
                               <th className="col-score">Quiz pts</th>
                               <th className="col-bonus">Bonus</th>
+                              {hasWhoami && <th className="col-score">Who Am I?</th>}
                               {hasSizePoints && <th className="col-score">Handicap</th>}
                               <th className="col-total">Total</th>
                             </tr>
@@ -152,6 +155,11 @@ export default function QuizHistory() {
                                     ? `+${parseFloat(t.brownie_total)}`
                                     : '—'}
                                 </td>
+                                {hasWhoami && (
+                                  <td className="col-score">
+                                    {parseFloat(t.whoami_points) || 0}
+                                  </td>
+                                )}
                                 {hasSizePoints && (
                                   <td className="col-score">
                                     {parseFloat(t.size_points) > 0

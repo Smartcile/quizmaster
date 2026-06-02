@@ -160,11 +160,25 @@ async function getSessionScoreboard(req, res) {
       byTeam.get(row.team_id)[row.round_id] = Number(row.pts);
     }
 
+    // 5) Who Am I? points (one row per team, if the quiz has a Who-Am-I)
+    const whoamiRes = await db.query(`
+      SELECT g.team_id, COALESCE(g.points_awarded, 0)::float AS pts
+      FROM whoami_guesses g
+      JOIN teams t ON t.id = g.team_id
+      WHERE t.quiz_session_id = $1
+    `, [sessionId]);
+    const whoamiByTeam = new Map(whoamiRes.rows.map(r => [r.team_id, Number(r.pts)]));
+    const hasWhoami = await db.query(
+      `SELECT 1 FROM quiz_widgets WHERE quiz_id = $1 AND type = 'whoami' LIMIT 1`,
+      [quiz_id]
+    );
+
     const teams = teamsRes.rows.map(t => {
       const round_scores = byTeam.get(t.id) || {};
       const round_total = rounds.reduce((sum, r) => sum + (round_scores[r.id] || 0), 0);
-      const total = round_total + t.size_points + t.brownie_total;
-      return { ...t, round_scores, round_total, total };
+      const whoami_points = whoamiByTeam.get(t.id) || 0;
+      const total = round_total + t.size_points + t.brownie_total + whoami_points;
+      return { ...t, round_scores, round_total, whoami_points, total };
     });
 
     teams.sort((a, b) => (b.total - a.total) || a.name.localeCompare(b.name));
@@ -172,6 +186,7 @@ async function getSessionScoreboard(req, res) {
     res.json({
       teamSizeScoring: !!team_size_scoring,
       hasBrownie: teams.some(t => t.brownie_total !== 0),
+      hasWhoami: hasWhoami.rows.length > 0,
       rounds,
       teams
     });

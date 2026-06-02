@@ -18,6 +18,7 @@ const slidesRoutes = require('./routes/slides');
 const categoriesRoutes = require('./routes/categories');
 const mediaRoutes = require('./routes/media');
 const repoRoutes = require('./routes/repos');
+const whoamiRoutes = require('./routes/whoami');
 const { setupWebSocketHandlers } = require('./websocket/handlers');
 const { errorHandler } = require('./middleware/errorHandler');
 const { login, requireAdminForWrites } = require('./middleware/auth');
@@ -59,6 +60,7 @@ app.use('/api/categories', requireAdminForWrites, categoriesRoutes);
 // (Adjust if you want stricter control.)
 app.use('/api/teams', teamRoutes);
 app.use('/api/answers', answerRoutes);
+app.use('/api/whoami', whoamiRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/media', requireAdminForWrites, mediaRoutes);
 app.use('/api/repos', requireAdminForWrites, repoRoutes);

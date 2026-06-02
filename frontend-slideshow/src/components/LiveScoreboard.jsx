@@ -27,11 +27,13 @@ export default function LiveScoreboard({ sessionId, socket, title = 'Leaderboard
     socket.on('team_joined',     onChange);
     socket.on('answer_unlocked', onChange);
     socket.on('answer_locked',   onChange);
+    socket.on('whoami_marked',   onChange);
     return () => {
       socket.off('answer_marked',   onChange);
       socket.off('team_joined',     onChange);
       socket.off('answer_unlocked', onChange);
       socket.off('answer_locked',   onChange);
+      socket.off('whoami_marked',   onChange);
     };
     // eslint-disable-next-line
   }, [socket, sessionId]);
@@ -54,6 +56,7 @@ export function ScoreboardTable({ data, loaded = true, title = 'Leaderboard' }) 
   const rounds = data?.rounds || [];
   const showStarting = !!data?.teamSizeScoring;
   const showBonus    = !!data?.hasBrownie;
+  const showWhoami   = !!data?.hasWhoami;
 
   return (
     <div className="sb-panel">
@@ -73,6 +76,7 @@ export function ScoreboardTable({ data, loaded = true, title = 'Leaderboard' }) 
                 {rounds.map(r => (
                   <th key={r.id} className="sb-col-num" title={r.name}>{r.name}</th>
                 ))}
+                {showWhoami && <th className="sb-col-num">Who Am I?</th>}
                 {showBonus && <th className="sb-col-num">Bonus</th>}
                 <th className="sb-col-num sb-col-total">Total</th>
               </tr>
@@ -86,6 +90,7 @@ export function ScoreboardTable({ data, loaded = true, title = 'Leaderboard' }) 
                   {rounds.map(r => (
                     <td key={r.id} className="sb-col-num">{fmt(t.round_scores?.[r.id] || 0)}</td>
                   ))}
+                  {showWhoami && <td className="sb-col-num">{fmt(t.whoami_points || 0)}</td>}
                   {showBonus && <td className="sb-col-num">{fmtSigned(t.brownie_total)}</td>}
                   <td className="sb-col-num sb-col-total">{fmt(t.total)}</td>
                 </tr>
