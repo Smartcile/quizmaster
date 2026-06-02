@@ -4,6 +4,13 @@ import { api } from '../services/api';
 
 const EMPTY = { name: '', background_color: '#0a0e1f', format: 'standard' };
 
+// Filter option lists — mirror the question editor so the round picker can be
+// narrowed by every question attribute.
+const DIFFICULTIES     = [{ value: 'easy', label: 'Easy' }, { value: 'medium', label: 'Medium' }, { value: 'hard', label: 'Hard' }];
+const QUESTION_TYPES   = [{ value: 'text', label: 'Text' }, { value: 'image', label: 'Image' }, { value: 'video', label: 'Video' }, { value: 'audio', label: 'Audio' }];
+const ANSWER_MODES     = [{ value: 'text', label: 'Text answer' }, { value: 'mcq', label: 'Multiple choice' }, { value: 'both', label: 'Both' }];
+const QUESTION_FORMATS = [{ value: 'standard', label: 'Standard' }, { value: 'multichoice', label: 'Multichoice' }, { value: 'both', label: 'Both' }];
+
 export default function RoundBuilder() {
   const [rounds, setRounds] = useState([]);
   const [questions, setQuestions] = useState([]);
@@ -153,19 +160,32 @@ function RoundEditorModal({ editing, init, questions, categories, onSave, onClos
   const [selectedQuestions, setSelectedQuestions] = useState(init.selectedQuestions);
   const [formatOverrides, setFormatOverrides] = useState(init.formatOverrides);
   const [search, setSearch] = useState('');
-  const [filterCategory, setFilterCategory] = useState('all');
+  const [filterCategory, setFilterCategory]     = useState('all');
+  const [filterDifficulty, setFilterDifficulty] = useState('all');
+  const [filterType, setFilterType]             = useState('all');
+  const [filterAnswerMode, setFilterAnswerMode] = useState('all');
+  const [filterFormat, setFilterFormat]         = useState('all');
+  const [filterApproved, setFilterApproved]     = useState('all');
 
+  // Same matching rules as the Questions page (search hits text OR answer) plus
+  // a filter for every question attribute.
   const filteredQuestions = useMemo(() => {
     return questions.filter(q => {
       if (selectedQuestions.includes(q.id)) return false;
       if (filterCategory !== 'all' && q.category !== filterCategory) return false;
+      if (filterDifficulty !== 'all' && (q.difficulty || 'medium') !== filterDifficulty) return false;
+      if (filterType !== 'all' && (q.type || 'text') !== filterType) return false;
+      if (filterAnswerMode !== 'all' && (q.answer_mode || 'text') !== filterAnswerMode) return false;
+      if (filterFormat !== 'all' && (q.question_format || 'standard') !== filterFormat) return false;
+      if (filterApproved === 'approved' && !q.approved) return false;
+      if (filterApproved === 'unapproved' && q.approved) return false;
       if (search) {
         const s = search.toLowerCase();
-        return q.text.toLowerCase().includes(s);
+        return q.text.toLowerCase().includes(s) || (q.answer || '').toLowerCase().includes(s);
       }
       return true;
     });
-  }, [questions, search, filterCategory, selectedQuestions]);
+  }, [questions, search, filterCategory, filterDifficulty, filterType, filterAnswerMode, filterFormat, filterApproved, selectedQuestions]);
 
   const selectedQuestionObjs = useMemo(() => {
     const byId = new Map(questions.map(q => [q.id, q]));
@@ -248,13 +268,36 @@ function RoundEditorModal({ editing, init, questions, categories, onSave, onClos
                     <div className="dnd-filters">
                       <input
                         type="search"
-                        placeholder="🔍 Search..."
+                        placeholder="🔍 Search question or answer..."
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
                       />
                       <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}>
                         <option value="all">All categories</option>
                         {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+                    <div className="dnd-filters dnd-filters-extra">
+                      <select value={filterDifficulty} onChange={(e) => setFilterDifficulty(e.target.value)}>
+                        <option value="all">All difficulties</option>
+                        {DIFFICULTIES.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+                      </select>
+                      <select value={filterType} onChange={(e) => setFilterType(e.target.value)}>
+                        <option value="all">All media types</option>
+                        {QUESTION_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                      </select>
+                      <select value={filterAnswerMode} onChange={(e) => setFilterAnswerMode(e.target.value)}>
+                        <option value="all">All answer modes</option>
+                        {ANSWER_MODES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                      </select>
+                      <select value={filterFormat} onChange={(e) => setFilterFormat(e.target.value)}>
+                        <option value="all">All formats</option>
+                        {QUESTION_FORMATS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+                      </select>
+                      <select value={filterApproved} onChange={(e) => setFilterApproved(e.target.value)}>
+                        <option value="all">All statuses</option>
+                        <option value="approved">Approved</option>
+                        <option value="unapproved">Unapproved</option>
                       </select>
                     </div>
                   </div>
