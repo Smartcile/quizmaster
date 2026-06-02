@@ -309,6 +309,9 @@ The round-nav button for the question the admin is currently showing gets a `.ho
 ### End Quiz confirmation
 The "⏹ End Quiz" button in QuizControl shows a `confirm()` dialog before setting the session status to `finished`.
 
+### Duplicate-question warning in Quiz Builder
+QuizBuilder computes `duplicateQuestions` (a `useMemo` over `orderItems` + `allRounds`): it looks up each added round's full question list from `allRounds` by id and flags any question id that appears more than once across the quiz — whether in two different rounds **or** twice within the same round (shown as `Round 1 ×2`). An amber banner (`.quiz-dup-warning`) lists each duplicated question text and the rounds it appears in. Duplicates are **blocking**: the Create/Save button is disabled while any exist, and `handleSubmit` guards against an Enter-key submit (sets an error instead of saving).
+
 ### Dynamic MCQ options
 The question editor now supports adding and removing MCQ options dynamically (minimum 2 options). Options are no longer capped at 4.
 
