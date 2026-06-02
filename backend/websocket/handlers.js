@@ -21,16 +21,17 @@ function setupWebSocketHandlers(io) {
 
       try {
         const sessRes = await db.query(
-          `SELECT current_slide_index, status, locked_round_ids
+          `SELECT current_slide_index, status, locked_round_ids, scoreboard_visibility
            FROM quiz_sessions WHERE id = $1`,
           [sessionId]
         );
         if (sessRes.rows.length > 0) {
-          const { current_slide_index, status, locked_round_ids } = sessRes.rows[0];
+          const { current_slide_index, status, locked_round_ids, scoreboard_visibility } = sessRes.rows[0];
           socket.emit('session_state', {
             slideIndex:     current_slide_index || 0,
             status:         status || 'lobby',
-            lockedRoundIds: locked_round_ids   || []
+            lockedRoundIds: locked_round_ids   || [],
+            scoreboardVisibility: scoreboard_visibility || { slideshow: false, quizzer: false, admin: false }
           });
         }
       } catch (err) {

@@ -3744,3 +3744,77 @@ input[type="checkbox"] {
   background: var(--bg-elevated);
   border-radius: 5px;
 }
+
+/* =====================================================
+   SCOREBOARD CONTROLS + LIVE TABLE (admin)
+   ===================================================== */
+.scoreboard-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 18px;
+}
+.scoreboard-controls-label {
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.sb-toggle {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s ease;
+}
+.sb-toggle:hover { border-color: var(--neon-cyan); color: var(--text-primary); }
+.sb-toggle.on {
+  background: rgba(0, 255, 159, 0.12);
+  border-color: var(--neon-green);
+  color: var(--neon-green);
+  box-shadow: 0 0 12px rgba(0, 255, 159, 0.25);
+}
+
+.scoreboard-admin-panel { padding: 18px 20px; }
+
+/* Live scoreboard table (shared shape) */
+.sb-panel { display: flex; flex-direction: column; gap: 14px; }
+.sb-title { color: var(--text-primary); font-size: 1.2rem; margin: 0; }
+.sb-msg { color: var(--text-dim); font-style: italic; }
+.sb-table-wrap { width: 100%; overflow-x: auto; }
+.sb-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+.sb-table th,
+.sb-table td {
+  padding: 8px 12px;
+  text-align: center;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.sb-table thead th {
+  color: var(--neon-cyan);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 2px solid var(--border-glow);
+}
+.sb-col-rank { width: 44px; }
+.sb-col-team { text-align: left; font-weight: 600; color: var(--text-primary); }
+.sb-col-num  { font-variant-numeric: tabular-nums; color: var(--text-primary); }
+.sb-col-total { font-weight: 800; color: var(--neon-green); }
+.sb-table thead .sb-col-total { color: var(--neon-green); }
+.sb-row-leader td {
+  background: linear-gradient(135deg, rgba(255, 230, 0, 0.12), rgba(255, 157, 0, 0.05));
+}
+.sb-row-leader .sb-col-team { color: var(--neon-yellow, #ffe600); }

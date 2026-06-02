@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useWebSocket } from './hooks/useWebSocket';
 import { api } from './services/api';
 import { buildSlides } from './utils/buildSlides';
+import LiveScoreboard from './components/LiveScoreboard';
 
 function getInitialCode() {
   const params = new URLSearchParams(window.location.search);
@@ -24,6 +25,7 @@ function App() {
   const [error, setError] = useState(null);
   const [status, setStatus] = useState('idle'); // idle | loading | waiting | ready
   const [portalConfig, setPortalConfig] = useState(null);
+  const [scoreboardVisible, setScoreboardVisible] = useState(false);
   const socket = useWebSocket();
   const slides = useMemo(() => buildSlides(quiz), [quiz]);
 
@@ -90,6 +92,7 @@ function App() {
     const onSessionState = (data) => {
       if (typeof data.slideIndex === 'number') setCurrentSlide(data.slideIndex);
       if (data.status) setSessionStatus(data.status);
+      if (data.scoreboardVisibility) setScoreboardVisible(!!data.scoreboardVisibility.slideshow);
     };
     const onSlide = (data) => {
       if (typeof data.slideIndex === 'number') setCurrentSlide(data.slideIndex);
@@ -101,12 +104,16 @@ function App() {
     const onTeamJoin = () => {
       api.get(`/teams/session/${sessionId}`).then(t => setTeamsCount(t.length)).catch(() => {});
     };
+    const onScoreboardVis = (data) => {
+      if (data?.visibility) setScoreboardVisible(!!data.visibility.slideshow);
+    };
 
     socket.on('connect',                rejoin);
     socket.on('session_state',          onSessionState);
     socket.on('slide_changed',          onSlide);
     socket.on('session_status_changed', onStatus);
     socket.on('team_joined',            onTeamJoin);
+    socket.on('scoreboard_visibility_changed', onScoreboardVis);
 
     // If socket is already connected when the effect runs, join immediately
     if (socket.connected) rejoin();
@@ -120,79 +127,93 @@ function App() {
       socket.off('slide_changed',          onSlide);
       socket.off('session_status_changed', onStatus);
       socket.off('team_joined',            onTeamJoin);
+      socket.off('scoreboard_visibility_changed', onScoreboardVis);
     };
   }, [socket, sessionId]);
 
-  if (!code) {
-    return <CodeEntry onSubmit={setCode} initialError={error} />;
-  }
+  const renderView = () => {
+    if (!code) {
+      return <CodeEntry onSubmit={setCode} initialError={error} />;
+    }
 
-  if (status === 'loading') {
-    return <FullScreenMessage title="Loading quiz..." />;
-  }
+    if (status === 'loading') {
+      return <FullScreenMessage title="Loading quiz..." />;
+    }
 
-  if (status === 'waiting') {
-    return (
-      <FullScreenMessage
-        title={quiz?.name}
-        subtitle={`Code: ${quiz?.code}`}
-        message="Waiting for the quiz master to start the session..."
-      />
-    );
-  }
+    if (status === 'waiting') {
+      return (
+        <FullScreenMessage
+          title={quiz?.name}
+          subtitle={`Code: ${quiz?.code}`}
+          message="Waiting for the quiz master to start the session..."
+        />
+      );
+    }
 
-  // LOBBY screen - shown before quiz begins
-  if (sessionStatus === 'lobby') {
-    const quizzerBase = (
-      portalConfig?.quizzerUrl ||
-      `${window.location.protocol}//${window.location.host.replace(/:3002$/, ':3003')}`
-    ).replace(/\/+$/, '');
-    // Full deep link with the code baked into the path: https://answer.website.com/ABC123
-    const joinUrl = quiz?.code ? `${quizzerBase}/${quiz.code}` : quizzerBase;
+    // LOBBY screen - shown before quiz begins
+    if (sessionStatus === 'lobby') {
+      const quizzerBase = (
+        portalConfig?.quizzerUrl ||
+        `${window.location.protocol}//${window.location.host.replace(/:3002$/, ':3003')}`
+      ).replace(/\/+$/, '');
+      // Full deep link with the code baked into the path: https://answer.website.com/ABC123
+      const joinUrl = quiz?.code ? `${quizzerBase}/${quiz.code}` : quizzerBase;
+      return (
+        <div className="slideshow-container">
+          <div className="slide lobby-slide">
+            <div className="lobby-content">
+              <p className="lobby-label">Tonight's Quiz</p>
+              <h1 className="lobby-title">{quiz?.name}</h1>
+              <div className="lobby-code-box">
+                <p className="lobby-code-label">Join Code</p>
+                <p className="lobby-code">{quiz?.code}</p>
+              </div>
+              <p className="lobby-instructions">
+                Teams join at <span className="lobby-url">{joinUrl}</span>
+              </p>
+              <div className="lobby-counter">
+                <span className="counter-number">{teamsCount}</span>
+                <span className="counter-label">team{teamsCount !== 1 ? 's' : ''} joined</span>
+              </div>
+              <p className="lobby-waiting">Waiting for quiz master to begin...</p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (sessionStatus === 'finished') {
+      return (
+        <FullScreenMessage
+          title="Quiz Complete!"
+          subtitle={quiz?.name}
+          message={`${teamsCount} team${teamsCount !== 1 ? 's' : ''} participated. Thanks for playing!`}
+        />
+      );
+    }
+
+    const slide = slides[currentSlide];
     return (
       <div className="slideshow-container">
-        <div className="slide lobby-slide">
-          <div className="lobby-content">
-            <p className="lobby-label">Tonight's Quiz</p>
-            <h1 className="lobby-title">{quiz?.name}</h1>
-            <div className="lobby-code-box">
-              <p className="lobby-code-label">Join Code</p>
-              <p className="lobby-code">{quiz?.code}</p>
-            </div>
-            <p className="lobby-instructions">
-              Teams join at <span className="lobby-url">{joinUrl}</span>
-            </p>
-            <div className="lobby-counter">
-              <span className="counter-number">{teamsCount}</span>
-              <span className="counter-label">team{teamsCount !== 1 ? 's' : ''} joined</span>
-            </div>
-            <p className="lobby-waiting">Waiting for quiz master to begin...</p>
-          </div>
+        <div className="slide" style={slide?.background ? { background: slide.background } : undefined}>
+          <SlideRenderer slide={slide} sessionId={sessionId} socket={socket} />
+        </div>
+        <div className="slide-counter">
+          {currentSlide + 1} / {slides.length}
         </div>
       </div>
     );
-  }
+  };
 
-  if (sessionStatus === 'finished') {
-    return (
-      <FullScreenMessage
-        title="Quiz Complete!"
-        subtitle={quiz?.name}
-        message={`${teamsCount} team${teamsCount !== 1 ? 's' : ''} participated. Thanks for playing!`}
-      />
-    );
-  }
-
-  const slide = slides[currentSlide];
   return (
-    <div className="slideshow-container">
-      <div className="slide" style={slide?.background ? { background: slide.background } : undefined}>
-        <SlideRenderer slide={slide} sessionId={sessionId} socket={socket} />
-      </div>
-      <div className="slide-counter">
-        {currentSlide + 1} / {slides.length}
-      </div>
-    </div>
+    <>
+      {renderView()}
+      {scoreboardVisible && sessionId && (
+        <div className="sb-overlay">
+          <LiveScoreboard sessionId={sessionId} socket={socket} title={`${quiz?.name || 'Quiz'} — Scoreboard`} />
+        </div>
+      )}
+    </>
   );
 }
 
@@ -346,61 +367,16 @@ function WidgetSlide({ slide, sessionId, socket }) {
   );
 }
 
-// Live scoreboard: fetches team totals on mount, then re-fetches on
-// answer_marked / team_joined / brownie events so the leaderboard stays current
-// while it's on screen.
+// Scoreboard widget slide — renders the full per-round breakdown table, kept
+// live via LiveScoreboard's own socket subscriptions.
 function ScoreboardWidget({ slide, sessionId, socket }) {
   const data = slide.data || {};
-  const [rows, setRows] = useState([]);
-  const [loaded, setLoaded] = useState(false);
-
-  const refresh = () => {
-    if (!sessionId) return;
-    api.get(`/teams/session/${sessionId}/scoreboard`)
-      .then(r => { setRows(Array.isArray(r) ? r : []); setLoaded(true); })
-      .catch(() => setLoaded(true));
-  };
-
-  useEffect(() => {
-    refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
-
-  useEffect(() => {
-    if (!socket) return;
-    const onAnyScore = () => refresh();
-    socket.on('answer_marked', onAnyScore);
-    socket.on('team_joined',   onAnyScore);
-    return () => {
-      socket.off('answer_marked', onAnyScore);
-      socket.off('team_joined',   onAnyScore);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [socket, sessionId]);
-
   const style = {
     background: data.bg_image ? `url(${data.bg_image}) center/cover` : (data.bg_color || undefined)
   };
-
   return (
     <div className="slide-widget slide-scoreboard" style={style}>
-      <h2>{data.title || 'Leaderboard'}</h2>
-
-      {!loaded ? (
-        <p className="scoreboard-loading">Loading scores…</p>
-      ) : rows.length === 0 ? (
-        <p className="scoreboard-empty">No teams have scored yet.</p>
-      ) : (
-        <ol className="scoreboard-list">
-          {rows.map((t, i) => (
-            <li key={t.id} className={`scoreboard-row rank-${i + 1}`}>
-              <span className="scoreboard-rank">{i + 1}</span>
-              <span className="scoreboard-name">{t.name}</span>
-              <span className="scoreboard-score">{Number(t.total).toFixed(t.total % 1 === 0 ? 0 : 1)}</span>
-            </li>
-          ))}
-        </ol>
-      )}
+      <LiveScoreboard sessionId={sessionId} socket={socket} title={data.title || 'Leaderboard'} />
     </div>
   );
 }
