@@ -187,7 +187,7 @@ API calls automatically use the same hostname the page was served from — no re
 - Left-column list with **🔍 search** and category/difficulty filters
 - Click a question to load into the right-side editor (scrollable — the Save button is always reachable); "+ New" clears
 - **Dynamic MCQ options** — add as many options as you need, remove any (minimum 2 enforced)
-- **📁 Import CSV** as a top-right modal button
+- **📁 Import CSV** as a top-right modal button — **duplicate-aware**: new questions import automatically, while any that already exist (same question text) are listed in a popup where you choose **Overwrite**, **Ignore**, or **Keep copy** (saved with a `(COPY)` suffix) per entry, with Apply-to-all shortcuts. A success popup then summarises everything added / overwritten / copied. Adding a question manually runs the same duplicate check.
 - Media upload endpoint for image/video/audio assets
 
 ### Round Builder (drag-and-drop)
@@ -211,14 +211,15 @@ API calls automatically use the same hostname the page was served from — no re
 - Teams can join during lobby phase (not just after Begin Quiz). Lobby team list **auto-refreshes** when the session transitions back to lobby after a restart
 - Admin sees: live team counter, **▶ Begin Quiz** to go live
 - **Active** state — Next/Previous slide nav, Lock Round Answers, slide thumbnails, quick-links to the **Quizzer Portal** and **Slideshow** portals
-- Portal links appear in **both lobby and active** states. The Quizzer link is a path-based deep link (`https://answer.yourdomain.com/ABC123`) so players land with the code pre-filled; they still enter their team name before joining
+- Portal links appear in **both lobby and active** states. Both the Quizzer and Display/Slideshow links are path-based deep links with the code baked in (`https://answer.yourdomain.com/ABC123`, `https://show.yourdomain.com/ABC123`) so each opens already pointed at the quiz
 - **⏸ Back to Lobby** / **↺ Restart Session** / **⏹ End Quiz** controls — End Quiz shows a confirmation dialog before finishing
 - Restart keeps the same teams but resets to slide 0
 - All surfaces recover automatically after a network hiccup — WebSocket auto-rejoins and the server replays authoritative state (slide index, session status, locked rounds)
 
 ### Slideshow Viewer
-- Auto-detects quiz code from URL (`/quiz/CODE`, `/?code=CODE`) or shows entry screen
+- Auto-detects quiz code from URL (path deep link `/CODE`, or `/?code=CODE`) or shows entry screen
 - **Lobby slide** with massive glowing join code, team counter, join URL
+- **Join QR code** fixed in the bottom-right corner (during lobby + active) — players scan it to open the quizzer with the code pre-filled
 - Renders all slide types: round intro, text Q, image/video/audio Q, MCQ, answer reveal, custom widgets
 - Auto-syncs with admin slide changes — no manual controls
 
@@ -318,8 +319,11 @@ question,answer,type,points,media_url,category,difficulty,answer_mode
 | `category` | no | Free-form tag — autocompletes existing values |
 | `difficulty` | no (defaults `medium`) | `easy` / `medium` / `hard` |
 | `answer_mode` | no (defaults `text`) | `text` / `mcq` / `both` |
+| `question_format` | no (defaults `standard`) | `standard` / `multichoice` / `both` |
+| `approved` | no (defaults `false`) | `true` / `false` |
+| `options` | no | MCQ options, pipe-separated: `Paris|London|Rome` |
 
-For MCQ questions, set the options through the UI after import (or send the JSON via the API).
+Column order is flexible — the importer maps by header name. The same file produced by **Download CSV** can be re-imported. On import, questions whose text already exists are flagged so you can overwrite, ignore, or keep a copy; everything else imports automatically.
 
 ---
 

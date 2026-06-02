@@ -199,7 +199,7 @@ Key tables and their purposes:
 | Page | Nav label | Purpose |
 |---|---|---|
 | `Dashboard.jsx` | Dashboard | Start/manage sessions, live session status |
-| `QuestionManager.jsx` | Questions | Question bank CRUD, category filter, difficulty, CSV export, category manager |
+| `QuestionManager.jsx` | Questions | Question bank CRUD, category filter, difficulty, CSV export/import (duplicate-aware), category manager |
 | `RoundBuilder.jsx` | Rounds | Assemble questions into rounds, set round colour |
 | `QuizBuilder.jsx` | Quizzes | Combine rounds + widgets into a quiz, pick master theme, enable team size handicap scoring |
 | `QuizControl.jsx` | Control | Live slide navigation, lock/unlock answers, lifecycle buttons, portal quick-links (lobby + active) |
@@ -291,8 +291,8 @@ Every surface that needs to **display** a portal address reads it from the publi
 { "quizzerUrl": <QUIZZER_URL|null>, "slideshowUrl": <SLIDESHOW_URL|null>, "adminUrl": <ADMIN_URL|null> }
 ```
 
-- **Admin `QuizControl.jsx`** — the "📱 Quizzer Portal" + "🖥 Display / Slideshow" buttons (shown in both lobby and active) and the lobby "Teams visit …" code use `portalConfig.quizzerUrl` / `portalConfig.slideshowUrl`.
-- **Slideshow `App.jsx`** — the lobby "Teams join at …" label uses `portalConfig.quizzerUrl`.
+- **Admin `QuizControl.jsx`** — the "📱 Quizzer Portal" + "🖥 Display / Slideshow" buttons (shown in both lobby and active) and the lobby "Teams visit …" code use `portalConfig.quizzerUrl` / `portalConfig.slideshowUrl`. **Both** portal buttons are path-based deep links with the code baked in (`${quizzerBase}/${code}` and `${slideshowBase}/${code}`), so opening the Display link loads the slideshow already pointed at this quiz.
+- **Slideshow `App.jsx`** — the lobby "Teams join at …" label uses `portalConfig.quizzerUrl`. It also renders a **join QR code** fixed in the bottom-right corner (lobby + active) encoding the quizzer deep link `${quizzerBase}/${code}` via `qrcode.react` (`QRCodeSVG`); the slide counter is moved to the bottom-left to make room. The QR is hidden on the finished screen and sits behind the scoreboard overlay when that's shown.
 
 When an env var is unset, `/api/config` returns `null` for it and the UI falls back to `${protocol}//${hostname}:3003` (quizzer) / `:3002` (slideshow). Trailing slashes on the configured URLs are stripped before use.
 
@@ -314,6 +314,14 @@ QuizBuilder computes `duplicateQuestions` (a `useMemo` over `orderItems` + `allR
 
 ### Dynamic MCQ options
 The question editor now supports adding and removing MCQ options dynamically (minimum 2 options). Options are no longer capped at 4.
+
+### Duplicate-aware question import (CSV + manual add)
+Both CSV import and adding a brand-new question manually run through one path in `QuestionManager.jsx`:
+- **CSV is parsed client-side** (`csvToQuestions` + `parseCSVRows`) — header-driven, so column order/subset is flexible; `options` is pipe-separated. The legacy `POST /api/upload/csv` route (which only stored the file and never imported) is no longer used.
+- `startImport(parsed)` splits items into **new** (not in the bank) and **duplicates** (same question text, matched via `normText` — lowercase/trim/collapsed whitespace) against the already-loaded `questions`.
+- New questions always pass straight through. If any duplicates exist, the **`ImportResolveModal`** opens (styled like the categories modal) listing each duplicate with **Overwrite / Ignore / Keep copy** buttons (+ Apply-to-all shortcuts). Default action is Ignore.
+- On confirm, the resolved list is sent to **`POST /api/questions/import`** `{ items: [{ action, question, existingId? }] }`. Actions: `add` (insert), `overwrite` (update existingId), `copy` (insert with ` (COPY)` appended to the text), `ignore` (skip). Runs in a transaction; returns `{ added, copied, overwritten, ignored }`.
+- An **`ImportSuccessModal`** (same modal styling) then lists everything added / overwritten / copied and the ignored count. Editing an existing question (with `editingId`) bypasses all this and saves directly.
 
 ### Team size handicap scoring
 When `team_size_scoring` is enabled on a quiz (toggle in QuizBuilder), each team receives starting points based on their registered team size: size 1→+5, 2→+4, 3→+3, 4→+2, 5→+1, 6→0, 7→-1, 8→-2, 9→-3, 10→-4. Formula: `GREATEST(-4, LEAST(5, 6 - size))`. These points are included in `total` on the scoreboard and appear as a separate "Handicap" column in History when any team has a non-zero size_points value. The `team_size_scoring` boolean is stored on the `quizzes` table and flows through `loadQuizWithRoundsAndWidgets`, `getSessionScoreboard`, and `getSessionResults`.

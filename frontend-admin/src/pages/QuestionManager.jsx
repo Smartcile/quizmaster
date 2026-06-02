@@ -40,6 +40,57 @@ const EMPTY_FORM = {
   options: ['', '', '', '']
 };
 
+// Normalise question text for duplicate detection (case/space-insensitive).
+const normText = (s) => String(s || '').toLowerCase().trim().replace(/\s+/g, ' ');
+
+// Minimal RFC-4180-ish CSV parser: handles quoted fields, "" escapes, CR/LF.
+function parseCSVRows(text) {
+  const rows = [];
+  let row = [], field = '', inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; }
+        else inQuotes = false;
+      } else field += c;
+    } else if (c === '"') inQuotes = true;
+    else if (c === ',') { row.push(field); field = ''; }
+    else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
+    else if (c !== '\r') field += c;
+  }
+  if (field.length || row.length) { row.push(field); rows.push(row); }
+  return rows.filter(r => r.some(cell => cell.trim() !== ''));
+}
+
+// Header-driven map of CSV rows → question objects. Matches the export format;
+// the `options` column is pipe-separated ("a|b|c"). Column order/subset is
+// flexible because everything is keyed off the header names.
+function csvToQuestions(text) {
+  const rows = parseCSVRows(text);
+  if (rows.length < 2) return [];
+  const headers = rows[0].map(h => h.trim().toLowerCase());
+  const idx = (name) => headers.indexOf(name);
+  const textCol = idx('question') !== -1 ? idx('question') : idx('text');
+  const cell = (cells, name) => { const i = idx(name); return i === -1 ? '' : (cells[i] ?? '').trim(); };
+  return rows.slice(1).map(cells => {
+    const opts = cell(cells, 'options');
+    return {
+      text: textCol === -1 ? '' : (cells[textCol] ?? '').trim(),
+      answer: cell(cells, 'answer'),
+      type: cell(cells, 'type') || 'text',
+      points: parseFloat(cell(cells, 'points')) || 1,
+      media_url: cell(cells, 'media_url'),
+      category: cell(cells, 'category'),
+      difficulty: cell(cells, 'difficulty') || 'medium',
+      answer_mode: cell(cells, 'answer_mode') || 'text',
+      question_format: cell(cells, 'question_format') || 'standard',
+      approved: cell(cells, 'approved').toLowerCase() === 'true',
+      options: opts ? opts.split('|').map(o => o.trim()).filter(Boolean) : []
+    };
+  }).filter(q => q.text);
+}
+
 export default function QuestionManager() {
   const [questions, setQuestions] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -54,6 +105,12 @@ export default function QuestionManager() {
   const [csvOpen, setCsvOpen] = useState(false);
   const [catManagerOpen, setCatManagerOpen] = useState(false);
   const [managedCategories, setManagedCategories] = useState([]);
+  // Duplicate-aware import state
+  const [importDupes, setImportDupes]   = useState([]); // [{ question, existingId, existingText }]
+  const [importNew, setImportNew]       = useState([]); // [{ question }]
+  const [resolveOpen, setResolveOpen]   = useState(false);
+  const [successSummary, setSuccessSummary] = useState(null);
+  const [importing, setImporting]       = useState(false);
 
   useEffect(() => { loadAll(); }, []);
 
@@ -122,18 +179,86 @@ export default function QuestionManager() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    const payload = {
+      ...form,
+      options: (form.answer_mode === 'mcq' || form.answer_mode === 'both') ? form.options.filter(o => o.trim()) : []
+    };
+    // Editing an existing question saves directly — no duplicate check needed.
+    if (editingId) {
+      try {
+        await api.put(`/questions/${editingId}`, payload);
+        await loadAll();
+        newQuestion();
+      } catch (err) {
+        setError('Save failed: ' + err.message);
+      }
+      return;
+    }
+    // A brand-new question goes through the same duplicate-aware path as CSV import.
+    startImport([payload]);
+  };
+
+  // Read the chosen CSV, parse it client-side, then run duplicate checking.
+  const handleCSVUpload = async () => {
+    if (!csvFile) return;
     try {
-      const payload = {
-        ...form,
-        options: (form.answer_mode === 'mcq' || form.answer_mode === 'both') ? form.options.filter(o => o.trim()) : []
-      };
-      if (editingId) await api.put(`/questions/${editingId}`, payload);
-      else await api.post('/questions', payload);
+      const text = await csvFile.text();
+      const parsed = csvToQuestions(text);
+      if (parsed.length === 0) { setError('No questions found in that CSV.'); return; }
+      setCsvOpen(false);
+      setCsvFile(null);
+      startImport(parsed);
+    } catch (err) {
+      setError('Could not read CSV: ' + err.message);
+    }
+  };
+
+  // Split parsed questions into duplicates (already in the bank by text) and new
+  // ones. New questions always pass through; duplicates open the resolution
+  // modal. If there are no duplicates we import straight away.
+  const startImport = (parsed) => {
+    const existingByText = new Map(questions.map(q => [normText(q.text), q]));
+    const dupes = [], fresh = [];
+    parsed.forEach(q => {
+      const match = existingByText.get(normText(q.text));
+      if (match) dupes.push({ question: q, existingId: match.id, existingText: match.text });
+      else fresh.push({ question: q });
+    });
+    setImportNew(fresh);
+    setImportDupes(dupes);
+    if (dupes.length > 0) {
+      setResolveOpen(true);
+    } else {
+      doImport(fresh.map(f => ({ action: 'add', question: f.question })));
+    }
+  };
+
+  // Send the resolved item list to the backend and show the success summary.
+  const doImport = async (items) => {
+    setImporting(true);
+    try {
+      const summary = await api.post('/questions/import', { items });
       await loadAll();
       newQuestion();
+      setResolveOpen(false);
+      setImportDupes([]);
+      setImportNew([]);
+      setSuccessSummary(summary);
     } catch (err) {
-      setError('Save failed: ' + err.message);
+      setError('Import failed: ' + err.message);
+    } finally {
+      setImporting(false);
     }
+  };
+
+  // Called by the resolve modal with a chosen action per duplicate. New
+  // (non-duplicate) questions are appended automatically as plain adds.
+  const confirmResolve = (resolvedDupes) => {
+    const items = [
+      ...importNew.map(f => ({ action: 'add', question: f.question })),
+      ...resolvedDupes.map(d => ({ action: d.action, question: d.question, existingId: d.existingId }))
+    ];
+    doImport(items);
   };
 
   const handleDelete = async (id) => {
@@ -141,21 +266,6 @@ export default function QuestionManager() {
     try {
       await api.delete(`/questions/${id}`);
       if (editingId === id) newQuestion();
-      loadAll();
-    } catch (err) {
-      setError(err.message);
-    }
-  };
-
-  const handleCSVUpload = async () => {
-    if (!csvFile) return;
-    const formData = new FormData();
-    formData.append('file', csvFile);
-    try {
-      await api.upload('/upload/csv', formData);
-      alert('CSV uploaded. Reloading...');
-      setCsvFile(null);
-      setCsvOpen(false);
       loadAll();
     } catch (err) {
       setError(err.message);
@@ -415,13 +525,14 @@ export default function QuestionManager() {
               <button onClick={() => setCsvOpen(false)} className="btn-close">×</button>
             </div>
             <div className="modal-body">
-              <p className="help-text">Columns: question, answer, type, points, media_url, category, difficulty, answer_mode</p>
+              <p className="help-text">Columns: question, answer, type, points, media_url, category, difficulty, answer_mode, question_format, approved, options (pipe-separated). Column order is flexible.</p>
+              <p className="help-text">New questions import automatically. Any that already exist (same question text) are flagged so you can overwrite, ignore, or keep a copy.</p>
               <input type="file" accept=".csv" onChange={(e) => setCsvFile(e.target.files[0])} />
               {csvFile && <p className="help-text">📁 {csvFile.name}</p>}
             </div>
             <div className="modal-footer">
               <button onClick={() => setCsvOpen(false)} className="btn btn-secondary">Cancel</button>
-              <button onClick={handleCSVUpload} className="btn btn-primary" disabled={!csvFile}>Upload</button>
+              <button onClick={handleCSVUpload} className="btn btn-primary" disabled={!csvFile}>Check &amp; Import</button>
             </div>
           </div>
         </div>
@@ -435,6 +546,116 @@ export default function QuestionManager() {
           onError={setError}
         />
       )}
+
+      {resolveOpen && (
+        <ImportResolveModal
+          dupes={importDupes}
+          newCount={importNew.length}
+          importing={importing}
+          onConfirm={confirmResolve}
+          onClose={() => { setResolveOpen(false); setImportDupes([]); setImportNew([]); }}
+        />
+      )}
+
+      {successSummary && (
+        <ImportSuccessModal summary={successSummary} onClose={() => setSuccessSummary(null)} />
+      )}
+    </div>
+  );
+}
+
+// ── Duplicate-resolution modal ───────────────────────────────────────────────
+// Lists every question that already exists, each with Overwrite / Ignore / Keep
+// copy buttons (plus Apply-to-all shortcuts). New questions import automatically.
+function ImportResolveModal({ dupes, newCount, importing, onConfirm, onClose }) {
+  const [actions, setActions] = useState(() => dupes.map(() => 'ignore'));
+  const setAction = (i, a) => setActions(prev => prev.map((x, idx) => (idx === i ? a : x)));
+  const setAll = (a) => setActions(dupes.map(() => a));
+  const confirm = () => onConfirm(dupes.map((d, i) => ({ ...d, action: actions[i] })));
+
+  return (
+    <div className="modal-overlay" onClick={importing ? undefined : onClose}>
+      <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3>Duplicate questions found</h3>
+          <button onClick={onClose} className="btn-close" disabled={importing}>×</button>
+        </div>
+        <div className="modal-body">
+          <p className="help-text">
+            {newCount} new question{newCount !== 1 ? 's' : ''} will be added automatically.
+            {' '}{dupes.length} already exist{dupes.length === 1 ? 's' : ''} — choose what to do with each.
+          </p>
+
+          <div className="import-bulk-actions">
+            <span>Apply to all:</span>
+            <button type="button" className="btn btn-sm btn-secondary" onClick={() => setAll('overwrite')}>Overwrite</button>
+            <button type="button" className="btn btn-sm btn-secondary" onClick={() => setAll('ignore')}>Ignore</button>
+            <button type="button" className="btn btn-sm btn-secondary" onClick={() => setAll('copy')}>Keep copy</button>
+          </div>
+
+          <ul className="import-dupe-list">
+            {dupes.map((d, i) => (
+              <li key={i} className="import-dupe-row">
+                <div className="import-dupe-text">
+                  <span className="import-dupe-q">{d.question.text}</span>
+                  <span className="import-dupe-meta">New answer: {d.question.answer || '—'}</span>
+                </div>
+                <div className="import-dupe-actions">
+                  <button type="button" className={`idupe-btn ${actions[i] === 'overwrite' ? 'active-over' : ''}`}  onClick={() => setAction(i, 'overwrite')}>Overwrite</button>
+                  <button type="button" className={`idupe-btn ${actions[i] === 'ignore' ? 'active-ignore' : ''}`}    onClick={() => setAction(i, 'ignore')}>Ignore</button>
+                  <button type="button" className={`idupe-btn ${actions[i] === 'copy' ? 'active-copy' : ''}`}        onClick={() => setAction(i, 'copy')}>Keep copy</button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="modal-footer">
+          <button onClick={onClose} className="btn btn-secondary" disabled={importing}>Cancel</button>
+          <button onClick={confirm} className="btn btn-primary" disabled={importing}>
+            {importing ? 'Importing…' : 'Import'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Import success summary (same modal styling as the rest) ───────────────────
+function ImportSuccessModal({ summary, onClose }) {
+  const { added = [], copied = [], overwritten = [], ignored = 0 } = summary || {};
+  const total = added.length + copied.length + overwritten.length;
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3>✓ Import complete</h3>
+          <button onClick={onClose} className="btn-close">×</button>
+        </div>
+        <div className="modal-body">
+          <p className="help-text">
+            {total} question{total !== 1 ? 's' : ''} saved{ignored ? `, ${ignored} ignored` : ''}.
+          </p>
+          {added.length > 0       && <ImportSummaryGroup label="Added"       items={added}       className="isum-added" />}
+          {overwritten.length > 0 && <ImportSummaryGroup label="Overwritten" items={overwritten} className="isum-over" />}
+          {copied.length > 0      && <ImportSummaryGroup label="Copied"      items={copied}      className="isum-copy" />}
+          {total === 0 && ignored > 0 && <p className="help-text">No changes — all duplicates were ignored.</p>}
+        </div>
+        <div className="modal-footer">
+          <button onClick={onClose} className="btn btn-primary">Done</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ImportSummaryGroup({ label, items, className }) {
+  return (
+    <div className="import-summary-group">
+      <p className={`import-summary-label ${className}`}>{label} ({items.length})</p>
+      <ul className="import-summary-list">
+        {items.slice(0, 50).map((t, i) => <li key={i}>{t}</li>)}
+        {items.length > 50 && <li>…and {items.length - 50} more</li>}
+      </ul>
     </div>
   );
 }
