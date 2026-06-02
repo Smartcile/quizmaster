@@ -356,6 +356,7 @@ export default function QuestionManager() {
                 <div className="qm-question-text">{q.text}</div>
                 <div className="qm-question-meta">
                   {q.approved && <span className="qm-approved" title="Approved">✓</span>}
+                  <SourceBadge value={q.source || 'local'} />
                   <DifficultyBadge value={q.difficulty || 'medium'} />
                   <FormatBadge value={q.question_format || 'standard'} />
                   <span className={`qm-tag qm-tag-${q.answer_mode || 'text'}`}>{q.answer_mode || 'text'}</span>
@@ -771,4 +772,16 @@ function DifficultyBadge({ value }) {
 function FormatBadge({ value }) {
   const labels = { standard: 'STD', multichoice: 'MCQ', both: 'BOTH' };
   return <span className={`qm-tag qm-tag-fmt-${value || 'standard'}`}>{labels[value] || 'STD'}</span>;
+}
+
+// Where the question came from: Local (added here), Repo (from a GitHub pack),
+// or L&R (exists in both).
+function SourceBadge({ value }) {
+  const map = {
+    local: { label: 'Local', cls: 'qm-src-local' },
+    repo:  { label: 'Repo',  cls: 'qm-src-repo' },
+    both:  { label: 'L&R',   cls: 'qm-src-both' }
+  };
+  const s = map[value] || map.local;
+  return <span className={`qm-src ${s.cls}`} title={`Source: ${s.label}`}>{s.label}</span>;
 }

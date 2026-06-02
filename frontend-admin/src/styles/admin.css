@@ -1208,6 +1208,15 @@ select {
 .dnd-filters select {
   flex: 1;
 }
+/* Extra attribute filters wrap two-per-row beneath the search + category row */
+.dnd-filters-extra {
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.dnd-filters-extra select {
+  flex: 1 1 calc(50% - 4px);
+  min-width: 0;
+}
 
 .dnd-list {
   flex: 1;
@@ -3950,3 +3959,96 @@ input[type="checkbox"] {
   background: linear-gradient(135deg, rgba(255, 230, 0, 0.12), rgba(255, 157, 0, 0.05));
 }
 .sb-row-leader .sb-col-team { color: var(--neon-yellow, #ffe600); }
+
+/* =====================================================
+   QUESTION SOURCE BADGE (Local / Repo / L&R)
+   ===================================================== */
+.qm-src {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+}
+.qm-src-local { background: rgba(138,157,195,0.15); color: #8b9dc3; border-color: rgba(138,157,195,0.4); }
+.qm-src-repo  { background: rgba(0,240,255,0.14);   color: var(--neon-cyan); border-color: rgba(0,240,255,0.45); }
+.qm-src-both  { background: rgba(184,41,255,0.16);  color: #d68fff; border-color: rgba(184,41,255,0.5); }
+
+/* =====================================================
+   SETTINGS PAGE + QUESTION REPOSITORIES
+   ===================================================== */
+.settings-page { display: flex; flex-direction: column; gap: 16px; }
+
+.settings-section {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.settings-section-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 20px;
+  background: rgba(0,0,0,0.15);
+  border: none;
+  cursor: pointer;
+  color: var(--text-primary);
+  font-family: inherit;
+  text-align: left;
+}
+.settings-section-header:hover { background: rgba(0,0,0,0.25); }
+.settings-chevron { color: var(--neon-cyan); font-size: 0.9rem; width: 14px; flex-shrink: 0; }
+.settings-section-title { font-weight: 700; font-size: 1rem; }
+.settings-section-sub { color: var(--text-muted); font-size: 0.82rem; margin-left: auto; }
+.settings-section-body { padding: 18px 20px; border-top: 1px solid var(--border); }
+
+.repos-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.repo-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.repo-item {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.repo-row { display: flex; align-items: center; gap: 8px; padding: 10px 12px; }
+.repo-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-primary);
+  font-family: inherit;
+  text-align: left;
+}
+.repo-label { font-weight: 600; }
+.repo-sub { color: var(--text-muted); font-size: 0.82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.repo-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.repo-detail {
+  padding: 12px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-base);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.repo-meta-row { display: flex; gap: 10px; font-size: 0.82rem; }
+.repo-meta-row span { color: var(--text-dim); min-width: 90px; }
+.repo-meta-row code { color: var(--text-primary); word-break: break-all; }
+.repo-result { margin-top: 8px; padding: 10px 12px; border-radius: 6px; font-size: 0.85rem; }
+.repo-result-ok  { background: rgba(0,255,159,0.1);  border: 1px solid var(--neon-green); color: var(--text-primary); }
+.repo-result-err { background: rgba(255,56,104,0.12); border: 1px solid var(--neon-pink);  color: var(--neon-pink); }

@@ -306,3 +306,25 @@ CREATE TABLE IF NOT EXISTS media_files (
   uploaded_at   TIMESTAMP DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_media_files_filename ON media_files(filename);
+
+-- ============================================================
+-- Question source + GitHub repositories (additive)
+-- ============================================================
+-- source: where a question came from — 'local' (added in-app / CSV), 'repo'
+-- (pulled from a configured GitHub repo), or 'both' (exists in both places).
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS source VARCHAR(10) NOT NULL DEFAULT 'local';
+
+-- question_repos: GitHub repositories that hold question CSVs. Synced on demand
+-- from the Settings page; raw CSVs are fetched over HTTPS (no git binary).
+CREATE TABLE IF NOT EXISTS question_repos (
+  id             SERIAL PRIMARY KEY,
+  label          VARCHAR(255) NOT NULL,
+  url            VARCHAR(1000) NOT NULL,
+  owner          VARCHAR(255),
+  repo           VARCHAR(255),
+  branch         VARCHAR(255) DEFAULT 'main',
+  path           VARCHAR(1000) DEFAULT '',
+  last_synced_at TIMESTAMP,
+  last_count     INT DEFAULT 0,
+  created_at     TIMESTAMP DEFAULT NOW()
+);

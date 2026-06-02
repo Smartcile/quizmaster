@@ -10,6 +10,7 @@ import QuizControl from './pages/QuizControl';
 import MastersAndSlides from './pages/MastersAndSlides';
 import QuizHistory from './pages/QuizHistory';
 import MediaLibrary from './pages/MediaLibrary';
+import Settings from './pages/Settings';
 
 function App() {
   const [authed, setAuthed] = useState(null); // null = checking, false = login, true = in
@@ -64,6 +65,8 @@ function App() {
         return <QuizHistory />;
       case 'media':
         return <MediaLibrary />;
+      case 'settings':
+        return <Settings />;
       default:
         return (
           <Dashboard
@@ -88,6 +91,7 @@ function App() {
           <li><button onClick={() => setCurrentPage('masters-slides')} className={currentPage === 'masters-slides' ? 'active' : ''}>Masters &amp; Slides</button></li>
           <li><button onClick={() => setCurrentPage('media')} className={currentPage === 'media' ? 'active' : ''}>Media</button></li>
           <li><button onClick={() => setCurrentPage('history')} className={currentPage === 'history' ? 'active' : ''}>History</button></li>
+          <li><button onClick={() => setCurrentPage('settings')} className={currentPage === 'settings' ? 'active' : ''}>Settings</button></li>
           {activeQuiz && (
             <>
               <li><button onClick={() => setCurrentPage('control')} className={currentPage === 'control' ? 'active' : ''}>Control</button></li>

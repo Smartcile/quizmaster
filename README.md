@@ -254,6 +254,7 @@ API calls automatically use the same hostname the page was served from — no re
 | Control | Live slide navigation, lock/unlock, portal links (lobby + active) |
 | Mark Answers | Per-team marking grid, 0 / 0.5 / 1 pt, re-click to deselect, CSV export |
 | **History** | All finished sessions — dates, scores, Handicap column, CSV download |
+| **Settings** | Collapsible settings sections. **Question Repositories**: pull question packs from GitHub CSV repos |
 
 ### Answer Marking
 - Lists each team's answer per question with the correct answer
@@ -280,6 +281,14 @@ API calls automatically use the same hostname the page was served from — no re
 - Click any file to open a detail panel with full metadata (filename, type, size, upload date, URL), a preview, and a breakdown of exactly which questions or slide masters reference it
 - **Delete is blocked** while a file is still referenced — the button is greyed out with a tooltip. Safe (unused) files are deleted from disk and the database
 - All uploads are registered in the `media_files` DB table so the library persists across container restarts
+
+### Question Repositories (GitHub CSV packs)
+- **Settings → Question Repositories** — pull a big question/answer bank from a public GitHub repo so you can launch with a ready-made database
+- Add a repo via a popup: paste a GitHub URL (a repo, a `/tree/<branch>/<folder>` link, or a direct `.csv` link). Branch/path can be overridden
+- Each repo row **expands/contracts** to show its details and last sync; the Settings page is built as collapsible sections so more can be added later
+- **Sync** fetches the CSV(s) over HTTPS (no git needed) and imports them following the standard CSV format
+- **No duplicates**: questions already in your bank aren't re-added. Every question carries a source label — **Local**, **Repo**, or **L&R** (in both) — shown as a badge next to its difficulty/format tags
+- A bundled [`question-packs/`](./question-packs) folder documents the CSV format and ships a sample pack you can point a repo at
 
 ---
 
