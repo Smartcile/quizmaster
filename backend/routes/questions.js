@@ -8,7 +8,8 @@ const {
   createQuestion,
   updateQuestion,
   deleteQuestion,
-  exportQuestionsCSV
+  exportQuestionsCSV,
+  importQuestions
 } = require('../controllers/questionController');
 
 router.get('/', getAllQuestions);
@@ -16,6 +17,7 @@ router.get('/categories', getCategories);
 router.get('/stats', getStats);
 router.get('/export', exportQuestionsCSV);
 router.get('/:id', getQuestion);
+router.post('/import', importQuestions);
 router.post('/', createQuestion);
 router.put('/:id', updateQuestion);
 router.delete('/:id', deleteQuestion);

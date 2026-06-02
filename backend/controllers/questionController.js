@@ -168,6 +168,82 @@ async function exportQuestionsCSV(req, res) {
   }
 }
 
+// ── importQuestions ─────────────────────────────────────────────────────────
+// POST /api/questions/import
+// Body: { items: [ { action, question: {...fields}, existingId? } ] }
+//   action: 'add' | 'copy' | 'overwrite' | 'ignore'
+//     add       → INSERT the question as-is
+//     copy      → INSERT with " (COPY)" appended to the text
+//     overwrite → UPDATE the existing row (existingId) with the new fields
+//     ignore    → skip entirely
+// Returns a summary { added, copied, overwritten, ignored } where the first
+// three are arrays of question texts (for the success popup) and ignored a count.
+async function importQuestions(req, res) {
+  const { items } = req.body;
+  if (!Array.isArray(items)) {
+    return res.status(400).json({ error: 'items must be an array' });
+  }
+
+  const norm = (q) => ({
+    text: q.text,
+    answer: q.answer,
+    type: q.type || 'text',
+    media_url: q.media_url || null,
+    points: q.points ?? 1,
+    tags: q.tags || null,
+    category: q.category || null,
+    options: JSON.stringify(Array.isArray(q.options) ? q.options : []),
+    difficulty: q.difficulty || 'medium',
+    answer_mode: q.answer_mode || 'text',
+    approved: q.approved ?? false,
+    question_format: q.question_format || 'standard'
+  });
+
+  const summary = { added: [], copied: [], overwritten: [], ignored: 0 };
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+    for (const item of items) {
+      const action = item?.action || 'add';
+      const q = item?.question || {};
+      if (action === 'ignore') { summary.ignored++; continue; }
+
+      if (action === 'overwrite' && item.existingId) {
+        const f = norm(q);
+        await client.query(
+          `UPDATE questions SET text=$1, answer=$2, type=$3, media_url=$4, points=$5,
+             tags=$6, category=$7, options=$8, difficulty=$9, answer_mode=$10,
+             approved=$11, question_format=$12
+           WHERE id=$13`,
+          [f.text, f.answer, f.type, f.media_url, f.points, f.tags, f.category,
+           f.options, f.difficulty, f.answer_mode, f.approved, f.question_format,
+           item.existingId]
+        );
+        summary.overwritten.push(f.text);
+        continue;
+      }
+
+      // add or copy → INSERT (copy appends a " (COPY)" label to the text)
+      const f = norm(q);
+      const text = action === 'copy' ? `${f.text} (COPY)` : f.text;
+      await client.query(
+        `INSERT INTO questions (${QUESTION_FIELDS})
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+        [text, f.answer, f.type, f.media_url, f.points, f.tags, f.category,
+         f.options, f.difficulty, f.answer_mode, f.approved, f.question_format]
+      );
+      (action === 'copy' ? summary.copied : summary.added).push(text);
+    }
+    await client.query('COMMIT');
+    res.json(summary);
+  } catch (error) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: error.message });
+  } finally {
+    client.release();
+  }
+}
+
 async function deleteQuestion(req, res) {
   try {
     const result = await db.query('DELETE FROM questions WHERE id = $1 RETURNING *', [req.params.id]);
@@ -186,5 +262,6 @@ module.exports = {
   createQuestion,
   updateQuestion,
   deleteQuestion,
-  exportQuestionsCSV
+  exportQuestionsCSV,
+  importQuestions
 };

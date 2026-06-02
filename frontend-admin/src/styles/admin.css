@@ -780,6 +780,93 @@ select {
   color: var(--text-primary);
 }
 
+/* =====================================================
+   CSV / MANUAL IMPORT — duplicate resolution + summary
+   ===================================================== */
+.import-bulk-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 4px 0 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+.import-dupe-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.import-dupe-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--neon-orange, #ff9d00);
+  border-radius: 6px;
+}
+.import-dupe-text { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.import-dupe-q {
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.import-dupe-meta { color: var(--text-dim); font-size: 0.78rem; }
+.import-dupe-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.idupe-btn {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.12s ease;
+}
+.idupe-btn:hover { color: var(--text-primary); border-color: var(--neon-cyan); }
+.idupe-btn.active-over   { background: rgba(0,240,255,0.15);  border-color: var(--neon-cyan);  color: var(--neon-cyan); }
+.idupe-btn.active-ignore { background: rgba(138,157,195,0.15); border-color: var(--text-muted); color: var(--text-primary); }
+.idupe-btn.active-copy   { background: rgba(184,41,255,0.18);  border-color: var(--neon-purple); color: #d68fff; }
+
+.import-summary-group { margin-top: 12px; }
+.import-summary-label { font-weight: 700; font-size: 0.85rem; margin-bottom: 4px; }
+.import-summary-label.isum-added { color: var(--neon-green); }
+.import-summary-label.isum-over  { color: var(--neon-cyan); }
+.import-summary-label.isum-copy  { color: #d68fff; }
+.import-summary-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 160px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.import-summary-list li {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  padding: 4px 8px;
+  background: var(--bg-base);
+  border-radius: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .widget-preview {
   margin-top: 14px;
   padding: 20px;
