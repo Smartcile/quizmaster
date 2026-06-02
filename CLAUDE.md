@@ -176,7 +176,7 @@ Key tables and their purposes:
 
 | Table | Purpose |
 |---|---|
-| `questions` | Question bank. Fields: `text`, `answer`, `type` (text/image/video/audio), `media_url`, `points`, `category`, `options` (JSONB for MCQ), `difficulty` (easy/medium/hard), `answer_mode` (text/mcq/both) |
+| `questions` | Question bank. Fields: `text`, `answer`, `type` (text/image/video/audio), `media_url`, `points`, `category`, `options` (JSONB for MCQ), `difficulty` (easy/medium/hard), `answer_mode` (text/mcq/both), `source` (local/repo/both — where the question came from) |
 | `categories` | Managed category list. Seeded with 14 defaults; admins can add/rename/delete. Renames propagate to `questions.category`. |
 | `rounds` | Named question groups with optional `background_color` |
 | `round_questions` | Junction: ordered questions within a round. Has `question_format_override` for per-round MCQ mode. |
@@ -191,6 +191,7 @@ Key tables and their purposes:
 | `slide_masters` | Visual themes: background, text styles, placeholder positions, and per-slide-type content `templates` JSONB |
 | `slides` | Per-quiz Fabric.js canvas slides (intro/custom types) linked to a master for styling |
 | `media_files` | Registry of uploaded media files. Fields: `filename` (unique), `original_name`, `mime_type`, `size_bytes`, `url`, `uploaded_at`. Populated by `POST /api/upload/media` via `ON CONFLICT DO NOTHING`. |
+| `question_repos` | Configured GitHub repos that hold question CSVs. Fields: `label`, `url`, `owner`, `repo`, `branch`, `path`, `last_synced_at`, `last_count`. Synced on demand from the Settings page. |
 
 ---
 
@@ -200,13 +201,14 @@ Key tables and their purposes:
 |---|---|---|
 | `Dashboard.jsx` | Dashboard | Start/manage sessions, live session status |
 | `QuestionManager.jsx` | Questions | Question bank CRUD, category filter, difficulty, CSV export/import (duplicate-aware), category manager |
-| `RoundBuilder.jsx` | Rounds | Assemble questions into rounds, set round colour |
+| `RoundBuilder.jsx` | Rounds | Assemble questions into rounds, set round colour. The "Available Questions" picker in the create/edit modal filters by the same params as the Questions page — search matches **text OR answer**, plus dropdowns for category, difficulty, media type, answer mode, question format, and approval status (extra filters sit in a second `.dnd-filters-extra` row beneath search+category). |
 | `QuizBuilder.jsx` | Quizzes | Combine rounds + widgets into a quiz, pick master theme, enable team size handicap scoring |
 | `QuizControl.jsx` | Control | Live slide navigation, lock/unlock answers, lifecycle buttons, portal quick-links (lobby + active) |
 | `AnswerMarking.jsx` | Mark Answers | Per-question per-team answer review, 0/0.5/1 scoring with optimistic UI |
 | `MastersAndSlides.jsx` | Masters & Slides | Edit master themes (Layout tab: background/styles/placeholders) and slide content defaults (Templates tab: intro/round/mark-answers/end/scoreboard/rules/custom pages) |
 | `MediaLibrary.jsx` | Media | Upload and manage images/video/audio. Shows usage labels per file; prevents deletion of in-use files |
 | `QuizHistory.jsx` | History | View all finished quiz sessions: date/time, team count, expandable team scores + CSV download per session |
+| `Settings.jsx` | Settings | Collapsible settings sections (built to grow). First section: **Question Repositories** — add/sync/remove GitHub CSV question packs. |
 
 ---
 
@@ -322,6 +324,14 @@ Both CSV import and adding a brand-new question manually run through one path in
 - New questions always pass straight through. If any duplicates exist, the **`ImportResolveModal`** opens (styled like the categories modal) listing each duplicate with **Overwrite / Ignore / Keep copy** buttons (+ Apply-to-all shortcuts). Default action is Ignore.
 - On confirm, the resolved list is sent to **`POST /api/questions/import`** `{ items: [{ action, question, existingId? }] }`. Actions: `add` (insert), `overwrite` (update existingId), `copy` (insert with ` (COPY)` appended to the text), `ignore` (skip). Runs in a transaction; returns `{ added, copied, overwritten, ignored }`.
 - An **`ImportSuccessModal`** (same modal styling) then lists everything added / overwritten / copied and the ignored count. Editing an existing question (with `editingId`) bypasses all this and saves directly.
+
+### GitHub question repositories (Settings page)
+Admins can pull questions from public GitHub repos that hold CSV files (same format as Download/Import CSV). Configured in **Settings → Question Repositories** (`Settings.jsx`).
+- `question_repos` rows store `{ label, url, owner, repo, branch, path }`. `repoController.parseGitHubUrl` accepts a repo URL, a `/tree|blob/<branch>/<path>` link, or a `raw.githubusercontent.com` link.
+- **Sync** (`POST /api/repos/:id/sync`) resolves the config to raw CSV files (a direct `.csv` path is fetched straight from `raw.githubusercontent.com`; a folder is listed via the GitHub **contents API** and every `.csv` is fetched). No git binary — plain HTTPS `fetch` (Node 20 global). Unauthenticated, so public repos only and subject to GitHub's 60 req/hr limit.
+- Import de-dupes by normalised question text: a new question is inserted with `source='repo'`; one that already exists as `source='local'` is relabelled `'both'` (shown as **L&R**); already-`repo`/`both` ones are skipped. **Nothing is duplicated** and existing local content is never overwritten.
+- The `source` is shown on each question in QuestionManager via `SourceBadge` (Local / Repo / L&R), styled like the difficulty badges.
+- Routes live in `routes/repos.js` mounted at `/api/repos` behind `requireAdminForWrites` (writes need a token). A bundled `question-packs/` folder at the repo root documents the CSV format and ships a sample pack.
 
 ### Team size handicap scoring
 When `team_size_scoring` is enabled on a quiz (toggle in QuizBuilder), each team receives starting points based on their registered team size: size 1→+5, 2→+4, 3→+3, 4→+2, 5→+1, 6→0, 7→-1, 8→-2, 9→-3, 10→-4. Formula: `GREATEST(-4, LEAST(5, 6 - size))`. These points are included in `total` on the scoreboard and appear as a separate "Handicap" column in History when any team has a non-zero size_points value. The `team_size_scoring` boolean is stored on the `quizzes` table and flows through `loadQuizWithRoundsAndWidgets`, `getSessionScoreboard`, and `getSessionResults`.

@@ -17,6 +17,7 @@ const mastersRoutes = require('./routes/masters');
 const slidesRoutes = require('./routes/slides');
 const categoriesRoutes = require('./routes/categories');
 const mediaRoutes = require('./routes/media');
+const repoRoutes = require('./routes/repos');
 const { setupWebSocketHandlers } = require('./websocket/handlers');
 const { errorHandler } = require('./middleware/errorHandler');
 const { login, requireAdminForWrites } = require('./middleware/auth');
@@ -60,6 +61,7 @@ app.use('/api/teams', teamRoutes);
 app.use('/api/answers', answerRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/media', requireAdminForWrites, mediaRoutes);
+app.use('/api/repos', requireAdminForWrites, repoRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
