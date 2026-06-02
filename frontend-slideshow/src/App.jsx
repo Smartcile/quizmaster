@@ -326,6 +326,33 @@ function SlideRenderer({ slide, sessionId, socket }) {
         </div>
       );
 
+    case 'whoami_clue':
+      return (
+        <div className="slide-whoami">
+          <p className="whoami-label">{slide.title}</p>
+          <div className="whoami-points-badge">
+            Lock in now for {slide.points} point{slide.points !== 1 ? 's' : ''}
+          </div>
+          <h2 className="whoami-current-clue">{slide.text}</h2>
+          {slide.revealed && slide.revealed.length > 1 && (
+            <div className="whoami-revealed">
+              <p className="whoami-revealed-label">Clues so far</p>
+              <ol>
+                {slide.revealed.map((c, i) => (
+                  <li key={i} className={i === slide.clueIndex ? 'current' : ''}>
+                    <span className="whoami-clue-pts">{c.points}</span>
+                    <span>{c.text}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+          <p className="whoami-hint">
+            Clue {slide.clueIndex + 1} of {slide.totalClues} · the longer you wait, the fewer points
+          </p>
+        </div>
+      );
+
     case 'mark_answers':
       return (
         <div className="slide-mark-answers">
@@ -355,6 +382,12 @@ function SlideRenderer({ slide, sessionId, socket }) {
         <div className="slide-intro">
           <h1>{slide.title}</h1>
           <h3>{slide.subtitle}</h3>
+          {slide.whoami && slide.whoami.answer && (
+            <div className="whoami-reveal">
+              <p className="whoami-reveal-label">{slide.whoami.title} — the answer was</p>
+              <p className="whoami-reveal-answer">{slide.whoami.answer}</p>
+            </div>
+          )}
         </div>
       );
 

@@ -532,6 +532,10 @@ async function getSessionResults(req, res) {
           (SELECT SUM(bp.points) FROM brownie_points bp WHERE bp.team_id = t.id),
           0
         )::float AS brownie_total,
+        COALESCE(
+          (SELECT g.points_awarded FROM whoami_guesses g WHERE g.team_id = t.id),
+          0
+        )::float AS whoami_points,
         CASE WHEN q.team_size_scoring
           THEN GREATEST(-4, LEAST(5, 6 - COALESCE(t.size, 6)))
           ELSE 0
@@ -546,6 +550,7 @@ async function getSessionResults(req, res) {
         (
           COALESCE(SUM(s.points_awarded), 0) +
           COALESCE((SELECT SUM(bp.points) FROM brownie_points bp WHERE bp.team_id = t.id), 0) +
+          COALESCE((SELECT g.points_awarded FROM whoami_guesses g WHERE g.team_id = t.id), 0) +
           CASE WHEN q.team_size_scoring
             THEN GREATEST(-4, LEAST(5, 6 - COALESCE(t.size, 6)))
             ELSE 0

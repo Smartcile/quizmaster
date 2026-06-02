@@ -30,6 +30,27 @@ const DEFAULT_WIDGET_DATA = {
   custom:     { title: 'Custom Slide', body: '', image_url: '', bg_color: '#0a0e1f', bg_image: '' }
 };
 
+// ── Who Am I? helpers ─────────────────────────────────────────────────────────
+// A Who-Am-I has one shared answer and a list of clues — one clue revealed
+// before each round. Clue count follows the number of rounds; points default to
+// a descending scale (N for the first/hardest clue down to 1 for the last).
+const WHOAMI_DEFAULT = { title: 'Who Am I?', answer: '', clues: [] };
+
+const defaultCluePoints = (n, i) => Math.max(1, n - i);
+
+// Resize a clues array to `roundCount`, preserving existing text/points and
+// filling new slots with descending default points.
+function syncClues(clues, roundCount) {
+  const src = Array.isArray(clues) ? clues : [];
+  const out = [];
+  for (let i = 0; i < roundCount; i++) {
+    const e = src[i];
+    const points = (e && e.points !== '' && e.points != null) ? e.points : defaultCluePoints(roundCount, i);
+    out.push({ text: e?.text || '', points });
+  }
+  return out;
+}
+
 // ── Tile content (icon + label + meta) ────────────────────────────────────────
 function TileBody({ item }) {
   if (item.kind === 'round') {
@@ -39,6 +60,17 @@ function TileBody({ item }) {
         <span className="so-icon">🎯</span>
         <span className="so-label" title={item.name}>{item.name}</span>
         <span className="so-meta">{qc} Q</span>
+      </>
+    );
+  }
+  if (item.kind === 'widget' && item.type === 'whoami') {
+    const cc = Array.isArray(item.data?.clues) ? item.data.clues.length : 0;
+    const label = item.data?.title || 'Who Am I?';
+    return (
+      <>
+        <span className="so-icon">🕵</span>
+        <span className="so-label" title={label}>{label}</span>
+        <span className="so-meta">{cc} clue{cc !== 1 ? 's' : ''}</span>
       </>
     );
   }
@@ -144,6 +176,17 @@ export default function QuizBuilder() {
     return allRounds.filter(r => !usedIds.has(r.id));
   }, [allRounds, orderItems]);
 
+  // Number of rounds in the quiz — drives the Who-Am-I clue count
+  const roundCount = useMemo(
+    () => orderItems.filter(i => i.kind === 'round').length,
+    [orderItems]
+  );
+  // Only one Who-Am-I is allowed per quiz
+  const hasWhoami = useMemo(
+    () => orderItems.some(i => i.kind === 'widget' && i.type === 'whoami'),
+    [orderItems]
+  );
+
   // Detect questions that appear more than once across the quiz — whether in
   // two different rounds OR twice within the same round. Each round only carries
   // a question count in orderItems, so we look up the full round (with its
@@ -193,6 +236,17 @@ export default function QuizBuilder() {
     }]);
   };
 
+  // Add the single Who-Am-I element (clues pre-sized to the current round count)
+  const addWhoami = () => {
+    if (hasWhoami) return;
+    setOrderItems(prev => [...prev, {
+      uid:  `w-${Date.now()}`,
+      kind: 'widget',
+      type: 'whoami',
+      data: { ...WHOAMI_DEFAULT, clues: syncClues([], roundCount) }
+    }]);
+  };
+
   // Add a master's custom page as a 'custom' widget pre-filled with its data
   const addMasterCustomPage = (page) => {
     setOrderItems(prev => [...prev, {
@@ -233,12 +287,16 @@ export default function QuizBuilder() {
       return;
     }
     try {
-      // Send a single unified items array — preserves the interleaved round/widget order
-      const items = orderItems.map(i =>
-        i.kind === 'round'
-          ? { kind: 'round',  roundId: i.roundId }
-          : { kind: 'widget', type: i.type, data: i.data || {} }
-      );
+      // Send a single unified items array — preserves the interleaved round/widget order.
+      // The Who-Am-I clue list is re-synced to the current round count on save, so it
+      // stays correct even if rounds were added/removed without reopening its editor.
+      const items = orderItems.map(i => {
+        if (i.kind === 'round') return { kind: 'round', roundId: i.roundId };
+        if (i.type === 'whoami') {
+          return { kind: 'widget', type: 'whoami', data: { ...i.data, clues: syncClues(i.data?.clues || [], roundCount) } };
+        }
+        return { kind: 'widget', type: i.type, data: i.data || {} };
+      });
       const master_id = selectedMasterId ? parseInt(selectedMasterId) : null;
 
       if (editingQuiz) {
@@ -403,6 +461,17 @@ export default function QuizBuilder() {
                     {w.icon} {w.label}
                   </button>
                 ))}
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={addWhoami}
+                  disabled={hasWhoami}
+                  title={hasWhoami
+                    ? 'Only one Who Am I? per quiz'
+                    : 'Add a Who Am I? — a clue is revealed before each round, teams lock in for descending points'}
+                >
+                  🕵 Who Am I?
+                </button>
               </div>
               {masterCustomPages.length > 0 && (
                 <div className="master-custom-pages">
@@ -481,13 +550,20 @@ export default function QuizBuilder() {
       </div>
 
       {/* ── Widget editor modal ── */}
-      {editingWidget && (
+      {editingWidget && (editingWidget.type === 'whoami' ? (
+        <WhoamiEditor
+          widget={editingWidget}
+          roundCount={roundCount}
+          onSave={(data) => { updateWidgetData(editingWidget.uid, data); setEditingWidget(null); }}
+          onClose={() => setEditingWidget(null)}
+        />
+      ) : (
         <WidgetEditor
           widget={editingWidget}
           onSave={(data) => { updateWidgetData(editingWidget.uid, data); setEditingWidget(null); }}
           onClose={() => setEditingWidget(null)}
         />
-      )}
+      ))}
     </div>
   );
 }
@@ -584,6 +660,89 @@ function WidgetEditor({ widget, onSave, onClose }) {
         <div className="modal-footer">
           <button onClick={onClose}           className="btn btn-secondary">Cancel</button>
           <button onClick={() => onSave(data)} className="btn btn-primary">Save Widget</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Who Am I? editor modal ─────────────────────────────────────────────────────
+// Shared answer + one clue per round. Clue count follows the round count; points
+// default to a descending scale (highest for the first/hardest clue → 1 last).
+function WhoamiEditor({ widget, roundCount, onSave, onClose }) {
+  const [title, setTitle]   = useState(widget.data?.title  || 'Who Am I?');
+  const [answer, setAnswer] = useState(widget.data?.answer || '');
+  const [clues, setClues]   = useState(() => syncClues(widget.data?.clues || [], roundCount));
+
+  const setClue = (i, patch) => setClues(cs => cs.map((c, idx) => idx === i ? { ...c, ...patch } : c));
+  const resetPoints = () => setClues(cs => cs.map((c, i) => ({ ...c, points: defaultCluePoints(cs.length, i) })));
+
+  const save = () => onSave({ title: title.trim() || 'Who Am I?', answer: answer.trim(), clues });
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3>🕵 Who Am I?</h3>
+          <button onClick={onClose} className="btn-close">×</button>
+        </div>
+        <div className="modal-body">
+          <p className="help-text">
+            One clue is revealed <strong>before each round</strong>, all pointing to the same answer.
+            Teams lock in a single guess — the earlier they lock, the more points. The number of clues
+            follows your round count, and the answer is revealed on the final slide.
+          </p>
+
+          {roundCount === 0 && (
+            <div className="quiz-dup-warning">
+              <span className="quiz-dup-warning-title">
+                ⚠ Add rounds to your quiz first — clues are revealed before each round.
+              </span>
+            </div>
+          )}
+
+          <label className="form-label">Title
+            <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="Who Am I?" />
+          </label>
+          <label className="form-label">Shared answer (revealed at the end)
+            <input type="text" value={answer} onChange={e => setAnswer(e.target.value)} placeholder="e.g. Albert Einstein" />
+          </label>
+
+          {clues.length > 0 && (
+            <div className="whoami-clues">
+              <div className="whoami-clues-head">
+                <span>Clues ({clues.length}) — shown one before each round</span>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={resetPoints}>
+                  Reset points (high → 1)
+                </button>
+              </div>
+              {clues.map((c, i) => (
+                <div className="whoami-clue-row" key={i}>
+                  <span className="whoami-clue-when">Before R{i + 1}</span>
+                  <input
+                    className="whoami-clue-points"
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    value={c.points}
+                    onChange={e => setClue(i, { points: e.target.value === '' ? '' : Number(e.target.value) })}
+                    title="Points if a team locks in on this clue"
+                  />
+                  <input
+                    className="whoami-clue-text"
+                    type="text"
+                    value={c.text}
+                    placeholder={`Clue ${i + 1}${i === clues.length - 1 ? ' (easiest)' : ''}`}
+                    onChange={e => setClue(i, { text: e.target.value })}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="modal-footer">
+          <button onClick={onClose} className="btn btn-secondary">Cancel</button>
+          <button onClick={save}    className="btn btn-primary">Save Who Am I?</button>
         </div>
       </div>
     </div>

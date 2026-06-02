@@ -3436,6 +3436,44 @@ input[type="checkbox"] {
   flex-shrink: 0;
 }
 
+/* ── Who Am I? clue editor ── */
+.whoami-clues {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.whoami-clues-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.whoami-clue-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.whoami-clue-when {
+  flex-shrink: 0;
+  width: 72px;
+  font-size: 0.78rem;
+  color: var(--neon-purple, #b829ff);
+  font-weight: 700;
+}
+.whoami-clue-points {
+  flex-shrink: 0;
+  width: 72px;
+  text-align: center;
+}
+.whoami-clue-text {
+  flex: 1;
+  min-width: 0;
+}
+
 /* Edit mode highlight on the builder panel */
 .panel-editing {
   border: 1px solid rgba(184, 41, 255, 0.5) !important;

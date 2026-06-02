@@ -24,8 +24,30 @@ export function buildSlides(quiz) {
     ...(quiz.widgets || []).map(w => ({ kind: 'widget', ...w }))
   ];
 
+  // A quiz may carry one "Who Am I?" — a widget with a shared answer + a list of
+  // clues. Its position in `items` is irrelevant: one clue is revealed before
+  // each round (round i → clue i), and the answer is revealed on the end slide.
+  // We detect it here and skip rendering it as a normal widget slide.
+  const whoami = parseWhoami(items);
+  let roundIndex = 0;
+
   items.forEach(item => {
     if (item.kind === 'round') {
+      // Reveal this round's Who-Am-I clue just before the round intro
+      if (whoami && roundIndex < whoami.clues.length) {
+        const clue = whoami.clues[roundIndex] || {};
+        slides.push({
+          type: 'whoami_clue',
+          clueIndex: roundIndex,
+          totalClues: whoami.clues.length,
+          title: whoami.title,
+          text: clue.text || '',
+          points: clue.points,
+          revealed: whoami.clues.slice(0, roundIndex + 1)
+        });
+      }
+      roundIndex++;
+
       const round = item;
       slides.push({
         type: 'round_intro',
@@ -78,6 +100,8 @@ export function buildSlides(quiz) {
       });
 
     } else if (item.kind === 'widget') {
+      // The Who-Am-I widget is distributed as clue slides above — never a slide of its own
+      if (item.type === 'whoami') return;
       const w = item;
       slides.push({
         type: 'widget',
@@ -90,10 +114,25 @@ export function buildSlides(quiz) {
   slides.push({
     type: 'end',
     title: 'Quiz Complete!',
-    subtitle: 'Thanks for playing'
+    subtitle: 'Thanks for playing',
+    whoami: whoami ? { title: whoami.title, answer: whoami.answer } : null
   });
 
   return slides;
+}
+
+// Extract the single Who-Am-I config from a quiz's items (or null).
+// Shape: { title, answer, clues: [{ text, points }] }. MUST behave identically
+// in all three frontend copies so slide indexes stay aligned.
+function parseWhoami(items) {
+  const item = (items || []).find(i => i.kind === 'widget' && i.type === 'whoami');
+  if (!item) return null;
+  const d = typeof item.data === 'string' ? safeParse(item.data) : (item.data || {});
+  return {
+    title:  d.title  || 'Who Am I?',
+    answer: d.answer || '',
+    clues:  Array.isArray(d.clues) ? d.clues : []
+  };
 }
 
 export function slideShortLabel(slide) {
@@ -104,6 +143,7 @@ export function slideShortLabel(slide) {
     case 'question': return `Q${slide.questionNumber} — ${slide.roundName}`;
     case 'mark_answers': return `Mark Answers — ${slide.roundName}`;
     case 'answer': return `Answer Q${slide.questionNumber} — ${slide.roundName}`;
+    case 'whoami_clue': return `Who Am I? — Clue ${slide.clueIndex + 1}`;
     case 'widget': return `Widget: ${slide.widgetType}`;
     case 'end': return 'End';
     default: return slide.type;
