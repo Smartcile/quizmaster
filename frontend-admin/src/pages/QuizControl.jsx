@@ -27,8 +27,11 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd }) {
     portalConfig?.slideshowUrl ||
     `${window.location.protocol}//${window.location.hostname}:3002`
   ).replace(/\/+$/, '');
-  // Deep link a team straight to this quiz: https://answer.website.com/ABC123
-  const quizzerJoinUrl = `${quizzerBase}/${quiz.code}`;
+  // Deep links straight to this quiz with the code pre-filled:
+  //   quizzer  → https://answer.website.com/ABC123
+  //   slideshow → https://show.website.com/ABC123
+  const quizzerJoinUrl   = `${quizzerBase}/${quiz.code}`;
+  const slideshowJoinUrl = `${slideshowBase}/${quiz.code}`;
 
   // ── Load portal URL config once ──────────────────────────────────────────
   useEffect(() => {
@@ -278,7 +281,7 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd }) {
             📱 Quizzer Portal
           </a>
           <a
-            href={slideshowBase}
+            href={slideshowJoinUrl}
             target="_blank"
             rel="noreferrer"
             className="portal-link-btn portal-link-slideshow"

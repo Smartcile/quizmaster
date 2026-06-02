@@ -511,7 +511,7 @@ html, body, #root {
 .slide-counter {
   position: fixed;
   bottom: 24px;
-  right: 24px;
+  left: 24px;
   font-size: 1rem;
   color: var(--neon-cyan);
   background: rgba(7, 9, 26, 0.8);
@@ -627,6 +627,38 @@ html, body, #root {
   .slide-options { grid-template-columns: 1fr; }
   .option { font-size: 1.2rem; padding: 18px; }
   .slide-answer .answer-text { font-size: 4rem; }
+}
+
+/* ===== Join QR code (bottom-right corner) ===== */
+.join-qr {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 150;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  background: rgba(7, 9, 26, 0.82);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(0, 240, 255, 0.3);
+  border-radius: 16px;
+  padding: 12px;
+  box-shadow: 0 0 20px rgba(0, 240, 255, 0.2);
+}
+.join-qr-code {
+  background: #fff;
+  padding: 8px;
+  border-radius: 10px;
+  line-height: 0;
+}
+.join-qr-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--neon-cyan);
+  margin: 0;
 }
 
 /* ===== Per-round scoreboard table (shared shape across surfaces) ===== */
