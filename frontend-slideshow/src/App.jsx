@@ -16,6 +16,13 @@ function getInitialCode() {
   return null;
 }
 
+// Test iframe targets a specific session via ?session=<id>, bypassing the
+// quiz's active-session lookup (test sessions are excluded from that).
+function getForcedSessionId() {
+  const sid = new URLSearchParams(window.location.search).get('session');
+  return sid ? parseInt(sid) : null;
+}
+
 function App() {
   const [code, setCode] = useState(getInitialCode());
   const [quiz, setQuiz] = useState(null);
@@ -25,6 +32,7 @@ function App() {
   const [teamsCount, setTeamsCount] = useState(0);
   const [error, setError] = useState(null);
   const [status, setStatus] = useState('idle'); // idle | loading | waiting | ready
+  const [sessionCode, setSessionCode] = useState(null); // per-session join code to display
   const [portalConfig, setPortalConfig] = useState(null);
   const [scoreboardVisible, setScoreboardVisible] = useState(false);
   const socket = useWebSocket();
@@ -42,25 +50,43 @@ function App() {
     setError(null);
 
     (async () => {
+      const forcedSessionId = getForcedSessionId();
       try {
-        const quizData = await api.get(`/quizzes/by-code/${code}`);
-        if (cancelled) return;
-        setQuiz(quizData);
-
-        try {
-          const session = await api.get(`/quizzes/${quizData.id}/active-session`);
+        if (forcedSessionId) {
+          // Test iframe → specific session by id
+          const [quizData, session] = await Promise.all([
+            api.get(`/quizzes/by-code/${code}`),
+            api.get(`/quizzes/sessions/${forcedSessionId}`)
+          ]);
           if (cancelled) return;
+          setQuiz(quizData);
           setSessionId(session.id);
           setSessionStatus(session.status || 'lobby');
           setCurrentSlide(session.current_slide_index || 0);
+          setSessionCode(session.code || null);
           setStatus('ready');
-        } catch {
-          if (cancelled) return;
+          return;
+        }
+
+        // Resolve the code → quiz (+ live session if any). Works for a session
+        // code (exact) or the quiz code (→ its current live session).
+        const resolved = await api.get(`/quizzes/resolve/${code}`);
+        if (cancelled) return;
+        if (!resolved.quiz) throw new Error('not found');
+        setQuiz(resolved.quiz);
+        if (resolved.session) {
+          setSessionId(resolved.session.id);
+          setSessionStatus(resolved.session.status || 'lobby');
+          setCurrentSlide(resolved.session.current_slide_index || 0);
+          setSessionCode(resolved.session.code || null);
+          setStatus('ready');
+        } else {
+          setSessionCode(null);
           setStatus('waiting');
         }
       } catch (err) {
         if (cancelled) return;
-        setError(`Quiz code "${code}" not found.`);
+        setError(`Code "${code}" not found.`);
         setStatus('idle');
         setCode(null);
       }
@@ -77,6 +103,7 @@ function App() {
         setSessionId(session.id);
         setSessionStatus(session.status || 'lobby');
         setCurrentSlide(session.current_slide_index || 0);
+        setSessionCode(session.code || null);
         setStatus('ready');
       } catch {}
     }, 3000);
@@ -157,8 +184,9 @@ function App() {
         portalConfig?.quizzerUrl ||
         `${window.location.protocol}//${window.location.host.replace(/:3002$/, ':3003')}`
       ).replace(/\/+$/, '');
-      // Full deep link with the code baked into the path: https://answer.website.com/ABC123
-      const joinUrl = quiz?.code ? `${quizzerBase}/${quiz.code}` : quizzerBase;
+      // Full deep link with the per-session join code baked into the path
+      const displayCode = sessionCode || quiz?.code;
+      const joinUrl = displayCode ? `${quizzerBase}/${displayCode}` : quizzerBase;
       return (
         <div className="slideshow-container">
           <div className="slide lobby-slide">
@@ -167,7 +195,7 @@ function App() {
               <h1 className="lobby-title">{quiz?.name}</h1>
               <div className="lobby-code-box">
                 <p className="lobby-code-label">Join Code</p>
-                <p className="lobby-code">{quiz?.code}</p>
+                <p className="lobby-code">{displayCode}</p>
               </div>
               <p className="lobby-instructions">
                 Teams join at <span className="lobby-url">{joinUrl}</span>
@@ -211,7 +239,8 @@ function App() {
     portalConfig?.quizzerUrl ||
     `${window.location.protocol}//${window.location.host.replace(/:3002$/, ':3003')}`
   ).replace(/\/+$/, '');
-  const quizzerJoinUrl = quiz?.code ? `${quizzerBase}/${quiz.code}` : null;
+  const qrCode = sessionCode || quiz?.code;
+  const quizzerJoinUrl = qrCode ? `${quizzerBase}/${qrCode}` : null;
   // Show the join QR once a quiz is loaded, except on the finished screen
   const showJoinQr = quizzerJoinUrl && (sessionStatus === 'lobby' || sessionStatus === 'active');
 

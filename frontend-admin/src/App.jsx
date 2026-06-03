@@ -31,8 +31,8 @@ function App() {
     return <Login onSuccess={() => setAuthed(true)} />;
   }
 
-  const handleQuizStart = (sessionId, quiz) => {
-    setActiveQuiz({ sessionId, quiz });
+  const handleQuizStart = (sessionId, quiz, isTest = false) => {
+    setActiveQuiz({ sessionId, quiz, isTest });
     setCurrentPage('control');
   };
 
@@ -58,7 +58,7 @@ function App() {
       case 'marking':
         return <AnswerMarking sessionId={activeQuiz?.sessionId} />;
       case 'control':
-        return <QuizControl sessionId={activeQuiz?.sessionId} quiz={activeQuiz?.quiz} onSessionEnd={handleSessionEnd} />;
+        return <QuizControl sessionId={activeQuiz?.sessionId} quiz={activeQuiz?.quiz} isTest={activeQuiz?.isTest} onSessionEnd={handleSessionEnd} />;
       case 'masters-slides':
         return <MastersAndSlides />;
       case 'history':
@@ -92,17 +92,23 @@ function App() {
           <li><button onClick={() => setCurrentPage('media')} className={currentPage === 'media' ? 'active' : ''}>Media</button></li>
           <li><button onClick={() => setCurrentPage('history')} className={currentPage === 'history' ? 'active' : ''}>History</button></li>
           <li><button onClick={() => setCurrentPage('settings')} className={currentPage === 'settings' ? 'active' : ''}>Settings</button></li>
-          {activeQuiz && (
-            <>
-              <li><button onClick={() => setCurrentPage('control')} className={currentPage === 'control' ? 'active' : ''}>Control</button></li>
-              <li><button onClick={() => setCurrentPage('marking')} className={currentPage === 'marking' ? 'active' : ''}>Mark Answers</button></li>
-            </>
-          )}
         </ul>
 
         {activeQuiz && (
-          <div className="active-quiz-banner">
-            <p>Active: <strong>{activeQuiz.quiz.name}</strong></p>
+          <div className={`nav-temp-group ${activeQuiz.isTest ? 'nav-temp-test' : 'nav-temp-live'}`}>
+            <span className="nav-temp-label">
+              {activeQuiz.isTest ? '🧪 Test session' : '● Live session'}
+            </span>
+            <ul className="nav-menu nav-temp-menu">
+              <li><button onClick={() => setCurrentPage('control')} className={currentPage === 'control' ? 'active' : ''}>Control</button></li>
+              <li><button onClick={() => setCurrentPage('marking')} className={currentPage === 'marking' ? 'active' : ''}>Mark Answers</button></li>
+            </ul>
+          </div>
+        )}
+
+        {activeQuiz && (
+          <div className={`active-quiz-banner ${activeQuiz.isTest ? 'active-quiz-banner-test' : ''}`}>
+            <p>{activeQuiz.isTest ? 'Testing' : 'Active'}: <strong>{activeQuiz.quiz.name}</strong></p>
             <p>Code: <strong>{activeQuiz.quiz.code}</strong></p>
           </div>
         )}

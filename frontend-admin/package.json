@@ -13,6 +13,9 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@hello-pangea/dnd": "^16.6.0",
     "fabric": "^5.5.2",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.8",
+    "pptxgenjs": "^4.0.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "socket.io-client": "^4.7.2"

@@ -30,7 +30,8 @@ export default function RoundBuilder() {
         api.get('/questions/categories')
       ]);
       setRounds(rs);
-      setQuestions(qs);
+      // Who/What Am I sets are not normal questions — never offer them in rounds
+      setQuestions((qs || []).filter(q => !q.is_whoami));
       setCategories(cats);
     } catch (err) {
       setError(err.message);

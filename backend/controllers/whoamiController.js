@@ -28,9 +28,25 @@ async function loadWhoamiForSession(sessionId) {
     [sessionId]
   );
   if (!r.rows.length) return null;
-  const data = typeof r.rows[0].data === 'string'
+  let data = typeof r.rows[0].data === 'string'
     ? (() => { try { return JSON.parse(r.rows[0].data); } catch { return {}; } })()
     : (r.rows[0].data || {});
+
+  // The widget may only reference a Who/What Am I set authored in the Question
+  // Builder (data = { whoamiId }). Hydrate the title/answer/clues from it unless
+  // the widget already carries an inline config (legacy quizzes).
+  if (data.whoamiId && !(Array.isArray(data.clues) && data.clues.length)) {
+    const q = await db.query('SELECT text, answer, options FROM questions WHERE id = $1', [data.whoamiId]);
+    if (q.rows.length) {
+      data = {
+        whoamiId: data.whoamiId,
+        title:  q.rows[0].text || 'Who Am I?',
+        answer: q.rows[0].answer || '',
+        clues:  Array.isArray(q.rows[0].options) ? q.rows[0].options : []
+      };
+    }
+  }
+
   return {
     widgetId: r.rows[0].id,
     title:    data.title || 'Who Am I?',

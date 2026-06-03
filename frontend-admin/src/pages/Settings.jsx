@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '../services/api';
+import { getTestSettings, saveTestSettings, DEFAULT_TEST_SETTINGS } from '../utils/testSettings';
 
 // Settings is a container of collapsible sections so more can be added later.
 export default function Settings() {
@@ -16,6 +17,118 @@ export default function Settings() {
       <CollapsibleSection title="Question Repositories" subtitle="Pull questions & answers from GitHub CSV repos" defaultOpen>
         <QuestionRepos onError={setError} />
       </CollapsibleSection>
+
+      <CollapsibleSection title="Quiz Control & Testing" subtitle="Bots, embedded previews and test-run cleanup">
+        <QuizControlSettings />
+      </CollapsibleSection>
+    </div>
+  );
+}
+
+// ── Quiz Control & Testing settings ───────────────────────────────────────────
+function QuizControlSettings() {
+  const [s, setS]       = useState(getTestSettings);
+  const [saved, setSaved] = useState(false);
+
+  const update = (patch) => { setS(prev => ({ ...prev, ...patch })); setSaved(false); };
+  const updateBot = (i, patch) =>
+    update({ bots: s.bots.map((b, idx) => idx === i ? { ...b, ...patch } : b) });
+  const addBot = () =>
+    update({ bots: [...s.bots, { name: `Bot Team ${s.bots.length + 1}`, size: 4, correct: 0.6, wrong: 0.2 }] });
+  const removeBot = (i) => update({ bots: s.bots.filter((_, idx) => idx !== i) });
+
+  const save = () => { saveTestSettings(s); setSaved(true); };
+  const reset = () => { setS(JSON.parse(JSON.stringify(DEFAULT_TEST_SETTINGS))); setSaved(false); };
+
+  const pct = (v) => Math.round((Number(v) || 0) * 100);
+  const skip = (b) => Math.max(0, 100 - pct(b.correct) - pct(b.wrong));
+
+  return (
+    <div className="qc-settings">
+      <p className="help-text" style={{ marginTop: 0 }}>
+        These control the <strong>Test Quiz</strong> runner (bots, embedded previews) and apply when you
+        click 🧪 Test Quiz on the Dashboard. Stored in this browser.
+      </p>
+
+      {/* Bots */}
+      <div className="qc-block">
+        <div className="qc-block-head">
+          <h4>Bot teams</h4>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={addBot}>+ Add bot</button>
+        </div>
+        <div className="qc-bots-head">
+          <span>Name</span><span>Size</span><span>Correct %</span><span>Wrong %</span><span>Skip %</span><span></span>
+        </div>
+        {s.bots.map((b, i) => (
+          <div className="qc-bot-row" key={i}>
+            <input type="text" value={b.name} onChange={e => updateBot(i, { name: e.target.value })} />
+            <input type="number" min="1" max="20" value={b.size}
+                   onChange={e => updateBot(i, { size: parseInt(e.target.value) || 1 })} />
+            <input type="number" min="0" max="100" value={pct(b.correct)}
+                   onChange={e => updateBot(i, { correct: (parseInt(e.target.value) || 0) / 100 })} />
+            <input type="number" min="0" max="100" value={pct(b.wrong)}
+                   onChange={e => updateBot(i, { wrong: (parseInt(e.target.value) || 0) / 100 })} />
+            <span className="qc-skip">{skip(b)}%</span>
+            <button type="button" className="btn btn-danger btn-sm" onClick={() => removeBot(i)}
+                    disabled={s.bots.length <= 1} title={s.bots.length <= 1 ? 'At least one bot' : 'Remove'}>×</button>
+          </div>
+        ))}
+      </div>
+
+      {/* Preview layout + surfaces + quizzer mode */}
+      <div className="qc-block qc-block-grid">
+        <div>
+          <h4>Preview layout</h4>
+          <label className="qc-radio">
+            <input type="radio" name="qc-layout" checked={s.layout === 'side-by-side'}
+                   onChange={() => update({ layout: 'side-by-side' })} /> Side by side
+          </label>
+          <label className="qc-radio">
+            <input type="radio" name="qc-layout" checked={s.layout === 'stacked'}
+                   onChange={() => update({ layout: 'stacked' })} /> Stacked
+          </label>
+        </div>
+        <div>
+          <h4>Surfaces to embed</h4>
+          <label className="qc-check">
+            <input type="checkbox" checked={s.surfaces.slideshow}
+                   onChange={e => update({ surfaces: { ...s.surfaces, slideshow: e.target.checked } })} /> Slideshow
+          </label>
+          <label className="qc-check">
+            <input type="checkbox" checked={s.surfaces.quizzer}
+                   onChange={e => update({ surfaces: { ...s.surfaces, quizzer: e.target.checked } })} /> Quizzer
+          </label>
+        </div>
+        <div>
+          <h4>Quizzer pane default</h4>
+          <label className="qc-radio">
+            <input type="radio" name="qc-qmode" checked={s.quizzerMode === 'mirror'}
+                   onChange={() => update({ quizzerMode: 'mirror' })} /> Mirror a bot
+          </label>
+          <label className="qc-radio">
+            <input type="radio" name="qc-qmode" checked={s.quizzerMode === 'interactive'}
+                   onChange={() => update({ quizzerMode: 'interactive' })} /> Interactive (you join)
+          </label>
+        </div>
+      </div>
+
+      {/* Cleanup */}
+      <div className="qc-block">
+        <label className="qc-check">
+          <input type="checkbox" checked={s.autoCleanTest}
+                 onChange={e => update({ autoCleanTest: e.target.checked })} />
+          Auto-clean test sessions on close (delete the run + its bot teams/answers)
+        </label>
+        <p className="help-text" style={{ marginTop: 4 }}>
+          Live sessions are never auto-deleted — only test runs.
+        </p>
+      </div>
+
+      <div className="qc-actions">
+        <button type="button" className="btn btn-primary" onClick={save}>Save settings</button>
+        <button type="button" className="btn btn-secondary" onClick={reset}>Reset to defaults</button>
+        {saved && <span className="qc-saved">✓ Saved</span>}
+      </div>
     </div>
   );
 }

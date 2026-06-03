@@ -110,13 +110,17 @@ async function getQuestion(req, res) {
 async function createQuestion(req, res) {
   try {
     const { text, answer, type, media_url, points, tags, category, options, difficulty, answer_mode, approved, question_format } = req.body;
-    const mode = resolveMcqMode(options, answer_mode, question_format);
+    const isWhoami = req.body.is_whoami === true;
+    // Who/What Am I sets store their clues ([{text,points}]) in options and are
+    // never multiple-choice; everything else goes through the MCQ resolver.
+    const am = isWhoami ? 'text'     : resolveMcqMode(options, answer_mode, question_format).answer_mode;
+    const qf = isWhoami ? 'standard' : resolveMcqMode(options, answer_mode, question_format).question_format;
     const result = await db.query(
-      `INSERT INTO questions (${QUESTION_FIELDS})
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
+      `INSERT INTO questions (text, answer, type, media_url, points, tags, category, options, difficulty, answer_mode, approved, question_format, is_whoami)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *`,
       [text, answer, type || 'text', media_url, points, tags, category,
-       JSON.stringify(options || []), difficulty || 'medium', mode.answer_mode,
-       approved ?? false, mode.question_format]
+       JSON.stringify(options || []), difficulty || 'medium', am,
+       approved ?? false, qf, isWhoami]
     );
     res.status(201).json(result.rows[0]);
   } catch (error) {
@@ -127,15 +131,17 @@ async function createQuestion(req, res) {
 async function updateQuestion(req, res) {
   try {
     const { text, answer, type, media_url, points, tags, category, options, difficulty, answer_mode, approved, question_format } = req.body;
-    const mode = resolveMcqMode(options, answer_mode, question_format);
+    const isWhoami = req.body.is_whoami === true;
+    const am = isWhoami ? 'text'     : resolveMcqMode(options, answer_mode, question_format).answer_mode;
+    const qf = isWhoami ? 'standard' : resolveMcqMode(options, answer_mode, question_format).question_format;
     const result = await db.query(
       `UPDATE questions SET text=$1, answer=$2, type=$3, media_url=$4, points=$5,
        tags=$6, category=$7, options=$8, difficulty=$9, answer_mode=$10,
-       approved=$11, question_format=$12
-       WHERE id=$13 RETURNING *`,
+       approved=$11, question_format=$12, is_whoami=$13
+       WHERE id=$14 RETURNING *`,
       [text, answer, type || 'text', media_url, points, tags, category,
-       JSON.stringify(options || []), difficulty || 'medium', mode.answer_mode,
-       approved ?? false, mode.question_format,
+       JSON.stringify(options || []), difficulty || 'medium', am,
+       approved ?? false, qf, isWhoami,
        req.params.id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Question not found' });

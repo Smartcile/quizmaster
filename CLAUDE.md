@@ -180,14 +180,14 @@ Key tables and their purposes:
 
 | Table | Purpose |
 |---|---|
-| `questions` | Question bank. Fields: `text`, `answer`, `type` (text/image/video/audio), `media_url`, `points`, `category`, `options` (JSONB for MCQ), `difficulty` (easy/medium/hard), `answer_mode` (text/mcq/both), `source` (local/repo/both — where the question came from) |
+| `questions` | Question bank. Fields: `text`, `answer`, `type` (text/image/video/audio), `media_url`, `points`, `category`, `options` (JSONB for MCQ), `difficulty` (easy/medium/hard), `answer_mode` (text/mcq/both), `source` (local/repo/both), `is_whoami` (when true this row is a Who/What Am I? set — clues live in `options` as `[{text,points}]`, shared answer in `answer`, title in `text`; excluded from round pickers) |
 | `categories` | Managed category list. Seeded with 14 defaults; admins can add/rename/delete. Renames propagate to `questions.category`. |
 | `rounds` | Named question groups with optional `background_color` |
 | `round_questions` | Junction: ordered questions within a round. Has `question_format_override` for per-round MCQ mode. |
 | `quizzes` | Assembled quiz with a unique 6-char `code`, optional `master_id` FK to `slide_masters`, and `team_size_scoring BOOLEAN` (enables handicap scoring). |
 | `quiz_rounds` | Junction: rounds within a quiz. `position` column stores global interleaved order (shared namespace with `quiz_widgets.position`). Legacy `"order"` column kept for backward compat. |
 | `quiz_widgets` | Custom slides (scoreboard/rules/custom) attached to a quiz, with `data` JSONB. `position` column stores global interleaved order. |
-| `quiz_sessions` | A running instance of a quiz. `status`: `lobby` → `active` → `finished`. `current_slide_index` drives sync. `locked_round_ids` JSONB array tracks which rounds' answers are locked. `scoreboard_visibility` JSONB `{slideshow,quizzer,admin}` tracks per-surface scoreboard show/hide. |
+| `quiz_sessions` | A running instance of a quiz. `status`: `lobby` → `active` → `finished`. `current_slide_index` drives sync. `locked_round_ids` JSONB array tracks which rounds' answers are locked. `scoreboard_visibility` JSONB `{slideshow,quizzer,admin}` tracks per-surface scoreboard show/hide. `is_test BOOLEAN` flags a Test Quiz run (hidden from History + the dashboard active-session lookup; deletable any time for auto-clean). `code` is the per-session rotating join code (kept on restart, preserved after end for history lookup). |
 | `teams` | Teams in a session (name + size). Find-or-create by case-insensitive name enables rejoining. |
 | `answers` | Team answer submissions (auto-saved on every keystroke via socket) |
 | `scores` | Admin-marked scores: 0, 0.5, or 1 per question per team. Auto-populated when submitted answer matches the correct answer (normalised). `auto_marked BOOLEAN` distinguishes system marks from manual overrides. |
@@ -205,15 +205,15 @@ Key tables and their purposes:
 | Page | Nav label | Purpose |
 |---|---|---|
 | `Dashboard.jsx` | Dashboard | Start/manage sessions, live session status |
-| `QuestionManager.jsx` | Questions | Question bank CRUD, category filter, difficulty, CSV export/import (duplicate-aware), category manager |
+| `QuestionManager.jsx` | Questions | Question bank CRUD, category filter, difficulty, CSV export/import (duplicate-aware), category manager. A **Kind** selector morphs the editor into a **Who/What Am I?** authoring layout (numbered clues + shared answer). |
 | `RoundBuilder.jsx` | Rounds | Assemble questions into rounds, set round colour. The "Available Questions" picker in the create/edit modal filters by the same params as the Questions page — search matches **text OR answer**, plus dropdowns for category, difficulty, media type, answer mode, question format, and approval status (extra filters sit in a second `.dnd-filters-extra` row beneath search+category). |
-| `QuizBuilder.jsx` | Quizzes | Combine rounds + widgets into a quiz, pick master theme, enable team size handicap scoring |
-| `QuizControl.jsx` | Control | Live slide navigation, lock/unlock answers, lifecycle buttons, portal quick-links (lobby + active) |
+| `QuizBuilder.jsx` | Quizzes | Combine rounds + widgets into a quiz, pick master theme, enable team size handicap scoring. The running-order panel holds rounds/widgets; a separate **bottom section** attaches one **Who/What Am I?** (gear picker, references a Question-Builder set by id — not editable here). Each saved-quiz card has a **⬇ Files** button (offline PDFs + PPTX). |
+| `QuizControl.jsx` | Control | Live slide navigation, lock/unlock answers, lifecycle buttons, portal quick-links (lobby + active). In **Test Quiz** mode it also renders a "Quiz Testing" banner, embedded slideshow + quizzer preview iframes, and a bot engine (`TestHarness`). |
 | `AnswerMarking.jsx` | Mark Answers | Per-question per-team answer review, 0/0.5/1 scoring with optimistic UI |
 | `MastersAndSlides.jsx` | Masters & Slides | Edit master themes (Layout tab: background/styles/placeholders) and slide content defaults (Templates tab: intro/round/mark-answers/end/scoreboard/rules/custom pages) |
 | `MediaLibrary.jsx` | Media | Upload and manage images/video/audio. Shows usage labels per file; prevents deletion of in-use files |
 | `QuizHistory.jsx` | History | View all finished quiz sessions: date/time, team count, expandable team scores + CSV download per session |
-| `Settings.jsx` | Settings | Collapsible settings sections (built to grow). First section: **Question Repositories** — add/sync/remove GitHub CSV question packs. |
+| `Settings.jsx` | Settings | Collapsible settings sections (built to grow). **Question Repositories** (GitHub CSV packs) and **Quiz Control & Testing** (bot count/sizes, accuracy mix, preview layout, surfaces, quizzer-pane default, auto-clean) — the latter stored in `localStorage` via `utils/testSettings.js`. |
 
 ---
 
@@ -258,8 +258,12 @@ Admins can manually lock or unlock a round's answers at any time via the buttons
 ### Score deselection
 In AnswerMarking, clicking an already-active score button (0, 0.5, or 1) sends `points: null` to `POST /api/answers/mark`, which deletes the score row. The `answer_marked` socket event is broadcast with `points: null` so all clients remove the score immediately.
 
-### Team rejoin
-`POST /api/teams/join` does a case-insensitive find-or-create: if a team with the same name already exists in the session it returns the existing record with `rejoined: true` and `200` (not `201`). All previously submitted answers and scores are preserved. The session must not be `finished` — if it is, join returns `409`.
+### Per-session join codes + rejoin
+Each started session gets its own rotating **`quiz_sessions.code`** (generated at start, kept across restarts, **preserved after it ends** for history lookup). Joining is resolved by **`GET /api/quizzes/resolve/:code`** → `{ quiz, session }`: it matches a **session code** first (any status, so an old/finished code resolves), then falls back to the **quiz code** → that quiz's current live (lobby/active, non-test) session. The slideshow lobby + QR and the admin Control deep links display the **session** code (falling back to the quiz code until it loads); the quiz code still works as a shortcut.
+
+`POST /api/teams/join` is a case-insensitive find-or-create matched on **session + team name only** (team size never affects identity, so a guest rejoins from any device). Existing team → `200` with `rejoined: true`; all answers/scores preserved. A **finished** session is read-only: it returns the existing team (`finished: true`) for review, or `404` if no team by that name — it never creates a ghost team.
+
+**Resume everything**: on (re)join the quizzer loads both the team's scores (`/teams/:id/scores`) and **answers** (`GET /teams/:id/answers`) so inputs refill where they left off. Entering an **old/finished** code (with the team name) opens a **read-only review** (`ReviewScreen` → `AnswerReviewView`) of that team's answers + scores grouped by round.
 
 ### Lobby team list auto-refresh
 When the session transitions back to `lobby` (via `session_status_changed` WebSocket event or after a restart), QuizControl reloads the team list from `GET /api/teams/session/:id` so newly joined teams appear without a manual refresh.
@@ -315,13 +319,43 @@ When an env var is unset, `/api/config` returns `null` for it and the UI falls b
 On the quizzer answer-reveal slide, the team's "Your answer" box border reflects the awarded score once marked: `0` pts → glowing **red** (`.answer-wrong`, `--neon-pink`), `0.5` pts → glowing **yellow** (`.answer-half`, `--neon-yellow`), `1` pt (full) → glowing **green** (`.answer-correct`, `--neon-green`), not-yet-marked → unchanged neutral border. The modifier class is derived from `scores[questionId]` in `QuizParticipant.jsx` and styled in `quizzer.css`. The box now also renders for unanswered questions once a score exists (auto-zero), showing "(no answer)" with the red glow.
 
 ### Who Am I?
-A quiz can carry one **Who Am I?** element — a shared answer revealed gradually through clues, one clue shown **before each round**. Added in QuizBuilder as a standalone single-instance item (a `quiz_widgets` row of `type='whoami'`, `data = { title, answer, clues:[{text,points}] }`); it can't be added inside a normal round. The clue count auto-follows the round count, with points defaulting to a descending scale (N for the first/hardest clue down to 1 for the last); points are editable. On save the clue list is re-synced to the current round count.
+A quiz can carry one **Who Am I? / What Am I?** element — a shared answer revealed gradually through clues, one clue shown **before each round**.
+
+- **Authored in the Question Builder** (`QuestionManager`): the question editor has a **Kind** selector (Standard / Who-What Am I). Choosing Who/What Am I morphs the form into a reversed-MCQ layout — numbered **clues** (each with editable points, default descending high→1) with a single shared **Answer** field below. Stored as a row in `questions` with `is_whoami = true`, clues in `options` as `[{text,points}]`, the shared answer in `answer`, and the title in `text`. These are filterable in the Questions list and **excluded from RoundBuilder** pickers (they can't go in a normal round).
+- **Attached in the Quiz Builder**: a dedicated **bottom section** (separate from the running-order panel) with a **gear picker** to select one Who/What Am I from the list. It is **not editable** there (edit in the Question Builder) and **not** part of the drag-order. Persisted as a `quiz_widgets` row of `type='whoami'` whose `data = { whoamiId }` references the source question.
+- **Resolution**: `loadQuizWithRoundsAndWidgets` and `whoamiController.loadWhoamiForSession` hydrate the `{ whoamiId }` reference into `{ title, answer, clues }` so `buildSlides` and the lock flow work unchanged. Legacy inline configs (`data` already carrying `clues`) still resolve as-is.
 
 - **Slides**: `buildSlides` distributes the clues — a `whoami_clue` slide before each `round_intro` (round *i* → clue *i*) — and reveals the answer on the `end` slide. The widget is never rendered at its own position. `parseWhoami(items)` must stay identical across all three `buildSlides` copies.
 - **Lock-in scoring**: a team submits **one guess** via the quizzer's `whoami_clue` slide ("Lock In"). `POST /api/whoami/lock { sessionId, teamId, clueIndex, guess }` — the server looks up the clue's points from the widget config (client only sends the index), auto-marks (correct → clue points, wrong → 0), and stores it in `whoami_guesses` with `locked=true` (immutable). Earlier lock-in = more points.
 - **Marking**: AnswerMarking shows a Who Am I? section per team (guess, clue locked on, override **0** / **full points** via `POST /api/whoami/mark`).
 - **Scoreboard**: `getSessionScoreboard` adds `hasWhoami` + per-team `whoami_points` folded into `total`; `LiveScoreboard` (all three copies) shows a "Who Am I?" column when present. History (`getSessionResults`) likewise includes `whoami_points`.
 - **Events**: `whoami_locked` (quizzer disables form) and `whoami_marked` (quizzer/scoreboards/marking update). Routes live in `routes/whoami.js` mounted **public** at `/api/whoami` (like `/api/answers`, so the quizzer can lock in without a token).
+
+### Quiz Testing (Test Quiz mode)
+A **🧪 Test Quiz** button sits beside **▶ Start Session** on the Dashboard. It starts a session with `is_test = true` and opens the Control page in test mode. The purpose is to exercise every part of a quiz (slides, scoring, glows, scoreboard, Who Am I?) without manually driving real devices.
+
+- **Session flag**: `POST /quizzes/:id/start` accepts `{ isTest }`. Test sessions are **excluded** from `getSessionHistory` and from `getActiveSession` (so a test never shows as "LIVE" on the dashboard, and never collides with a real session for the same quiz). Because active-session lookup skips them, the embedded surfaces target the test session by **explicit id**.
+- **URL params** (added to quizzer + slideshow `App.jsx`): `?session=<id>` targets a specific session bypassing the active-session lookup; the quizzer also accepts `?team=<name>&size=<n>&autojoin=1` to auto-join as a bot (used by the "mirror" pane). `getActiveSession`/sessionStorage-restore are skipped when `team` is present.
+- **Control layout** (`QuizControl` with `isTest`): a "Quiz Testing" banner, a two-column `test-layout` (left = the normal controls, right = `TestHarness`), and embedded **slideshow** + **quizzer** preview iframes. The quizzer pane toggles **Mirror a bot ⇄ Interactive (you join)**. Layout/surfaces/default mode come from settings.
+- **Bots** (`TestHarness`, client-side): on session start it `POST /teams/join`s each configured bot (different sizes → exercises handicap). As you advance slides it auto-answers via the existing `submit_answer` socket event using each bot's `teamId` — correct (from the quiz's stored answer) / wrong / skipped per the bot's accuracy mix, and locks in Who-Am-I guesses per a random per-bot plan. The admin browser has the correct answers because `loadQuizWithRoundsAndWidgets` includes them.
+- **Settings** (`utils/testSettings.js`, localStorage): bot count/sizes, per-bot correct/wrong %, preview layout (side-by-side/stacked), surfaces to embed, default quizzer-pane mode, and **auto-clean** (default ON).
+- **Auto-clean**: closing a test run sets it `finished` then `DELETE`s it (cascades teams/answers/scores/whoami). `deleteSession` allows deleting `is_test` sessions in any status; **live sessions are never auto-deleted** (must be finished first) to protect real results.
+- **Nav grouping**: while a session is active the Control + Mark Answers nav items are wrapped in `.nav-temp-group` with a **green** border for a live session, **grey** for a test session.
+- **Mirror-pane note**: the mirror quizzer reflects live scoring (green/yellow/red glows) for the bot, but since the bot's answers are submitted from the admin socket (not the iframe), the iframe won't show the bot's typed answer text. Use Interactive mode to see the full input/reveal flow.
+
+### Answer Review plugin page + score visibility
+- **Answer Review widget** (`type='review'`, added in QuizBuilder like scoreboard/rules/custom): an end-of-quiz page where each team sees **all their own answers grouped by round, with the score awarded for each** (green/yellow/red per 1/0.5/0, plus a round total). Rendered specially on the quizzer by `AnswerReviewView` in `QuizParticipant.jsx`; it's a normal widget in `buildSlides` (no buildSlides change). Drop it last in the quiz order. The slideshow shows it as a generic widget ("review on your device").
+- **Score visibility rule**: per-answer scores/correctness appear in exactly two places on the quizzer — the **answer-reveal slides** and the **Answer Review** plugin page. They are deliberately **hidden everywhere a team can still see the question-input view**: the locked `QuestionView` now shows only a neutral "🔒 Answer locked" badge (no score), and the `mark_answers` review never shows scores. So if the host navigates back to a question slide after locking, no score/correctness leaks.
+
+### Download Quiz Files (offline fallback)
+A **⬇ Files** button on each Existing Quiz card (QuizBuilder) and a **⬇ Download Quiz Files** button on the Control page open `DownloadFilesModal`, which generates downloads **client-side** (libs: `jspdf` + `jspdf-autotable` + `pptxgenjs`) from the full quiz (fetched by id so rounds → questions/answers are present). Generators live in `utils/quizFiles.js`:
+- **Quizzer Answer Sheet** (PDF) — one page per round, blank answer boxes (tick-boxes for MCQ), team name/size on page 1, a Who-Am-I guess box if present, **no answers**.
+- **Questions & Answers** (PDF) — one page per round, correct MCQ option highlighted, bold answer line; a final Who-Am-I answer+clues page.
+- **Marking Form** (PDF, landscape) — per-round grid via autoTable: `Team | Q1…Qn | Total` with **12 blank team rows**.
+- **Quiz Slideshow** (PPTX, `LAYOUT_WIDE`) — one slide per `buildSlides` slide (intro/round_intro/whoami_clue/question+options/mark_answers/answer reveal/widget/end), dark theme; editable in PowerPoint/Keynote/Slides.
+
+### Control grouped slide thumbnails
+The Control page "All Slides" strip groups slides into **per-module rows** in quiz order (Intro · Who Am I? #n · each Round · each widget · End), via `groupSlidesForControl`. Each slide is a small **`MiniSlide` preview** (icon + truncated text) instead of a bare number, with the **overall slide number in the bottom-right corner** so the host can match what's on screen vs. the quizzers. Clicking a thumb still jumps to that slide; the active one is highlighted.
 
 ### Host-current highlight on quizzer round-nav
 The round-nav button for the question the admin is currently showing gets a `.host-current` amber/orange highlight. This is distinct from `.current` (the question the guest is viewing) and `.answered` (a question with a submitted answer).
@@ -428,7 +462,7 @@ Copy `.env.example` to `.env` before running locally.
 
 - **Schema migrations**: Only additive changes are safe (`ADD COLUMN IF NOT EXISTS`). Removing or renaming columns requires manual intervention — the schema runs on every startup.
 
-- **Quizzer joining**: The Quizzer calls `GET /api/quizzes/by-code/:code` to find the quiz, then `GET /api/quizzes/:id/active-session` to find the running session. It never starts a session — only the admin does. If a team name already exists in the session, the existing record is returned (rejoin path).
+- **Quizzer joining**: The Quizzer (and slideshow) call `GET /api/quizzes/resolve/:code` → `{ quiz, session }`, which accepts a **session code** (exact session, any status) or the **quiz code** (→ its current live session). It never starts a session — only the admin does. Team join is find-or-create by session + name; a finished session returns the existing team read-only (or 404). Legacy `by-code` + `active-session` endpoints still exist.
 
 - **Auto-mark normalisation**: The comparison strips leading "the ", collapses whitespace, and lowercases both sides. If a question's correct answer is `"The Moon"` and a team types `"moon"`, it will auto-score 1. Admins can still override by manually marking 0 or 0.5.
 

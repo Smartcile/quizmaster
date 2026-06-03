@@ -26,6 +26,13 @@ const QUESTION_FORMATS = [
   { value: 'both', label: 'Both' }
 ];
 
+// A fresh Who/What Am I starts with three clues on a descending scale.
+const defaultClues = () => [
+  { text: '', points: 3 },
+  { text: '', points: 2 },
+  { text: '', points: 1 }
+];
+
 const EMPTY_FORM = {
   text: '',
   answer: '',
@@ -37,7 +44,9 @@ const EMPTY_FORM = {
   answer_mode: 'text',
   question_format: 'standard',
   approved: false,
-  options: ['', '', '', '']
+  options: ['', '', '', ''],
+  is_whoami: false,
+  clues: defaultClues()
 };
 
 // Normalise question text for duplicate detection (case/space-insensitive).
@@ -101,6 +110,7 @@ export default function QuestionManager() {
   const [filterType, setFilterType] = useState('all');
   const [filterAnswerMode, setFilterAnswerMode] = useState('all');
   const [filterFormat, setFilterFormat] = useState('all');
+  const [filterKind, setFilterKind] = useState('all'); // all | standard | whoami
   const [form, setForm] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState(null);
   const [error, setError] = useState(null);
@@ -146,6 +156,8 @@ export default function QuestionManager() {
 
   const filtered = useMemo(() => {
     return questions.filter(q => {
+      if (filterKind === 'standard' && q.is_whoami) return false;
+      if (filterKind === 'whoami' && !q.is_whoami) return false;
       if (filterCategory !== 'all' && q.category !== filterCategory) return false;
       if (filterDifficulty !== 'all' && (q.difficulty || 'medium') !== filterDifficulty) return false;
       if (filterType !== 'all' && (q.type || 'text') !== filterType) return false;
@@ -159,10 +171,11 @@ export default function QuestionManager() {
       }
       return true;
     });
-  }, [questions, search, filterCategory, filterDifficulty, filterType, filterAnswerMode, filterFormat, filterApproved]);
+  }, [questions, search, filterCategory, filterDifficulty, filterType, filterAnswerMode, filterFormat, filterApproved, filterKind]);
 
   const selectQuestion = (q) => {
     setEditingId(q.id);
+    const isWhoami = !!q.is_whoami;
     setForm({
       text: q.text || '',
       answer: q.answer || '',
@@ -174,7 +187,12 @@ export default function QuestionManager() {
       answer_mode: q.answer_mode || (q.type === 'mcq' ? 'mcq' : 'text'),
       question_format: q.question_format || 'standard',
       approved: q.approved ?? false,
-      options: Array.isArray(q.options) && q.options.length ? [...q.options] : ['', '', '', '']
+      // For a Who/What Am I, options holds the clue objects [{text,points}]
+      options: (!isWhoami && Array.isArray(q.options) && q.options.length) ? [...q.options] : ['', '', '', ''],
+      is_whoami: isWhoami,
+      clues: isWhoami && Array.isArray(q.options) && q.options.length
+        ? q.options.map(c => ({ text: c?.text || '', points: c?.points ?? 1 }))
+        : defaultClues()
     });
   };
 
@@ -185,6 +203,38 @@ export default function QuestionManager() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    // Who/What Am I sets save straight to the question bank (no MCQ / duplicate
+    // import path). Clues go in `options` as [{text,points}].
+    if (form.is_whoami) {
+      const clues = form.clues
+        .map(c => ({ text: String(c.text || '').trim(), points: Number(c.points) || 0 }))
+        .filter(c => c.text);
+      if (clues.length === 0) { setError('Add at least one clue.'); return; }
+      const payload = {
+        text: form.text.trim() || 'Who Am I?',
+        answer: form.answer,
+        type: 'text',
+        points: clues[0]?.points ?? 1,
+        category: form.category,
+        difficulty: form.difficulty,
+        answer_mode: 'text',
+        question_format: 'standard',
+        approved: form.approved,
+        options: clues,
+        is_whoami: true
+      };
+      try {
+        if (editingId) await api.put(`/questions/${editingId}`, payload);
+        else           await api.post('/questions', payload);
+        await loadAll();
+        newQuestion();
+      } catch (err) {
+        setError('Save failed: ' + err.message);
+      }
+      return;
+    }
+
     const payload = {
       ...form,
       options: (form.answer_mode === 'mcq' || form.answer_mode === 'both') ? form.options.filter(o => o.trim()) : []
@@ -293,7 +343,24 @@ export default function QuestionManager() {
     setForm(f => ({ ...f, options: f.options.filter((_, idx) => idx !== i) }));
   };
 
-  const showMcq = form.answer_mode === 'mcq' || form.answer_mode === 'both';
+  // ── Who/What Am I clue helpers ──
+  const updateClue = (i, patch) =>
+    setForm(f => ({ ...f, clues: f.clues.map((c, idx) => idx === i ? { ...c, ...patch } : c) }));
+  const addClue = () =>
+    setForm(f => ({ ...f, clues: [...f.clues, { text: '', points: 1 }] }));
+  const removeClue = (i) =>
+    setForm(f => f.clues.length <= 1 ? f : ({ ...f, clues: f.clues.filter((_, idx) => idx !== i) }));
+  const autoCluePoints = () =>
+    setForm(f => ({ ...f, clues: f.clues.map((c, i) => ({ ...c, points: f.clues.length - i })) }));
+  const setKind = (whoami) =>
+    setForm(f => ({
+      ...f,
+      is_whoami: whoami,
+      text: whoami && !f.text ? 'Who Am I?' : f.text,
+      clues: (whoami && (!f.clues || f.clues.length === 0)) ? defaultClues() : f.clues
+    }));
+
+  const showMcq = !form.is_whoami && (form.answer_mode === 'mcq' || form.answer_mode === 'both');
 
   return (
     <div className="question-manager">
@@ -359,6 +426,11 @@ export default function QuestionManager() {
                 <option value="all">All formats</option>
                 {QUESTION_FORMATS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
               </select>
+              <select value={filterKind} onChange={(e) => setFilterKind(e.target.value)}>
+                <option value="all">All kinds</option>
+                <option value="standard">Standard</option>
+                <option value="whoami">Who / What Am I?</option>
+              </select>
             </div>
           </div>
 
@@ -375,11 +447,20 @@ export default function QuestionManager() {
                 <div className="qm-question-meta">
                   {q.approved && <span className="qm-approved" title="Approved">✓</span>}
                   <SourceBadge value={q.source || 'local'} />
-                  <DifficultyBadge value={q.difficulty || 'medium'} />
-                  <FormatBadge value={q.question_format || 'standard'} />
-                  <span className={`qm-tag qm-tag-${q.answer_mode || 'text'}`}>{q.answer_mode || 'text'}</span>
-                  {q.category && <span className="qm-tag qm-tag-cat">{q.category}</span>}
-                  <span className="qm-points">{q.points} pt</span>
+                  {q.is_whoami ? (
+                    <>
+                      <span className="qm-tag qm-tag-whoami" title="Who / What Am I?">🕵 W/W Am I</span>
+                      <span className="qm-tag qm-tag-cat">{Array.isArray(q.options) ? q.options.length : 0} clues</span>
+                    </>
+                  ) : (
+                    <>
+                      <DifficultyBadge value={q.difficulty || 'medium'} />
+                      <FormatBadge value={q.question_format || 'standard'} />
+                      <span className={`qm-tag qm-tag-${q.answer_mode || 'text'}`}>{q.answer_mode || 'text'}</span>
+                      {q.category && <span className="qm-tag qm-tag-cat">{q.category}</span>}
+                      <span className="qm-points">{q.points} pt</span>
+                    </>
+                  )}
                 </div>
               </div>
             ))}
@@ -397,66 +478,82 @@ export default function QuestionManager() {
           </div>
 
           <form onSubmit={handleSubmit} className="form">
-            <label className="form-label">Question text
+            <label className="form-label">Kind
+              <select
+                value={form.is_whoami ? 'whoami' : 'standard'}
+                onChange={(e) => setKind(e.target.value === 'whoami')}
+                disabled={!!editingId}
+                title={editingId ? 'Kind is fixed when editing — create a new item to change it' : undefined}
+              >
+                <option value="standard">Standard question</option>
+                <option value="whoami">Who / What Am I?</option>
+              </select>
+            </label>
+
+            <label className="form-label">{form.is_whoami ? 'Title (e.g. “Who Am I?” / “What Am I?”)' : 'Question text'}
               <textarea
-                placeholder="What's the capital of France?"
+                placeholder={form.is_whoami ? 'Who Am I?' : "What's the capital of France?"}
                 value={form.text}
                 onChange={(e) => setForm({ ...form, text: e.target.value })}
-                rows={3}
+                rows={form.is_whoami ? 1 : 3}
                 required
               />
             </label>
 
-            <div className="form-row form-row-3">
-              <label className="form-label">Media type
-                <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
-                  {QUESTION_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-                </select>
-              </label>
+            {!form.is_whoami && (
+              <>
+                <div className="form-row form-row-3">
+                  <label className="form-label">Media type
+                    <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
+                      {QUESTION_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                    </select>
+                  </label>
 
-              <label className="form-label">Difficulty
-                <select value={form.difficulty} onChange={(e) => setForm({ ...form, difficulty: e.target.value })}>
-                  {DIFFICULTIES.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
-                </select>
-              </label>
+                  <label className="form-label">Difficulty
+                    <select value={form.difficulty} onChange={(e) => setForm({ ...form, difficulty: e.target.value })}>
+                      {DIFFICULTIES.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+                    </select>
+                  </label>
 
-              <label className="form-label">Points
-                <input
-                  type="number"
-                  value={form.points}
-                  onChange={(e) => setForm({ ...form, points: parseFloat(e.target.value) || 1 })}
-                  min="0"
-                  step="0.5"
-                />
-              </label>
-            </div>
+                  <label className="form-label">Points
+                    <input
+                      type="number"
+                      value={form.points}
+                      onChange={(e) => setForm({ ...form, points: parseFloat(e.target.value) || 1 })}
+                      min="0"
+                      step="0.5"
+                    />
+                  </label>
+                </div>
 
-            <div className="form-row form-row-3">
-              <label className="form-label">Answer mode
-                <select value={form.answer_mode} onChange={(e) => setForm({ ...form, answer_mode: e.target.value })}>
-                  {ANSWER_MODES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
-                </select>
-              </label>
+                <div className="form-row form-row-3">
+                  <label className="form-label">Answer mode
+                    <select value={form.answer_mode} onChange={(e) => setForm({ ...form, answer_mode: e.target.value })}>
+                      {ANSWER_MODES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                    </select>
+                  </label>
 
-              <label className="form-label">Format
-                <select value={form.question_format} onChange={(e) => setForm({ ...form, question_format: e.target.value })}>
-                  {QUESTION_FORMATS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
-                </select>
-              </label>
+                  <label className="form-label">Format
+                    <select value={form.question_format} onChange={(e) => setForm({ ...form, question_format: e.target.value })}>
+                      {QUESTION_FORMATS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+                    </select>
+                  </label>
 
-              <label className="form-label">Category
-                <input
-                  type="text"
-                  placeholder="Geography"
-                  value={form.category}
-                  onChange={(e) => setForm({ ...form, category: e.target.value })}
-                  list="category-list"
-                />
-                <datalist id="category-list">
-                  {categories.map(c => <option key={c} value={c} />)}
-                </datalist>
-              </label>
-            </div>
+                  <label className="form-label">Category
+                    <input
+                      type="text"
+                      placeholder="Geography"
+                      value={form.category}
+                      onChange={(e) => setForm({ ...form, category: e.target.value })}
+                      list="category-list"
+                    />
+                    <datalist id="category-list">
+                      {categories.map(c => <option key={c} value={c} />)}
+                    </datalist>
+                  </label>
+                </div>
+              </>
+            )}
 
             <label className={`approved-toggle ${form.approved ? 'is-approved' : ''}`}>
               <input
@@ -467,61 +564,122 @@ export default function QuestionManager() {
               {form.approved ? '✓ Approved for use in quizzes' : 'Not yet approved — check to approve'}
             </label>
 
-            {showMcq && (
-              <div className="mcq-editor">
-                <div className="mcq-editor-header">
-                  <label className="form-label" style={{ margin: 0 }}>Multiple choice options</label>
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm mcq-add-btn"
-                    onClick={addOption}
-                  >
-                    + Add Option
-                  </button>
-                </div>
-                {form.options.map((opt, i) => (
-                  <div key={i} className="mcq-option-row">
-                    <span className="mcq-letter">{String.fromCharCode(65 + i)}</span>
+            {/* Standard question: MCQ options + single answer + media */}
+            {!form.is_whoami && (
+              <>
+                {showMcq && (
+                  <div className="mcq-editor">
+                    <div className="mcq-editor-header">
+                      <label className="form-label" style={{ margin: 0 }}>Multiple choice options</label>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm mcq-add-btn"
+                        onClick={addOption}
+                      >
+                        + Add Option
+                      </button>
+                    </div>
+                    {form.options.map((opt, i) => (
+                      <div key={i} className="mcq-option-row">
+                        <span className="mcq-letter">{String.fromCharCode(65 + i)}</span>
+                        <input
+                          type="text"
+                          placeholder={`Option ${String.fromCharCode(65 + i)}`}
+                          value={opt}
+                          onChange={(e) => updateOption(i, e.target.value)}
+                        />
+                        <button
+                          type="button"
+                          className="mcq-remove-btn"
+                          onClick={() => removeOption(i)}
+                          disabled={form.options.length <= 2}
+                          title={form.options.length <= 2 ? 'Need at least 2 options' : 'Remove option'}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <label className="form-label">
+                  {showMcq ? 'Correct answer (exact text of the correct option)' : 'Answer'}
+                  <input
+                    type="text"
+                    placeholder="Paris"
+                    value={form.answer}
+                    onChange={(e) => setForm({ ...form, answer: e.target.value })}
+                    required
+                  />
+                </label>
+
+                {['image', 'video', 'audio'].includes(form.type) && (
+                  <label className="form-label">Media URL
                     <input
                       type="text"
-                      placeholder={`Option ${String.fromCharCode(65 + i)}`}
-                      value={opt}
-                      onChange={(e) => updateOption(i, e.target.value)}
+                      placeholder="https://... or /uploads/..."
+                      value={form.media_url}
+                      onChange={(e) => setForm({ ...form, media_url: e.target.value })}
                     />
-                    <button
-                      type="button"
-                      className="mcq-remove-btn"
-                      onClick={() => removeOption(i)}
-                      disabled={form.options.length <= 2}
-                      title={form.options.length <= 2 ? 'Need at least 2 options' : 'Remove option'}
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-              </div>
+                  </label>
+                )}
+              </>
             )}
 
-            <label className="form-label">
-              {showMcq ? 'Correct answer (exact text of the correct option)' : 'Answer'}
-              <input
-                type="text"
-                placeholder="Paris"
-                value={form.answer}
-                onChange={(e) => setForm({ ...form, answer: e.target.value })}
-                required
-              />
-            </label>
+            {/* Who / What Am I: reversed-MCQ layout — numbered clues then the answer */}
+            {form.is_whoami && (
+              <>
+                <div className="whoami-q-editor">
+                  <div className="whoami-q-head">
+                    <label className="form-label" style={{ margin: 0 }}>Clues (one revealed before each round)</label>
+                    <div className="whoami-q-head-actions">
+                      <button type="button" className="btn btn-secondary btn-sm" onClick={autoCluePoints}>Auto points (high→1)</button>
+                      <button type="button" className="btn btn-secondary btn-sm" onClick={addClue}>+ Add clue</button>
+                    </div>
+                  </div>
+                  <p className="help-text" style={{ marginTop: 0 }}>
+                    Earlier clues are harder and worth more. Teams lock in one guess — the earlier they lock, the more points.
+                  </p>
+                  {form.clues.map((c, i) => (
+                    <div key={i} className="whoami-q-row">
+                      <span className="whoami-q-num">{i + 1}.</span>
+                      <input
+                        type="text"
+                        className="whoami-q-text"
+                        placeholder={`Clue ${i + 1}${i === form.clues.length - 1 ? ' (easiest)' : ''}`}
+                        value={c.text}
+                        onChange={(e) => updateClue(i, { text: e.target.value })}
+                      />
+                      <input
+                        type="number"
+                        className="whoami-q-points"
+                        min="0"
+                        step="0.5"
+                        value={c.points}
+                        onChange={(e) => updateClue(i, { points: e.target.value === '' ? '' : Number(e.target.value) })}
+                        title="Points if a team locks in on this clue"
+                      />
+                      <button
+                        type="button"
+                        className="mcq-remove-btn"
+                        onClick={() => removeClue(i)}
+                        disabled={form.clues.length <= 1}
+                        title={form.clues.length <= 1 ? 'Need at least one clue' : 'Remove clue'}
+                      >×</button>
+                    </div>
+                  ))}
+                </div>
 
-            {['image', 'video', 'audio'].includes(form.type) && (
-              <label className="form-label">Media URL
-                <input
-                  type="text"
-                  placeholder="https://... or /uploads/..."
-                  value={form.media_url}
-                  onChange={(e) => setForm({ ...form, media_url: e.target.value })}
-                />
-              </label>
+                <label className="form-label">Answer (the shared solution, revealed at the end)
+                  <input
+                    type="text"
+                    placeholder="e.g. Albert Einstein"
+                    value={form.answer}
+                    onChange={(e) => setForm({ ...form, answer: e.target.value })}
+                    required
+                  />
+                </label>
+              </>
             )}
 
             <div className="form-actions">
