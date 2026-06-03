@@ -20,6 +20,13 @@
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
+/* All slide typography is sized in rem. Driving the root font-size off the
+   viewport (vmin) makes every text element scale proportionally with the
+   surface it is rendered in — a full-screen display stays at ~16px, while a
+   small embedded preview iframe shrinks the text right down so it never clips
+   instead of capping at a fixed minimum. */
+html { font-size: clamp(5px, 1.5vmin, 16px); }
+
 html, body, #root {
   width: 100%;
   height: 100%;
@@ -52,7 +59,7 @@ html, body, #root {
   backdrop-filter: blur(20px);
   border: 1px solid rgba(0, 240, 255, 0.3);
   border-radius: var(--radius-lg);
-  padding: 60px;
+  padding: clamp(12px, 4.2%, 60px);
   box-shadow:
     0 0 60px rgba(0, 240, 255, 0.15),
     0 0 100px rgba(184, 41, 255, 0.1),
@@ -620,7 +627,7 @@ html, body, #root {
 }
 
 @media (max-width: 900px) {
-  .slide { padding: 30px; }
+  .slide { padding: clamp(10px, 4%, 30px); }
   .slide-question h2 { font-size: 2.2rem; }
   .lobby-title { font-size: 3rem; }
   .lobby-code { font-size: 4rem; letter-spacing: 8px; }
@@ -632,24 +639,24 @@ html, body, #root {
 /* ===== Join QR code (bottom-right corner) ===== */
 .join-qr {
   position: fixed;
-  bottom: 24px;
-  right: 24px;
+  bottom: clamp(8px, 2vmin, 24px);
+  right: clamp(8px, 2vmin, 24px);
   z-index: 150;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: clamp(3px, 0.8vmin, 8px);
   background: rgba(7, 9, 26, 0.82);
   backdrop-filter: blur(10px);
   border: 1px solid rgba(0, 240, 255, 0.3);
-  border-radius: 16px;
-  padding: 12px;
+  border-radius: clamp(8px, 1.4vmin, 16px);
+  padding: clamp(5px, 1.2vmin, 12px);
   box-shadow: 0 0 20px rgba(0, 240, 255, 0.2);
 }
 .join-qr-code {
   background: #fff;
-  padding: 8px;
-  border-radius: 10px;
+  padding: clamp(3px, 0.8vmin, 8px);
+  border-radius: clamp(5px, 1vmin, 10px);
   line-height: 0;
 }
 .join-qr-label {

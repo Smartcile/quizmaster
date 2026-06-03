@@ -4391,8 +4391,56 @@ input[type="checkbox"] {
    ===================================================== */
 .qm-media-pick { display: flex; align-items: center; gap: 10px; margin: 4px 0 12px; flex-wrap: wrap; }
 .qm-media-current { font-size: 0.8rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; max-width: 60%; }
+/* Styled media chooser inside the question editor (shown only for media types) */
+.qm-media-btn {
+  display: inline-flex; align-items: center; gap: 8px; margin-top: 6px;
+  padding: 12px 16px; width: 100%; justify-content: center;
+  border: 1px dashed var(--neon-cyan); border-radius: 10px;
+  background: rgba(0, 240, 255, 0.06); color: var(--neon-cyan);
+  font-weight: 600; cursor: pointer; transition: background 0.15s, border-color 0.15s;
+}
+.qm-media-btn:hover { background: rgba(0, 240, 255, 0.14); }
+.qm-media-selected {
+  display: flex; align-items: center; gap: 10px; margin-top: 6px;
+  padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--bg-base, #0a0e1f);
+}
+.qm-media-thumb {
+  width: 48px; height: 48px; flex: 0 0 48px; border-radius: 8px; object-fit: cover;
+  background: rgba(0,0,0,0.3);
+}
+.qm-media-thumb-icon { display: flex; align-items: center; justify-content: center; font-size: 1.5rem; }
+.qm-media-fname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.85rem; color: var(--text-primary); }
 .qm-media-row { display: flex; gap: 8px; align-items: center; }
 .qm-media-row input { flex: 1; min-width: 0; }
+
+/* ===== Media editing tools (audio trim / image crop) ===== */
+.ae-wave { width: 100%; max-width: 620px; height: 140px; border: 1px solid var(--border); border-radius: 8px; display: block; }
+.ae-row { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; margin-top: 12px; }
+.ae-field { display: flex; flex-direction: column; gap: 4px; font-size: 0.82rem; color: var(--text-muted); min-width: 150px; flex: 1; }
+.ae-field input[type="range"] { width: 100%; }
+.ae-field input[type="number"] { width: 90px; }
+
+.ic-presets { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.ic-stage {
+  position: relative; margin: 0 auto; max-width: 100%;
+  background: rgba(0,0,0,0.35); border: 1px solid var(--border); border-radius: 8px;
+  overflow: hidden; user-select: none; touch-action: none;
+}
+.ic-stage img { display: block; pointer-events: none; }
+.ic-crop {
+  position: absolute; border: 2px solid var(--neon-cyan);
+  box-shadow: 0 0 0 9999px rgba(7,9,26,0.55); cursor: move;
+}
+.ic-handle {
+  position: absolute; right: -8px; bottom: -8px; width: 16px; height: 16px;
+  background: var(--neon-cyan); border-radius: 3px; cursor: nwse-resize;
+}
+
+.ve-video { width: 100%; max-height: 340px; background: #000; border-radius: 8px; display: block; }
+.ve-status { margin-top: 8px; }
+.ve-bar { width: 100%; height: 8px; background: rgba(255,255,255,0.1); border-radius: 4px; overflow: hidden; }
+.ve-bar-fill { height: 100%; background: var(--neon-cyan); transition: width 0.2s; }
 .mp-toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
 .mp-search { flex: 1; }
 .mp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; max-height: 50vh; overflow-y: auto; }

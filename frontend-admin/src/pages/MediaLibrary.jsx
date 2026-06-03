@@ -1,5 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { api } from '../services/api';
+import ImageCropEditor from '../components/ImageCropEditor';
+import AudioEditor from '../components/AudioEditor';
+import VideoEditor from '../components/VideoEditor';
 
 const USAGE_CHIP_COLORS = {
   'Question':     { bg: 'rgba(0,240,255,0.15)',   color: '#00f0ff' },
@@ -45,6 +48,7 @@ export default function MediaLibrary() {
   const [selected,   setSelected]   = useState(null);   // file object for detail modal
   const [usageData,  setUsageData]  = useState(null);   // { file, usage }
   const [uploading,  setUploading]  = useState(false);
+  const [editor,     setEditor]     = useState(null);   // { kind: 'image'|'audio', file }
   const fileInputRef = useRef(null);
 
   const loadFiles = async () => {
@@ -91,6 +95,13 @@ export default function MediaLibrary() {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
+  };
+
+  const handleEdited = async () => {
+    // A new file was produced — refresh the grid and close both modals.
+    setEditor(null);
+    closeDetail();
+    await loadFiles();
   };
 
   const handleDelete = async (file) => {
@@ -267,6 +278,21 @@ export default function MediaLibrary() {
               )}
             </div>
             <div className="modal-footer">
+              {isImage(selected) && (
+                <button className="btn btn-secondary" onClick={() => setEditor({ kind: 'image', file: selected })}>
+                  ✂ Crop / resize
+                </button>
+              )}
+              {isAudio(selected) && (
+                <button className="btn btn-secondary" onClick={() => setEditor({ kind: 'audio', file: selected })}>
+                  ✂ Edit audio
+                </button>
+              )}
+              {isVideo(selected) && (
+                <button className="btn btn-secondary" onClick={() => setEditor({ kind: 'video', file: selected })}>
+                  ✂ Trim video
+                </button>
+              )}
               <button
                 className="btn btn-danger"
                 onClick={() => handleDelete(selected)}
@@ -287,6 +313,16 @@ export default function MediaLibrary() {
             </div>
           </div>
         </div>
+      )}
+
+      {editor?.kind === 'image' && (
+        <ImageCropEditor file={editor.file} onClose={() => setEditor(null)} onSaved={handleEdited} />
+      )}
+      {editor?.kind === 'audio' && (
+        <AudioEditor file={editor.file} onClose={() => setEditor(null)} onSaved={handleEdited} />
+      )}
+      {editor?.kind === 'video' && (
+        <VideoEditor file={editor.file} onClose={() => setEditor(null)} onSaved={handleEdited} />
       )}
     </div>
   );

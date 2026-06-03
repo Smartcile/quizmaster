@@ -301,6 +301,18 @@ export default function MastersAndSlides() {
     } catch (err) { flash('err', err.message); }
   };
 
+  const deleteMaster = async (m) => {
+    if (!confirm(`Delete master "${m.name}"? This cannot be undone.`)) return;
+    try {
+      await api.delete(`/masters/${m.id}`);
+      setMasters(prev => prev.filter(x => x.id !== m.id));
+      flash('ok', `Deleted "${m.name}"`);
+    } catch (err) {
+      // Backend blocks deletion of an in-use master and names the quizzes.
+      flash('err', err.message.replace(/^\d+:\s*/, ''));
+    }
+  };
+
   // ── Placeholder canvas actions ────────────────────────────────────────────
   const addPlaceholder = () => {
     const canvas = fabricRef.current;
@@ -459,6 +471,7 @@ export default function MastersAndSlides() {
                 <div className="me-card-actions">
                   <button className="btn btn-primary btn-sm"    onClick={() => openMaster(m)}>Edit</button>
                   <button className="btn btn-secondary btn-sm"  onClick={() => duplicateMaster(m.id)}>Duplicate</button>
+                  <button className="btn btn-danger btn-sm"     onClick={() => deleteMaster(m)}>Delete</button>
                 </div>
               </div>
             );

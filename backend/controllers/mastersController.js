@@ -72,4 +72,27 @@ async function duplicateMaster(req, res) {
   }
 }
 
-module.exports = { getAllMasters, getMaster, createMaster, updateMaster, duplicateMaster };
+async function deleteMaster(req, res) {
+  try {
+    // Block deletion if any quiz references this master — surface which ones so
+    // the admin can reassign them first (mirrors the Media Library in-use rule).
+    const inUse = await db.query(
+      'SELECT id, name FROM quizzes WHERE master_id = $1 ORDER BY name',
+      [req.params.id]
+    );
+    if (inUse.rows.length) {
+      const names = inUse.rows.map(q => q.name).join(', ');
+      return res.status(409).json({
+        error: `Master is in use by ${inUse.rows.length} quiz(zes): ${names}. Reassign them to another master first.`,
+        quizzes: inUse.rows
+      });
+    }
+    const result = await db.query('DELETE FROM slide_masters WHERE id = $1 RETURNING id', [req.params.id]);
+    if (!result.rows.length) return res.status(404).json({ error: 'Master not found' });
+    res.json({ ok: true, id: result.rows[0].id });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
+module.exports = { getAllMasters, getMaster, createMaster, updateMaster, duplicateMaster, deleteMaster };
