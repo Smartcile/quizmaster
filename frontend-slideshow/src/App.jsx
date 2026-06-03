@@ -23,6 +23,13 @@ function getForcedSessionId() {
   return sid ? parseInt(sid) : null;
 }
 
+// Size the join QR relative to the surface so it isn't oversized in a small
+// embedded preview while staying crisp on a full-screen display.
+function qrSizeFor() {
+  const m = Math.min(window.innerWidth, window.innerHeight);
+  return Math.max(54, Math.min(132, Math.round(m * 0.13)));
+}
+
 function App() {
   const [code, setCode] = useState(getInitialCode());
   const [quiz, setQuiz] = useState(null);
@@ -35,8 +42,16 @@ function App() {
   const [sessionCode, setSessionCode] = useState(null); // per-session join code to display
   const [portalConfig, setPortalConfig] = useState(null);
   const [scoreboardVisible, setScoreboardVisible] = useState(false);
+  const [qrSize, setQrSize] = useState(qrSizeFor);
   const socket = useWebSocket();
   const slides = useMemo(() => buildSlides(quiz), [quiz]);
+
+  // Keep the QR sized to the current surface (window or preview iframe)
+  useEffect(() => {
+    const onResize = () => setQrSize(qrSizeFor());
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   // Load portal URL config once so the lobby screen shows the correct quizzer URL
   useEffect(() => {
@@ -258,7 +273,7 @@ function App() {
       {showJoinQr && (
         <div className="join-qr">
           <div className="join-qr-code">
-            <QRCodeSVG value={quizzerJoinUrl} size={132} bgColor="#ffffff" fgColor="#07091a" level="M" />
+            <QRCodeSVG value={quizzerJoinUrl} size={qrSize} bgColor="#ffffff" fgColor="#07091a" level="M" />
           </div>
           <p className="join-qr-label">Scan to join</p>
         </div>

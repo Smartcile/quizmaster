@@ -322,6 +322,7 @@ function RoundEditorModal({ editing, init, questions, categories, onSave, onClos
                                 <div className="dnd-item-text">{q.text}</div>
                                 <div className="dnd-item-meta">
                                   <span className={`qm-tag qm-tag-${q.type}`}>{q.type}</span>
+                                  {hasOpt(q) && <span className="rq-both-label" title="Text & Multichoice available">🔀 T&M</span>}
                                   {q.category && <span className="qm-tag qm-tag-cat">{q.category}</span>}
                                 </div>
                               </div>
@@ -361,7 +362,7 @@ function RoundEditorModal({ editing, init, questions, categories, onSave, onClos
                                 <span className="dnd-order">{i + 1}</span>
                                 <div className="dnd-item-text">
                                   {q.text}
-                                  {effMode(q) === 'both' && <span className="rq-both-label" title="Shown as text + multiple-choice">BOTH</span>}
+                                  {hasOpt(q) && <span className="rq-both-label" title="Text & Multichoice available — pick how it's shown for this round">🔀 T&M</span>}
                                 </div>
                                 {hasOpt(q) ? (
                                   <div className="rq-format-toggle" onClick={e => e.stopPropagation()} title="How this question is shown to teams in this round">

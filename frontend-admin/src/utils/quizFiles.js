@@ -39,6 +39,10 @@ const hasOptions  = (q) => {
 };
 
 // ── 1) Quizzer answer sheet (no answers) ──────────────────────────────────────
+// Blank fill-in boxes only — the question TEXT is never printed (teams read the
+// question off the screen). Multiple-choice questions get lettered tick boxes;
+// everything else gets a write-in box. Every round is sized to fit on exactly
+// one page by dividing the remaining height across the questions.
 export function downloadAnswerSheet(quiz) {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
   const rounds = getRounds(quiz);
@@ -48,42 +52,61 @@ export function downloadAnswerSheet(quiz) {
   rounds.forEach((round, ri) => {
     if (ri > 0) doc.addPage();
     let y = M;
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(16);
-    doc.text(String(quiz.name || 'Quiz'), M, y); y += 20;
-    doc.setFontSize(13); doc.setFont('helvetica', 'normal');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(0);
+    doc.text(String(quiz.name || 'Quiz'), M, y); y += 18;
+    doc.setFontSize(12); doc.setFont('helvetica', 'normal');
     doc.text(`Round ${ri + 1}: ${round.name || ''}`, M, y); y += 6;
-    doc.setDrawColor(150); doc.line(M, y, PAGE_W - M, y); y += 22;
+    doc.setDrawColor(150); doc.line(M, y, PAGE_W - M, y); y += 16;
 
     if (ri === 0) {
-      doc.setFontSize(11);
-      doc.text('Team name:', M, y); doc.rect(M + 70, y - 11, 230, 16);
-      doc.text('Size:', M + 320, y); doc.rect(M + 355, y - 11, 50, 16);
-      y += 30;
+      doc.setFontSize(10);
+      doc.text('Team:', M, y); doc.rect(M + 34, y - 9, 210, 15);
+      doc.text('Size:', M + 258, y); doc.rect(M + 288, y - 9, 45, 15);
+      y += 24;
       if (whoami) {
         doc.text('Who Am I? final guess:', M, y);
-        doc.rect(M + 135, y - 11, CONTENT_W - 135, 16);
-        y += 30;
+        doc.rect(M + 125, y - 9, CONTENT_W - 125, 15);
+        y += 24;
       }
     }
 
     const qs = questionsOf(round);
+    if (qs.length === 0) return;
+
+    // Divide the remaining vertical space evenly so the whole round fits.
+    const bottom = PAGE_H - M;
+    let gap = 8;
+    let rowH = Math.floor((bottom - y - gap * (qs.length - 1)) / qs.length);
+    if (rowH < 26) { gap = 4; rowH = Math.floor((bottom - y - gap * (qs.length - 1)) / qs.length); }
+    rowH = Math.max(13, Math.min(56, rowH));
+
+    const numW = 22;
+    const boxX = M + numW;
+    const boxW = CONTENT_W - numW;
+
     qs.forEach((q, qi) => {
-      if (y > PAGE_H - 90) { doc.addPage(); y = M; }
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
-      const qlines = doc.splitTextToSize(`${qi + 1}. ${q.text || ''}`, CONTENT_W);
-      doc.text(qlines, M, y); y += qlines.length * 14 + 4;
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(11);
+      const top = y;
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(Math.min(12, rowH - 2));
+      doc.setTextColor(0);
+      doc.text(`${qi + 1}.`, M, top + rowH / 2 + 4);
+
       if (hasOptions(q)) {
-        q.options.filter(o => String(o).trim()).forEach((opt, oi) => {
-          if (y > PAGE_H - 50) { doc.addPage(); y = M; }
-          doc.rect(M + 4, y - 9, 11, 11);
-          const ol = doc.splitTextToSize(`${String.fromCharCode(65 + oi)}. ${opt}`, CONTENT_W - 28);
-          doc.text(ol, M + 24, y); y += ol.length * 14 + 4;
-        });
-        y += 8;
+        // Lettered tick boxes (no option text — read off the screen)
+        const n = q.options.filter(o => String(o).trim()).length;
+        const sq = Math.max(8, Math.min(16, rowH - 6));
+        const cy = top + (rowH - sq) / 2;
+        let cx = boxX;
+        for (let oi = 0; oi < n; oi++) {
+          if (cx > PAGE_W - M - sq - 16) break; // never spill off the right edge
+          doc.setDrawColor(120); doc.rect(cx, cy, sq, sq);
+          doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
+          doc.text(String.fromCharCode(65 + oi), cx + sq + 4, cy + sq - 3);
+          cx += sq + 30;
+        }
       } else {
-        doc.rect(M, y, CONTENT_W, 28); y += 28 + 14;
+        doc.setDrawColor(120); doc.rect(boxX, top, boxW, rowH);
       }
+      y += rowH + gap;
     });
   });
   doc.save(`${safe(quiz.code)}-answer-sheet.pdf`);

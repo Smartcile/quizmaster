@@ -552,13 +552,6 @@ export default function QuestionManager() {
                   </label>
                 </div>
 
-                <div className="qm-media-pick">
-                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => setMediaPickerOpen(true)}>
-                    📁 Select / upload media
-                  </button>
-                  {form.media_url && <span className="qm-media-current" title={form.media_url}>📎 {form.media_url.split('/').pop()}</span>}
-                </div>
-
                 <div className="form-row form-row-3">
                   <label className="form-label">Answer mode
                     <select value={form.answer_mode} onChange={(e) => setForm({ ...form, answer_mode: e.target.value })}>
@@ -641,14 +634,33 @@ export default function QuestionManager() {
                 </label>
 
                 {['image', 'video', 'audio'].includes(form.type) && (
-                  <label className="form-label">Media URL
-                    <input
-                      type="text"
-                      placeholder="https://... or /uploads/..."
-                      value={form.media_url}
-                      onChange={(e) => setForm({ ...form, media_url: e.target.value })}
-                    />
-                  </label>
+                  <div className="form-label">
+                    {form.type === 'image' ? 'Image' : form.type === 'video' ? 'Video' : 'Audio'} file
+                    {form.media_url ? (
+                      <div className="qm-media-selected">
+                        {form.type === 'image' ? (
+                          <img className="qm-media-thumb" src={form.media_url} alt="" />
+                        ) : (
+                          <span className="qm-media-thumb qm-media-thumb-icon">
+                            {form.type === 'video' ? '🎬' : '🎵'}
+                          </span>
+                        )}
+                        <span className="qm-media-fname" title={form.media_url}>
+                          {form.media_url.split('/').pop()}
+                        </span>
+                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => setMediaPickerOpen(true)}>
+                          Change
+                        </button>
+                        <button type="button" className="btn btn-danger btn-sm" onClick={() => setForm({ ...form, media_url: '' })}>
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
+                      <button type="button" className="qm-media-btn" onClick={() => setMediaPickerOpen(true)}>
+                        📁 Select / upload {form.type}
+                      </button>
+                    )}
+                  </div>
                 )}
               </>
             )}
