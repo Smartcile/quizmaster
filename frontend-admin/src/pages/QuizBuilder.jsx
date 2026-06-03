@@ -135,6 +135,15 @@ export default function QuizBuilder() {
 
   useEffect(() => { loadAll(); }, []);
 
+  // The Default Profile is the standard for every quiz — preselect it for a new
+  // quiz once masters have loaded (rather than leaving a quiz with no master).
+  useEffect(() => {
+    if (!editingQuiz && !selectedMasterId && masters.length) {
+      const def = masters.find(m => m.is_default);
+      if (def) setSelectedMasterId(String(def.id));
+    }
+  }, [masters, editingQuiz, selectedMasterId]);
+
   const loadAll = async () => {
     try {
       const [qz, rs, ms, qs] = await Promise.all([
@@ -299,7 +308,9 @@ export default function QuizBuilder() {
       ];
       setEditingQuiz({ id: quiz.id });
       setName(quiz.name);
-      setSelectedMasterId(quiz.master_id ? String(quiz.master_id) : '');
+      // Quizzes with no stored master fall back to the Default Profile.
+      const def = masters.find(m => m.is_default);
+      setSelectedMasterId(quiz.master_id ? String(quiz.master_id) : (def ? String(def.id) : ''));
       setTeamSizeScoring(quiz.team_size_scoring || false);
       setOrderItems(quizItemsToUiItems(source, 'edit'));
       // Pull the attached Who/What Am I (if any) out of the running order
@@ -344,10 +355,9 @@ export default function QuizBuilder() {
               className="builder-master-sel"
               value={selectedMasterId}
               onChange={e => setSelectedMasterId(e.target.value)}
-              title="Master theme (optional)"
+              title="Master theme — every quiz uses one (defaults to the Default Profile)"
             >
-              <option value="">— No master theme —</option>
-              {masters.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+              {masters.map(m => <option key={m.id} value={m.id}>{m.name}{m.is_default ? ' (Default)' : ''}</option>)}
             </select>
             <label className="quiz-tss-toggle">
               <input

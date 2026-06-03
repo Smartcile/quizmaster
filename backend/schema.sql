@@ -275,6 +275,14 @@ ON CONFLICT (name) DO NOTHING;
 --          "custom": [{ id, name, title, body, imageUrl, bgColor }, ...] }
 ALTER TABLE slide_masters ADD COLUMN IF NOT EXISTS templates JSONB NOT NULL DEFAULT '{}';
 
+-- A single protected "Default Profile" master is the standard for every quiz.
+-- It can never be deleted, and quizzes with no master_id fall back to it.
+ALTER TABLE slide_masters ADD COLUMN IF NOT EXISTS is_default BOOLEAN NOT NULL DEFAULT FALSE;
+
+INSERT INTO slide_masters (name, background_color, styles, placeholders, templates, is_default)
+SELECT 'Default Profile', '#0a0e1f', '{}', '[]', '{}', TRUE
+WHERE NOT EXISTS (SELECT 1 FROM slide_masters WHERE is_default = TRUE);
+
 -- Allow a quiz to declare which master theme it uses.
 -- The QuizBuilder presents custom pages from that master as available widgets.
 ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS master_id INT REFERENCES slide_masters(id) ON DELETE SET NULL;
