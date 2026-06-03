@@ -17,6 +17,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { api } from '../services/api';
 import DownloadFilesModal from '../components/DownloadFilesModal';
+import MediaPicker from '../components/MediaPicker';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const WIDGET_TYPES = [
@@ -663,6 +664,7 @@ function QuizCard({ quiz, isEditing, onEdit, onDelete, onFiles }) {
 // ── Widget editor modal ────────────────────────────────────────────────────────
 function WidgetEditor({ widget, onSave, onClose }) {
   const [data, setData] = useState(widget.data || {});
+  const [mediaOpen, setMediaOpen] = useState(false);
   const set = (k, v) => setData(d => ({ ...d, [k]: v }));
 
   return (
@@ -689,13 +691,27 @@ function WidgetEditor({ widget, onSave, onClose }) {
           )}
 
           {widget.type === 'custom' && (
-            <label className="form-label">Image URL (optional)
+            <label className="form-label">Image (optional)
+              <div className="qm-media-row">
+                <input
+                  type="text"
+                  placeholder="https://... or /uploads/..."
+                  value={data.image_url || ''}
+                  onChange={e => set('image_url', e.target.value)}
+                />
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => setMediaOpen(true)}>📁 Select</button>
+              </div>
+            </label>
+          )}
+
+          {widget.type === 'review' && (
+            <label className="quiz-tss-toggle" style={{ marginTop: 8 }}>
               <input
-                type="text"
-                placeholder="https://... or /uploads/..."
-                value={data.image_url || ''}
-                onChange={e => set('image_url', e.target.value)}
+                type="checkbox"
+                checked={!!data.showOnScoreboard}
+                onChange={e => set('showOnScoreboard', e.target.checked)}
               />
+              Show a "View my answers" button on the live scoreboard
             </label>
           )}
 
@@ -724,6 +740,12 @@ function WidgetEditor({ widget, onSave, onClose }) {
           <button onClick={() => onSave(data)} className="btn btn-primary">Save Widget</button>
         </div>
       </div>
+      {mediaOpen && (
+        <MediaPicker
+          onPick={(f) => { set('image_url', f.url); setMediaOpen(false); }}
+          onClose={() => setMediaOpen(false)}
+        />
+      )}
     </div>
   );
 }

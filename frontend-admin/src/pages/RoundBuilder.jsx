@@ -165,7 +165,6 @@ function RoundEditorModal({ editing, init, questions, categories, onSave, onClos
   const [filterDifficulty, setFilterDifficulty] = useState('all');
   const [filterType, setFilterType]             = useState('all');
   const [filterAnswerMode, setFilterAnswerMode] = useState('all');
-  const [filterFormat, setFilterFormat]         = useState('all');
   const [filterApproved, setFilterApproved]     = useState('all');
 
   // Same matching rules as the Questions page (search hits text OR answer) plus
@@ -177,7 +176,6 @@ function RoundEditorModal({ editing, init, questions, categories, onSave, onClos
       if (filterDifficulty !== 'all' && (q.difficulty || 'medium') !== filterDifficulty) return false;
       if (filterType !== 'all' && (q.type || 'text') !== filterType) return false;
       if (filterAnswerMode !== 'all' && (q.answer_mode || 'text') !== filterAnswerMode) return false;
-      if (filterFormat !== 'all' && (q.question_format || 'standard') !== filterFormat) return false;
       if (filterApproved === 'approved' && !q.approved) return false;
       if (filterApproved === 'unapproved' && q.approved) return false;
       if (search) {
@@ -186,7 +184,7 @@ function RoundEditorModal({ editing, init, questions, categories, onSave, onClos
       }
       return true;
     });
-  }, [questions, search, filterCategory, filterDifficulty, filterType, filterAnswerMode, filterFormat, filterApproved, selectedQuestions]);
+  }, [questions, search, filterCategory, filterDifficulty, filterType, filterAnswerMode, filterApproved, selectedQuestions]);
 
   const selectedQuestionObjs = useMemo(() => {
     const byId = new Map(questions.map(q => [q.id, q]));
@@ -195,6 +193,14 @@ function RoundEditorModal({ editing, init, questions, categories, onSave, onClos
 
   const toggleFormat = (questionId, value) => {
     setFormatOverrides(prev => ({ ...prev, [questionId]: value }));
+  };
+
+  // Whether a question can be shown as multiple-choice (has options).
+  const hasOpt = (q) => Array.isArray(q.options) && q.options.filter(o => String(o).trim()).length > 0;
+  // Effective per-round mode: explicit override, else derived from answer_mode.
+  const effMode = (q) => {
+    if (!hasOpt(q)) return 'standard';
+    return formatOverrides[q.id] || (q.answer_mode === 'both' ? 'both' : 'multichoice');
   };
 
   const onDragEnd = (result) => {
@@ -291,10 +297,6 @@ function RoundEditorModal({ editing, init, questions, categories, onSave, onClos
                         <option value="all">All answer modes</option>
                         {ANSWER_MODES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
                       </select>
-                      <select value={filterFormat} onChange={(e) => setFilterFormat(e.target.value)}>
-                        <option value="all">All formats</option>
-                        {QUESTION_FORMATS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
-                      </select>
                       <select value={filterApproved} onChange={(e) => setFilterApproved(e.target.value)}>
                         <option value="all">All statuses</option>
                         <option value="approved">Approved</option>
@@ -320,7 +322,6 @@ function RoundEditorModal({ editing, init, questions, categories, onSave, onClos
                                 <div className="dnd-item-text">{q.text}</div>
                                 <div className="dnd-item-meta">
                                   <span className={`qm-tag qm-tag-${q.type}`}>{q.type}</span>
-                                  <FormatBadge value={q.question_format || 'standard'} />
                                   {q.category && <span className="qm-tag qm-tag-cat">{q.category}</span>}
                                 </div>
                               </div>
@@ -358,24 +359,18 @@ function RoundEditorModal({ editing, init, questions, categories, onSave, onClos
                                 className={`dnd-item dnd-item-selected ${snapshot.isDragging ? 'dragging' : ''}`}
                               >
                                 <span className="dnd-order">{i + 1}</span>
-                                <div className="dnd-item-text">{q.text}</div>
-                                {(q.question_format || 'standard') === 'both' ? (
-                                  <div className="rq-format-toggle" onClick={e => e.stopPropagation()}>
-                                    <button
-                                      type="button"
-                                      className={`rq-toggle-btn ${(formatOverrides[q.id] || 'standard') === 'standard' ? 'active-std' : ''}`}
-                                      onClick={() => toggleFormat(q.id, 'standard')}
-                                    >STD</button>
-                                    <button
-                                      type="button"
-                                      className={`rq-toggle-btn ${(formatOverrides[q.id] || 'standard') === 'multichoice' ? 'active-mcq' : ''}`}
-                                      onClick={() => toggleFormat(q.id, 'multichoice')}
-                                    >MCQ</button>
+                                <div className="dnd-item-text">
+                                  {q.text}
+                                  {effMode(q) === 'both' && <span className="rq-both-label" title="Shown as text + multiple-choice">BOTH</span>}
+                                </div>
+                                {hasOpt(q) ? (
+                                  <div className="rq-format-toggle" onClick={e => e.stopPropagation()} title="How this question is shown to teams in this round">
+                                    <button type="button" className={`rq-toggle-btn ${effMode(q) === 'standard' ? 'active-std' : ''}`} onClick={() => toggleFormat(q.id, 'standard')}>Text</button>
+                                    <button type="button" className={`rq-toggle-btn ${effMode(q) === 'multichoice' ? 'active-mcq' : ''}`} onClick={() => toggleFormat(q.id, 'multichoice')}>MCQ</button>
+                                    <button type="button" className={`rq-toggle-btn ${effMode(q) === 'both' ? 'active-both' : ''}`} onClick={() => toggleFormat(q.id, 'both')}>Both</button>
                                   </div>
                                 ) : (
-                                  <span className={`rq-format-badge rq-format-badge-${q.question_format || 'standard'}`}>
-                                    {(q.question_format || 'standard') === 'multichoice' ? 'MCQ' : 'STD'}
-                                  </span>
+                                  <span className="rq-format-badge rq-format-badge-standard">Text</span>
                                 )}
                               </div>
                             )}

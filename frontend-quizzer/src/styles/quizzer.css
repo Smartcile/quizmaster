@@ -1024,6 +1024,29 @@ body {
 }
 .answer-review-total strong { color: var(--neon-green); font-size: 1.2rem; }
 
+/* "View my answers" button on the scoreboard + popup */
+.sb-view-answers {
+  margin: 14px auto 0;
+  display: block;
+  background: linear-gradient(135deg, var(--neon-purple), var(--neon-magenta));
+  border: none; color: #fff; font-weight: 700; font-family: inherit;
+  padding: 12px 22px; border-radius: var(--radius-sm); cursor: pointer; font-size: 1rem;
+}
+.sb-view-answers:hover { box-shadow: 0 0 16px rgba(184,41,255,0.5); }
+.review-popup {
+  position: relative;
+  width: min(680px, 94vw);
+  max-height: 90vh;
+  overflow-y: auto;
+  background: var(--bg-base, #07091a);
+  border: 1px solid var(--neon-purple);
+  border-radius: var(--radius);
+  padding: 18px;
+}
+.review-popup-close {
+  position: absolute; top: 8px; right: 10px;
+}
+
 /* ===== Per-round scoreboard (overlay on the quizzer) ===== */
 .sb-overlay {
   position: fixed;

@@ -1,4 +1,5 @@
 const db = require('../config/database');
+const crypto = require('crypto');
 
 // ── GitHub CSV question repositories ─────────────────────────────────────────
 // Repos are synced on demand: we resolve the configured repo/branch/path to one
@@ -6,9 +7,37 @@ const db = require('../config/database');
 // parse them, and import the questions with de-duplication + source labelling:
 //   * a brand-new question → inserted with source = 'repo'
 //   * a question whose text already exists as 'local' → relabelled 'both' (L&R)
-//   * one already 'repo' / 'both' → left alone (never duplicated)
+//   * one already 'repo' / 'both' → compared by content hash; a mismatch is
+//     reported as "changed" (and overwritten when ?apply=true).
 
-const norm = (s) => String(s || '').toLowerCase().trim().replace(/\s+/g, ' ');
+// Accent/punctuation-insensitive key for duplicate matching.
+const norm = (s) => String(s || '')
+  .normalize('NFKD').replace(/[̀-ͯ]/g, '')
+  .toLowerCase()
+  .replace(/[–—−-]/g, ' ')
+  .replace(/[^\p{L}\p{N} ]/gu, ' ')
+  .replace(/\s+/g, ' ')
+  .trim()
+  .replace(/^the\s+/, '');
+
+// Tidy text for storage (smart quotes/dashes/ellipsis → ASCII, keep accents).
+const cleanText = (s) => String(s ?? '')
+  .normalize('NFKC')
+  .replace(/[‘’‚‛′]/g, "'")
+  .replace(/[“”„″]/g, '"')
+  .replace(/[–—−]/g, '-')
+  .replace(/…/g, '...')
+  .replace(/ /g, ' ')
+  .trim();
+
+// Content fingerprint used to detect repo-side edits between syncs.
+const contentHash = (q) => crypto.createHash('sha1')
+  .update([
+    cleanText(q.text), cleanText(q.answer),
+    (Array.isArray(q.options) ? q.options.map(cleanText) : []).join(''),
+    String(q.points ?? ''), String(q.type ?? ''), String(q.difficulty ?? '')
+  ].join(''))
+  .digest('hex');
 
 // Parse a GitHub URL into { owner, repo, branch, path }. Accepts:
 //   https://github.com/owner/repo
@@ -87,8 +116,8 @@ function csvToQuestions(text) {
   return rows.slice(1).map(cells => {
     const opts = cell(cells, 'options');
     return {
-      text: textCol === -1 ? '' : (cells[textCol] ?? '').trim(),
-      answer: cell(cells, 'answer'),
+      text: cleanText(textCol === -1 ? '' : (cells[textCol] ?? '')),
+      answer: cleanText(cell(cells, 'answer')),
       type: cell(cells, 'type') || 'text',
       points: parseFloat(cell(cells, 'points')) || 1,
       media_url: cell(cells, 'media_url') || null,
@@ -97,7 +126,7 @@ function csvToQuestions(text) {
       answer_mode: cell(cells, 'answer_mode') || 'text',
       question_format: cell(cells, 'question_format') || 'standard',
       approved: cell(cells, 'approved').toLowerCase() === 'true',
-      options: opts ? opts.split('|').map(o => o.trim()).filter(Boolean) : []
+      options: opts ? opts.split('|').map(o => cleanText(o)).filter(Boolean) : []
     };
   }).filter(q => q.text);
 }
@@ -177,8 +206,11 @@ async function deleteRepo(req, res) {
 }
 
 // POST /api/repos/:id/sync — fetch CSVs and import with de-dup + labelling.
+// ?apply=true (or body.apply) also overwrites locally-stored repo questions
+// whose repo copy has changed; otherwise those are reported as "changed".
 async function syncRepo(req, res) {
-  const QUESTION_FIELDS = 'text, answer, type, media_url, points, tags, category, options, difficulty, answer_mode, approved, question_format, source';
+  const QUESTION_FIELDS = 'text, answer, type, media_url, points, tags, category, options, difficulty, answer_mode, approved, question_format, source, repo_hash';
+  const apply = req.body?.apply === true || req.query.apply === 'true';
   try {
     const repoRow = await db.query('SELECT * FROM question_repos WHERE id = $1', [req.params.id]);
     if (repoRow.rows.length === 0) return res.status(404).json({ error: 'Repository not found' });
@@ -202,15 +234,16 @@ async function syncRepo(req, res) {
     }
 
     // Existing questions indexed by normalised text
-    const existing = await db.query('SELECT id, text, source FROM questions');
+    const existing = await db.query('SELECT id, text, source, repo_hash FROM questions');
     const byText = new Map(existing.rows.map(q => [norm(q.text), q]));
 
-    const summary = { added: 0, relabeled: 0, ignored: 0, files: files.length };
+    const summary = { added: 0, relabeled: 0, ignored: 0, updated: 0, changed: [], files: files.length, applied: apply };
     const client = await db.getClient();
     try {
       await client.query('BEGIN');
       for (const q of parsed) {
         const match = byText.get(norm(q.text));
+        const hash = contentHash(q);
         // Questions carrying MCQ options are flagged multiple choice so the
         // options can't be hidden behind a plain 'text' answer mode. The 'both'
         // mode (quizzer chooses MCQ vs free-text) is preserved as-is.
@@ -218,20 +251,42 @@ async function syncRepo(req, res) {
         const promote = hasOpts && q.answer_mode !== 'both';
         const answerMode = promote ? 'mcq' : q.answer_mode;
         const qFormat = promote ? 'multichoice' : q.question_format;
+        const optsJson = JSON.stringify(q.options || []);
+
         if (!match) {
           await client.query(
             `INSERT INTO questions (${QUESTION_FIELDS})
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'repo')`,
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'repo',$13)`,
             [q.text, q.answer, q.type, q.media_url, q.points, null, q.category,
-             JSON.stringify(q.options || []), q.difficulty, answerMode, q.approved, qFormat]
+             optsJson, q.difficulty, answerMode, q.approved, qFormat, hash]
           );
           summary.added++;
-          // Track so a later CSV in the same sync doesn't re-insert it
-          byText.set(norm(q.text), { id: null, text: q.text, source: 'repo' });
+          byText.set(norm(q.text), { id: null, text: q.text, source: 'repo', repo_hash: hash });
         } else if (match.source === 'local') {
-          await client.query("UPDATE questions SET source = 'both' WHERE id = $1", [match.id]);
-          match.source = 'both';
+          // Link the local question to the repo + record the baseline hash
+          await client.query("UPDATE questions SET source = 'both', repo_hash = $1 WHERE id = $2", [hash, match.id]);
+          match.source = 'both'; match.repo_hash = hash;
           summary.relabeled++;
+        } else if (match.repo_hash && match.repo_hash !== hash) {
+          // Repo copy changed since import
+          if (apply && match.id) {
+            await client.query(
+              `UPDATE questions SET text=$1, answer=$2, type=$3, media_url=$4, points=$5,
+                 category=$6, options=$7, difficulty=$8, answer_mode=$9, question_format=$10, repo_hash=$11
+               WHERE id=$12`,
+              [q.text, q.answer, q.type, q.media_url, q.points, q.category, optsJson,
+               q.difficulty, answerMode, qFormat, hash, match.id]
+            );
+            match.repo_hash = hash;
+            summary.updated++;
+          } else {
+            summary.changed.push({ id: match.id, text: q.text });
+          }
+        } else if (!match.repo_hash && match.id) {
+          // Existing repo/both question with no baseline yet — record one
+          await client.query('UPDATE questions SET repo_hash = $1 WHERE id = $2', [hash, match.id]);
+          match.repo_hash = hash;
+          summary.ignored++;
         } else {
           summary.ignored++;
         }

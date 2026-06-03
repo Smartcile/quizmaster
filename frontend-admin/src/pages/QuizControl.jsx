@@ -16,6 +16,7 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd, isTest = fa
   const [portalConfig, setPortalConfig] = useState(null);
   const [scoreboardVis, setScoreboardVis] = useState(EMPTY_VIS);
   const [filesOpen, setFilesOpen] = useState(false);
+  const [showPreviews, setShowPreviews] = useState(false); // live-quiz embedded previews
   const [sessionCode, setSessionCode] = useState(null); // per-session join code
   const socket = useWebSocket();
   const slides = useMemo(() => buildSlides(quiz), [quiz]);
@@ -322,6 +323,25 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd, isTest = fa
           >
             🖥 Display / Slideshow
           </a>
+          {!isTest && (
+            <button type="button" className="portal-link-btn" onClick={() => setShowPreviews(v => !v)}>
+              {showPreviews ? '🙈 Hide previews' : '👁 Show previews'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {!isTest && showPreviews && (sessionStatus === 'lobby' || sessionStatus === 'active') && (
+        <div className="panel live-preview-panel">
+          <PreviewPanes
+            sessionId={sessionId}
+            quizCode={quiz.code}
+            quizzerBase={quizzerBase}
+            slideshowBase={slideshowBase}
+            teams={teams.map(t => ({ name: t.name, size: t.size }))}
+            surfaces={{ slideshow: true, quizzer: true }}
+            defaultMode={teams.length ? 'mirror' : 'interactive'}
+          />
         </div>
       )}
 
@@ -594,11 +614,61 @@ function MiniSlide({ slide }) {
   }
 }
 
+// ── Reusable embedded preview panes (slideshow + quizzer, stacked) ────────────
+// Used by the live-quiz preview toggle and the Test harness. The quizzer pane
+// can mirror a chosen team (dropdown) or be interactive (you join yourself).
+function PreviewPanes({ sessionId, quizCode, quizzerBase, slideshowBase, teams = [], surfaces = { slideshow: true, quizzer: true }, defaultMode = 'mirror' }) {
+  const [mode, setMode] = useState(defaultMode);
+  const [teamName, setTeamName] = useState(teams[0]?.name || '');
+
+  useEffect(() => {
+    if (teams.length && !teams.some(t => t.name === teamName)) setTeamName(teams[0].name);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teams.map(t => t.name).join('|')]);
+
+  const slideshowUrl = `${slideshowBase}/${quizCode}?session=${sessionId}`;
+  const sel = teams.find(t => t.name === teamName) || teams[0];
+  const quizzerUrl = (mode === 'mirror' && sel)
+    ? `${quizzerBase}/${quizCode}?session=${sessionId}&team=${encodeURIComponent(sel.name)}&size=${sel.size || 5}&autojoin=1`
+    : `${quizzerBase}/${quizCode}?session=${sessionId}`;
+
+  return (
+    <div className="preview-panes">
+      {surfaces.slideshow && (
+        <div className="preview-pane">
+          <div className="preview-pane-head">
+            <span>🖥 Slideshow</span>
+            <a href={slideshowUrl} target="_blank" rel="noreferrer" className="preview-pop" title="Open in new tab">↗</a>
+          </div>
+          <iframe title="Slideshow preview" src={slideshowUrl} className="preview-iframe" />
+        </div>
+      )}
+      {surfaces.quizzer && (
+        <div className="preview-pane">
+          <div className="preview-pane-head">
+            <span>📱 Quizzer</span>
+            <div className="preview-qmode">
+              <button type="button" className={mode === 'mirror' ? 'on' : ''} onClick={() => setMode('mirror')}>Mirror</button>
+              <button type="button" className={mode === 'interactive' ? 'on' : ''} onClick={() => setMode('interactive')}>Interactive</button>
+            </div>
+            {mode === 'mirror' && teams.length > 0 && (
+              <select className="preview-team-sel" value={teamName} onChange={(e) => setTeamName(e.target.value)} title="View this team's screen">
+                {teams.map(t => <option key={t.name} value={t.name}>{t.name}</option>)}
+              </select>
+            )}
+            <a href={quizzerUrl} target="_blank" rel="noreferrer" className="preview-pop" title="Open in new tab">↗</a>
+          </div>
+          <iframe key={`${mode}:${teamName}`} title="Quizzer preview" src={quizzerUrl} className="preview-iframe" />
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Test harness: bots + embedded preview panes (test mode only) ───────────────
 function TestHarness({ sessionId, quiz, slides, currentSlide, sessionStatus, socket, quizzerBase, slideshowBase, onTeamsChanged }) {
   const [settings]            = useState(getTestSettings);
   const [bots, setBots]       = useState([]);
-  const [quizzerMode, setQuizzerMode] = useState(settings.quizzerMode);
   const createdRef       = useRef(false);
   const answeredRef      = useRef(new Set());   // `${botId}:${questionId}`
   const whoamiLockedRef  = useRef(new Set());   // botId
@@ -661,12 +731,6 @@ function TestHarness({ sessionId, quiz, slides, currentSlide, sessionStatus, soc
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentSlide, bots, socket]);
 
-  const slideshowUrl = `${slideshowBase}/${quiz.code}?session=${sessionId}`;
-  const mirrorBot = settings.bots[0];
-  const quizzerUrl = (quizzerMode === 'mirror' && mirrorBot)
-    ? `${quizzerBase}/${quiz.code}?session=${sessionId}&team=${encodeURIComponent(mirrorBot.name)}&size=${mirrorBot.size}&autojoin=1`
-    : `${quizzerBase}/${quiz.code}?session=${sessionId}`;
-
   return (
     <aside className="test-harness">
       <div className="test-harness-head">
@@ -674,29 +738,15 @@ function TestHarness({ sessionId, quiz, slides, currentSlide, sessionStatus, soc
         <span className="test-bot-status">{bots.length} bot{bots.length !== 1 ? 's' : ''} · {sessionStatus}</span>
       </div>
 
-      <div className={`test-panes test-panes-${settings.layout}`}>
-        {settings.surfaces.slideshow && (
-          <div className="test-pane">
-            <div className="test-pane-head"><span>🖥 Slideshow</span>
-              <a href={slideshowUrl} target="_blank" rel="noreferrer" className="test-pane-pop" title="Open in new tab">↗</a>
-            </div>
-            <iframe title="Slideshow preview" src={slideshowUrl} className="test-iframe" />
-          </div>
-        )}
-        {settings.surfaces.quizzer && (
-          <div className="test-pane">
-            <div className="test-pane-head">
-              <span>📱 Quizzer</span>
-              <div className="test-qmode">
-                <button type="button" className={quizzerMode === 'mirror' ? 'on' : ''} onClick={() => setQuizzerMode('mirror')}>Mirror bot</button>
-                <button type="button" className={quizzerMode === 'interactive' ? 'on' : ''} onClick={() => setQuizzerMode('interactive')}>Interactive</button>
-              </div>
-              <a href={quizzerUrl} target="_blank" rel="noreferrer" className="test-pane-pop" title="Open in new tab">↗</a>
-            </div>
-            <iframe key={quizzerMode} title="Quizzer preview" src={quizzerUrl} className="test-iframe" />
-          </div>
-        )}
-      </div>
+      <PreviewPanes
+        sessionId={sessionId}
+        quizCode={quiz.code}
+        quizzerBase={quizzerBase}
+        slideshowBase={slideshowBase}
+        teams={settings.bots.map(b => ({ name: b.name, size: b.size }))}
+        surfaces={settings.surfaces}
+        defaultMode={settings.quizzerMode}
+      />
 
       <div className="test-bots-list">
         {bots.length === 0

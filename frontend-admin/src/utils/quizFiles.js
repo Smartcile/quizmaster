@@ -96,39 +96,11 @@ export function downloadQuestionsAnswers(quiz) {
   const whoami = getWhoami(quiz);
   if (rounds.length === 0) { doc.text('This quiz has no rounds.', M, M); doc.save(`${safe(quiz.code)}-questions-answers.pdf`); return; }
 
+  // One page per round — auto-shrink the text so a round never spills onto a
+  // second page.
   rounds.forEach((round, ri) => {
     if (ri > 0) doc.addPage();
-    let y = M;
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(16);
-    doc.text(`${quiz.name || 'Quiz'} - Answers`, M, y); y += 20;
-    doc.setFontSize(13); doc.setFont('helvetica', 'normal');
-    doc.text(`Round ${ri + 1}: ${round.name || ''}`, M, y); y += 6;
-    doc.setDrawColor(150); doc.line(M, y, PAGE_W - M, y); y += 20;
-
-    questionsOf(round).forEach((q, qi) => {
-      if (y > PAGE_H - 80) { doc.addPage(); y = M; }
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(0);
-      const ql = doc.splitTextToSize(`${qi + 1}. ${q.text || ''}   (${q.points ?? 1} pt)`, CONTENT_W);
-      doc.text(ql, M, y); y += ql.length * 14 + 2;
-
-      if (hasOptions(q)) {
-        doc.setFontSize(10);
-        q.options.filter(o => String(o).trim()).forEach((opt, oi) => {
-          if (y > PAGE_H - 50) { doc.addPage(); y = M; }
-          const correct = norm(opt) === norm(q.answer);
-          if (correct) { doc.setFillColor(255, 241, 118); doc.rect(M + 14, y - 10, CONTENT_W - 28, 14, 'F'); doc.setFont('helvetica', 'bold'); }
-          else doc.setFont('helvetica', 'normal');
-          const line = `${String.fromCharCode(65 + oi)}. ${opt}${correct ? '   (correct)' : ''}`;
-          doc.text(doc.splitTextToSize(line, CONTENT_W - 36), M + 18, y); y += 15;
-        });
-        y += 2;
-      }
-
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(0, 120, 0);
-      const al = doc.splitTextToSize(`Answer: ${q.answer || ''}`, CONTENT_W - 14);
-      doc.text(al, M + 14, y); y += al.length * 13 + 12;
-      doc.setTextColor(0);
-    });
+    renderRoundQA(doc, quiz, round, ri);
   });
 
   if (whoami) {
@@ -147,28 +119,84 @@ export function downloadQuestionsAnswers(quiz) {
   doc.save(`${safe(quiz.code)}-questions-answers.pdf`);
 }
 
-// ── 3) Marking form (per-round grid, 12 team rows) ────────────────────────────
+// Render one round's Q&A onto exactly one page, shrinking the text to fit.
+function renderRoundQA(doc, quiz, round, ri) {
+  const qs = questionsOf(round);
+  const B = { title: 11, opt: 10, ans: 10, lhTitle: 14, lhOpt: 14, lhAns: 13, qGap: 12 };
+  const headerH = 60;
+  const avail = PAGE_H - headerH - M;
+
+  // Estimate the content height at full size (wrap widths are fixed)
+  const estimate = () => {
+    let h = 0;
+    qs.forEach((q, qi) => {
+      doc.setFontSize(B.title);
+      h += doc.splitTextToSize(`${qi + 1}. ${q.text || ''}   (${q.points ?? 1} pt)`, CONTENT_W).length * B.lhTitle + 2;
+      if (hasOptions(q)) {
+        doc.setFontSize(B.opt);
+        q.options.filter(o => String(o).trim()).forEach((opt, oi) => {
+          h += doc.splitTextToSize(`${String.fromCharCode(65 + oi)}. ${opt}`, CONTENT_W - 36).length * B.lhOpt;
+        });
+        h += 2;
+      }
+      doc.setFontSize(B.ans);
+      h += doc.splitTextToSize(`Answer: ${q.answer || ''}`, CONTENT_W - 14).length * B.lhAns + B.qGap;
+    });
+    return h;
+  };
+  const needed = estimate();
+  const s = needed > avail ? Math.max(0.5, avail / needed) : 1;
+
+  let y = M;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.setTextColor(0);
+  doc.text(`${quiz.name || 'Quiz'} - Answers`, M, y); y += 20;
+  doc.setFontSize(13); doc.setFont('helvetica', 'normal');
+  doc.text(`Round ${ri + 1}: ${round.name || ''}`, M, y); y += 6;
+  doc.setDrawColor(150); doc.line(M, y, PAGE_W - M, y); y += 16;
+
+  qs.forEach((q, qi) => {
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(B.title * s); doc.setTextColor(0);
+    const ql = doc.splitTextToSize(`${qi + 1}. ${q.text || ''}   (${q.points ?? 1} pt)`, CONTENT_W);
+    doc.text(ql, M, y); y += ql.length * B.lhTitle * s + 2;
+
+    if (hasOptions(q)) {
+      doc.setFontSize(B.opt * s);
+      q.options.filter(o => String(o).trim()).forEach((opt, oi) => {
+        const correct = norm(opt) === norm(q.answer);
+        const line = `${String.fromCharCode(65 + oi)}. ${opt}${correct ? '   (correct)' : ''}`;
+        const ol = doc.splitTextToSize(line, CONTENT_W - 36);
+        if (correct) { doc.setFillColor(255, 241, 118); doc.rect(M + 14, y - 9 * s, CONTENT_W - 28, B.lhOpt * s * ol.length, 'F'); doc.setFont('helvetica', 'bold'); }
+        else doc.setFont('helvetica', 'normal');
+        doc.text(ol, M + 18, y); y += ol.length * B.lhOpt * s;
+      });
+      y += 2;
+    }
+
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(B.ans * s); doc.setTextColor(0, 120, 0);
+    const al = doc.splitTextToSize(`Answer: ${q.answer || ''}`, CONTENT_W - 14);
+    doc.text(al, M + 14, y); y += al.length * B.lhAns * s + B.qGap * s;
+    doc.setTextColor(0);
+  });
+}
+
+// ── 3) Marking form (one whole-quiz grid: 12 teams × per-round columns) ───────
 export function downloadMarkingForm(quiz) {
   const doc = new jsPDF({ unit: 'pt', format: 'a4', orientation: 'landscape' });
   const rounds = getRounds(quiz);
   const TEAMS = 12;
   if (rounds.length === 0) { doc.text('This quiz has no rounds.', 30, 30); doc.save(`${safe(quiz.code)}-marking-form.pdf`); return; }
 
-  rounds.forEach((round, ri) => {
-    if (ri > 0) doc.addPage();
-    const qs = questionsOf(round);
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(14); doc.setTextColor(0);
-    doc.text(`${quiz.name || 'Quiz'} - Marking - Round ${ri + 1}: ${round.name || ''}`, 30, 30);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(14); doc.setTextColor(0);
+  doc.text(`${quiz.name || 'Quiz'} - Marking sheet`, 30, 30);
 
-    const head = [['Team', ...qs.map((_, i) => `Q${i + 1}`), 'Total']];
-    const body = Array.from({ length: TEAMS }, () => ['', ...qs.map(() => ''), '']);
-    autoTable(doc, {
-      head, body, startY: 44,
-      theme: 'grid',
-      styles: { minCellHeight: 26, fontSize: 9, halign: 'center', valign: 'middle', lineColor: [120, 120, 140] },
-      headStyles: { fillColor: [40, 40, 64], textColor: [255, 255, 255] },
-      columnStyles: { 0: { halign: 'left', cellWidth: 130 } }
-    });
+  const head = [['Team', ...rounds.map((r, i) => r.name || `Round ${i + 1}`), 'Total']];
+  const body = Array.from({ length: TEAMS }, () => ['', ...rounds.map(() => ''), '']);
+  autoTable(doc, {
+    head, body, startY: 44,
+    theme: 'grid',
+    styles: { minCellHeight: 30, fontSize: 10, halign: 'center', valign: 'middle', lineColor: [120, 120, 140] },
+    headStyles: { fillColor: [40, 40, 64], textColor: [255, 255, 255] },
+    columnStyles: { 0: { halign: 'left', cellWidth: 150 } }
   });
   doc.save(`${safe(quiz.code)}-marking-form.pdf`);
 }

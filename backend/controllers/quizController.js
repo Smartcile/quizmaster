@@ -33,7 +33,12 @@ async function loadQuizWithRoundsAndWidgets(id) {
           'id', q.id, 'text', q.text, 'type', q.type, 'answer', q.answer,
           'media_url', q.media_url, 'points', q.points, 'category', q.category,
           'options', q.options, 'difficulty', q.difficulty,
-          'answer_mode', q.answer_mode, 'order', rq."order"
+          'answer_mode', CASE rq.question_format_override
+            WHEN 'standard'    THEN 'text'
+            WHEN 'multichoice' THEN 'mcq'
+            WHEN 'both'        THEN 'both'
+            ELSE q.answer_mode END,
+          'order', rq."order"
         ) ORDER BY rq."order")
         FROM round_questions rq
         JOIN questions q ON rq.question_id = q.id
