@@ -34,8 +34,16 @@ function App() {
   const [error, setError] = useState(null);
   const [scoreboardVisible, setScoreboardVisible] = useState(false);
   const [ctx] = useState(getUrlContext);
+  const [reviewOpen, setReviewOpen] = useState(false);
   const autoJoinedRef = useRef(false);
   const socket = useWebSocket();
+
+  // Does this quiz have an Answer Review widget configured to show on the scoreboard?
+  const reviewOnScoreboard = useMemo(() => {
+    const items = quiz?.items || [];
+    return items.some(i => i.kind === 'widget' && i.type === 'review'
+      && i.data && typeof i.data !== 'string' && i.data.showOnScoreboard);
+  }, [quiz]);
 
   // ── Restore team identity from sessionStorage after page refresh ──────────
   useEffect(() => {
@@ -218,6 +226,20 @@ function App() {
       {scoreboardVisible && sessionId && (
         <div className="sb-overlay">
           <LiveScoreboard sessionId={sessionId} socket={socket} title="Scoreboard" />
+          {reviewOnScoreboard && team && (
+            <button className="sb-view-answers" onClick={() => setReviewOpen(true)}>
+              📝 View my answers
+            </button>
+          )}
+        </div>
+      )}
+
+      {reviewOpen && team && (
+        <div className="modal-overlay" onClick={() => setReviewOpen(false)}>
+          <div className="review-popup" onClick={(e) => e.stopPropagation()}>
+            <button className="btn-close review-popup-close" onClick={() => setReviewOpen(false)}>×</button>
+            <ReviewScreen quiz={quiz} team={team} />
+          </div>
         </div>
       )}
     </>

@@ -195,7 +195,7 @@ Key tables and their purposes:
 | `slide_masters` | Visual themes: background, text styles, placeholder positions, and per-slide-type content `templates` JSONB |
 | `slides` | Per-quiz Fabric.js canvas slides (intro/custom types) linked to a master for styling |
 | `media_files` | Registry of uploaded media files. Fields: `filename` (unique), `original_name`, `mime_type`, `size_bytes`, `url`, `uploaded_at`. Populated by `POST /api/upload/media` via `ON CONFLICT DO NOTHING`. |
-| `question_repos` | Configured GitHub repos that hold question CSVs. Fields: `label`, `url`, `owner`, `repo`, `branch`, `path`, `last_synced_at`, `last_count`. Synced on demand from the Settings page. |
+| `question_repos` | Configured GitHub repos that hold question CSVs. Fields: `label`, `url`, `owner`, `repo`, `branch`, `path`, `last_synced_at`, `last_count`. Synced on demand from the Settings page. Repo-sourced questions carry `questions.repo_hash` (content fingerprint) so a re-sync can detect repo-side edits. |
 | `whoami_guesses` | Per-team lock-in for a quiz's single "Who Am I?" (a quiz has no real questions row for it). Fields: `team_id` (UNIQUE), `guess_text`, `locked_clue_index`, `points_possible`, `points_awarded`, `auto_marked`, `locked`. The Who-Am-I config itself lives in a `quiz_widgets` row of `type='whoami'`. |
 
 ---
@@ -205,7 +205,7 @@ Key tables and their purposes:
 | Page | Nav label | Purpose |
 |---|---|---|
 | `Dashboard.jsx` | Dashboard | Start/manage sessions, live session status |
-| `QuestionManager.jsx` | Questions | Question bank CRUD, category filter, difficulty, CSV export/import (duplicate-aware), category manager. A **Kind** selector morphs the editor into a **Who/What Am I?** authoring layout (numbered clues + shared answer). |
+| `QuestionManager.jsx` | Questions | Question bank CRUD, category filter, difficulty, CSV export/import (duplicate-aware), category manager. A **Kind** selector morphs the editor into a **Who/What Am I?** authoring layout (numbered clues + shared answer). A **📁 Select / upload media** button opens the shared `MediaPicker`. (The legacy per-question "Format" field/filter has been removed — answer mode is set per-round in the Round builder.) |
 | `RoundBuilder.jsx` | Rounds | Assemble questions into rounds, set round colour. The "Available Questions" picker in the create/edit modal filters by the same params as the Questions page — search matches **text OR answer**, plus dropdowns for category, difficulty, media type, answer mode, question format, and approval status (extra filters sit in a second `.dnd-filters-extra` row beneath search+category). |
 | `QuizBuilder.jsx` | Quizzes | Combine rounds + widgets into a quiz, pick master theme, enable team size handicap scoring. The running-order panel holds rounds/widgets; a separate **bottom section** attaches one **Who/What Am I?** (gear picker, references a Question-Builder set by id — not editable here). Each saved-quiz card has a **⬇ Files** button (offline PDFs + PPTX). |
 | `QuizControl.jsx` | Control | Live slide navigation, lock/unlock answers, lifecycle buttons, portal quick-links (lobby + active). In **Test Quiz** mode it also renders a "Quiz Testing" banner, embedded slideshow + quizzer preview iframes, and a bot engine (`TestHarness`). |
@@ -307,7 +307,7 @@ Every surface that needs to **display** a portal address reads it from the publi
 ```
 
 - **Admin `QuizControl.jsx`** — the "📱 Quizzer Portal" + "🖥 Display / Slideshow" buttons (shown in both lobby and active) and the lobby "Teams visit …" code use `portalConfig.quizzerUrl` / `portalConfig.slideshowUrl`. **Both** portal buttons are path-based deep links with the code baked in (`${quizzerBase}/${code}` and `${slideshowBase}/${code}`), so opening the Display link loads the slideshow already pointed at this quiz.
-- **Slideshow `App.jsx`** — the lobby "Teams join at …" label uses `portalConfig.quizzerUrl`. It also renders a **join QR code** fixed in the bottom-right corner (lobby + active) encoding the quizzer deep link `${quizzerBase}/${code}` via `qrcode.react` (`QRCodeSVG`); the slide counter is moved to the bottom-left to make room. The QR is hidden on the finished screen and sits behind the scoreboard overlay when that's shown.
+- **Slideshow `App.jsx`** — the lobby "Teams join at …" label uses `portalConfig.quizzerUrl`. It also renders a **join QR code** fixed in the bottom-right corner — shown only on the **lobby and the first (intro) slide**, not throughout the show — encoding the quizzer deep link `${quizzerBase}/${code}` via `qrcode.react` (`QRCodeSVG`); the slide counter is moved to the bottom-left to make room.
 
 When an env var is unset, `/api/config` returns `null` for it and the UI falls back to `${protocol}//${hostname}:3003` (quizzer) / `:3002` (slideshow). Trailing slashes on the configured URLs are stripped before use.
 
@@ -344,14 +344,26 @@ A **🧪 Test Quiz** button sits beside **▶ Start Session** on the Dashboard. 
 - **Mirror-pane note**: the mirror quizzer reflects live scoring (green/yellow/red glows) for the bot, but since the bot's answers are submitted from the admin socket (not the iframe), the iframe won't show the bot's typed answer text. Use Interactive mode to see the full input/reveal flow.
 
 ### Answer Review plugin page + score visibility
-- **Answer Review widget** (`type='review'`, added in QuizBuilder like scoreboard/rules/custom): an end-of-quiz page where each team sees **all their own answers grouped by round, with the score awarded for each** (green/yellow/red per 1/0.5/0, plus a round total). Rendered specially on the quizzer by `AnswerReviewView` in `QuizParticipant.jsx`; it's a normal widget in `buildSlides` (no buildSlides change). Drop it last in the quiz order. The slideshow shows it as a generic widget ("review on your device").
+- **Answer Review widget** (`type='review'`, added in QuizBuilder like scoreboard/rules/custom): an end-of-quiz page where each team sees **all their own answers grouped by round, with the score awarded for each** (green/yellow/red per 1/0.5/0, plus a round total). Rendered specially on the quizzer by `AnswerReviewView` in `QuizParticipant.jsx`; it's a normal widget in `buildSlides` (no buildSlides change). Drop it last in the quiz order. On the **slideshow** the review slide renders as the **scoreboard** (scores), since the review itself is per-device. A widget option **`showOnScoreboard`** adds a **"📝 View my answers"** button to the quizzer's live scoreboard that opens the team's own answers+scores in a popup (`ReviewScreen`).
 - **Score visibility rule**: per-answer scores/correctness appear in exactly two places on the quizzer — the **answer-reveal slides** and the **Answer Review** plugin page. They are deliberately **hidden everywhere a team can still see the question-input view**: the locked `QuestionView` now shows only a neutral "🔒 Answer locked" badge (no score), and the `mark_answers` review never shows scores. So if the host navigates back to a question slide after locking, no score/correctness leaks.
+
+### Media picker
+A reusable **`MediaPicker`** popup (categories-modal styling) lets you browse the media library (`GET /api/media`) or upload a new file (`POST /api/upload/media`) and pick it. Wired into the **Question editor** ("📁 Select / upload media" — sets `media_url` and infers the media `type` from the file's MIME) and the **Quiz Builder widget editor** (custom image). New uploads are auto-selected.
+
+### Repo change detection
+Repo-sourced questions store a `repo_hash` (content fingerprint) on import. `POST /api/repos/:id/sync` recomputes each CSV question's hash and compares: brand-new → inserted (`source='repo'`), text already local → relabelled `both` (and baseline hash recorded), already repo/both with a **different** hash → reported in `summary.changed` (notify-only). Re-syncing with `{ apply: true }` (the Settings "Apply N updates" button) overwrites those local copies with the repo version. CSV text is cleaned on import (smart quotes/dashes/ellipsis → ASCII, NFKC) and matched accent/punctuation-insensitively so special characters no longer create duplicates.
+
+### Per-question answer mode (Round builder)
+The legacy "Format" field is gone from the Question editor and all search filters. Instead, each question row in the **Round builder** has a **Text / MCQ / Both** selector (MCQ/Both offered only when the question has options) stored as `round_questions.question_format_override`; a **BOTH** badge shows when applicable. `loadQuizWithRoundsAndWidgets` maps the override onto the effective `answer_mode` (`standard→text`, `multichoice→mcq`, `both→both`) so the quizzer renders the chosen input style for that round.
+
+### Embedded previews (live + test)
+`PreviewPanes` (slideshow + quizzer iframes, stacked one-per-row) is shown in **Test Quiz** mode (`TestHarness`, with bots) and on **live** quizzes via a **👁 Show previews** toggle on the Control page. The quizzer pane toggles **Mirror ⇄ Interactive** and, in Mirror mode, has a **team dropdown** to watch any joined team's screen (auto-joins as that team via the quizzer `?team=` param).
 
 ### Download Quiz Files (offline fallback)
 A **⬇ Files** button on each Existing Quiz card (QuizBuilder) and a **⬇ Download Quiz Files** button on the Control page open `DownloadFilesModal`, which generates downloads **client-side** (libs: `jspdf` + `jspdf-autotable` + `pptxgenjs`) from the full quiz (fetched by id so rounds → questions/answers are present). Generators live in `utils/quizFiles.js`:
 - **Quizzer Answer Sheet** (PDF) — one page per round, blank answer boxes (tick-boxes for MCQ), team name/size on page 1, a Who-Am-I guess box if present, **no answers**.
-- **Questions & Answers** (PDF) — one page per round, correct MCQ option highlighted, bold answer line; a final Who-Am-I answer+clues page.
-- **Marking Form** (PDF, landscape) — per-round grid via autoTable: `Team | Q1…Qn | Total` with **12 blank team rows**.
+- **Questions & Answers** (PDF) — **exactly one page per round** (text auto-shrinks to fit, never overflows), correct MCQ option highlighted, bold answer line; a final Who-Am-I answer+clues page.
+- **Marking Form** (PDF, landscape) — **one whole-quiz grid** via autoTable: `Team | <round name>… | Total` with **12 blank team rows**.
 - **Quiz Slideshow** (PPTX, `LAYOUT_WIDE`) — one slide per `buildSlides` slide (intro/round_intro/whoami_clue/question+options/mark_answers/answer reveal/widget/end), dark theme; editable in PowerPoint/Keynote/Slides.
 
 ### Control grouped slide thumbnails

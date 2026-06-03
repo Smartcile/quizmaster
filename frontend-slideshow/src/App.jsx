@@ -241,8 +241,11 @@ function App() {
   ).replace(/\/+$/, '');
   const qrCode = sessionCode || quiz?.code;
   const quizzerJoinUrl = qrCode ? `${quizzerBase}/${qrCode}` : null;
-  // Show the join QR once a quiz is loaded, except on the finished screen
-  const showJoinQr = quizzerJoinUrl && (sessionStatus === 'lobby' || sessionStatus === 'active');
+  // Show the join QR only in the lobby and on the first (intro) slide — not
+  // throughout the whole show.
+  const showJoinQr = quizzerJoinUrl && (
+    sessionStatus === 'lobby' || (sessionStatus === 'active' && currentSlide === 0)
+  );
 
   return (
     <>
@@ -426,7 +429,9 @@ function SlideRenderer({ slide, sessionId, socket }) {
 }
 
 function WidgetSlide({ slide, sessionId, socket }) {
-  if (slide.widgetType === 'scoreboard') {
+  // The Answer Review page is per-device (teams review on their phones), so the
+  // big screen shows the scoreboard (scores) for it, same as a scoreboard slide.
+  if (slide.widgetType === 'scoreboard' || slide.widgetType === 'review') {
     return <ScoreboardWidget slide={slide} sessionId={sessionId} socket={socket} />;
   }
 

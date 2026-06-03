@@ -191,11 +191,11 @@ function QuestionRepos({ onError }) {
     }
   };
 
-  const syncRepo = async (id) => {
+  const syncRepo = async (id, apply = false) => {
     setSyncingId(id);
     setResults(prev => ({ ...prev, [id]: null }));
     try {
-      const summary = await api.post(`/repos/${id}/sync`, {});
+      const summary = await api.post(`/repos/${id}/sync`, { apply });
       setResults(prev => ({ ...prev, [id]: summary }));
       setExpandedId(id);
       await load();
@@ -276,7 +276,28 @@ function QuestionRepos({ onError }) {
                         ✓ Synced {result.files} file{result.files !== 1 ? 's' : ''} —
                         {' '}<strong>{result.added}</strong> added,
                         {' '}<strong>{result.relabeled}</strong> labelled L&amp;R,
-                        {' '}<strong>{result.ignored}</strong> already present.
+                        {' '}<strong>{result.ignored}</strong> unchanged
+                        {result.updated ? <>, <strong>{result.updated}</strong> updated</> : null}
+                        {result.changed?.length ? <>, <strong>{result.changed.length}</strong> changed</> : null}.
+
+                        {result.changed?.length > 0 && (
+                          <div className="repo-changed">
+                            <p className="repo-changed-title">
+                              ⚠ {result.changed.length} repo question{result.changed.length !== 1 ? 's' : ''} changed since import:
+                            </p>
+                            <ul className="repo-changed-list">
+                              {result.changed.slice(0, 25).map(c => <li key={c.id}>{c.text}</li>)}
+                              {result.changed.length > 25 && <li>…and {result.changed.length - 25} more</li>}
+                            </ul>
+                            <button
+                              className="btn btn-primary btn-sm"
+                              onClick={() => syncRepo(r.id, true)}
+                              disabled={syncingId === r.id}
+                            >
+                              {syncingId === r.id ? 'Applying…' : `Apply ${result.changed.length} update${result.changed.length !== 1 ? 's' : ''}`}
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

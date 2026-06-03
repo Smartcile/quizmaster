@@ -1,5 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
 import { api } from '../services/api';
+import MediaPicker from '../components/MediaPicker';
+
+// Map an uploaded file's MIME type to a question media type.
+const mimeToType = (mime) =>
+  /^image\//.test(mime) ? 'image' : /^video\//.test(mime) ? 'video' : /^audio\//.test(mime) ? 'audio' : 'image';
 
 const QUESTION_TYPES = [
   { value: 'text', label: 'Text' },
@@ -49,8 +54,28 @@ const EMPTY_FORM = {
   clues: defaultClues()
 };
 
-// Normalise question text for duplicate detection (case/space-insensitive).
-const normText = (s) => String(s || '').toLowerCase().trim().replace(/\s+/g, ' ');
+// Duplicate-detection key: accent/punctuation/quote/dash-insensitive so that
+// "Café — São!" and "Cafe - Sao" are treated as the same question (stops the
+// import making copies when special characters differ).
+const normText = (s) => String(s ?? '')
+  .normalize('NFKD').replace(/[̀-ͯ]/g, '')   // strip diacritics
+  .toLowerCase()
+  .replace(/[–—−-]/g, ' ')              // dashes → space
+  .replace(/[^\p{L}\p{N} ]/gu, ' ')                    // drop other punctuation/quotes
+  .replace(/\s+/g, ' ')
+  .trim()
+  .replace(/^the\s+/, '');
+
+// Tidy text for STORAGE on import: normalise Unicode + convert smart quotes,
+// dashes and ellipses to plain ASCII, but KEEP accents (é stays é).
+const cleanText = (s) => String(s ?? '')
+  .normalize('NFKC')
+  .replace(/[‘’‚‛′]/g, "'")
+  .replace(/[“”„″]/g, '"')
+  .replace(/[–—−]/g, '-')
+  .replace(/…/g, '...')
+  .replace(/ /g, ' ')
+  .trim();
 
 // Minimal RFC-4180-ish CSV parser: handles quoted fields, "" escapes, CR/LF.
 function parseCSVRows(text) {
@@ -109,7 +134,6 @@ export default function QuestionManager() {
   const [filterApproved, setFilterApproved] = useState('all');
   const [filterType, setFilterType] = useState('all');
   const [filterAnswerMode, setFilterAnswerMode] = useState('all');
-  const [filterFormat, setFilterFormat] = useState('all');
   const [filterKind, setFilterKind] = useState('all'); // all | standard | whoami
   const [form, setForm] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState(null);
@@ -117,6 +141,7 @@ export default function QuestionManager() {
   const [csvFile, setCsvFile] = useState(null);
   const [csvOpen, setCsvOpen] = useState(false);
   const [catManagerOpen, setCatManagerOpen] = useState(false);
+  const [mediaPickerOpen, setMediaPickerOpen] = useState(false);
   const [managedCategories, setManagedCategories] = useState([]);
   // Duplicate-aware import state
   const [importDupes, setImportDupes]   = useState([]); // [{ question, existingId, existingText }]
@@ -162,7 +187,6 @@ export default function QuestionManager() {
       if (filterDifficulty !== 'all' && (q.difficulty || 'medium') !== filterDifficulty) return false;
       if (filterType !== 'all' && (q.type || 'text') !== filterType) return false;
       if (filterAnswerMode !== 'all' && (q.answer_mode || 'text') !== filterAnswerMode) return false;
-      if (filterFormat !== 'all' && (q.question_format || 'standard') !== filterFormat) return false;
       if (filterApproved === 'approved' && !q.approved) return false;
       if (filterApproved === 'unapproved' && q.approved) return false;
       if (search) {
@@ -171,7 +195,7 @@ export default function QuestionManager() {
       }
       return true;
     });
-  }, [questions, search, filterCategory, filterDifficulty, filterType, filterAnswerMode, filterFormat, filterApproved, filterKind]);
+  }, [questions, search, filterCategory, filterDifficulty, filterType, filterAnswerMode, filterApproved, filterKind]);
 
   const selectQuestion = (q) => {
     setEditingId(q.id);
@@ -272,7 +296,14 @@ export default function QuestionManager() {
   // Split parsed questions into duplicates (already in the bank by text) and new
   // ones. New questions always pass through; duplicates open the resolution
   // modal. If there are no duplicates we import straight away.
-  const startImport = (parsed) => {
+  const startImport = (rawParsed) => {
+    // Clean special characters in the stored text before matching/importing.
+    const parsed = rawParsed.map(q => ({
+      ...q,
+      text: cleanText(q.text),
+      answer: cleanText(q.answer),
+      options: Array.isArray(q.options) ? q.options.map(cleanText) : q.options
+    }));
     const existingByText = new Map(questions.map(q => [normText(q.text), q]));
     const dupes = [], fresh = [];
     parsed.forEach(q => {
@@ -422,10 +453,6 @@ export default function QuestionManager() {
                 <option value="all">All answer modes</option>
                 {ANSWER_MODES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
               </select>
-              <select value={filterFormat} onChange={(e) => setFilterFormat(e.target.value)}>
-                <option value="all">All formats</option>
-                {QUESTION_FORMATS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
-              </select>
               <select value={filterKind} onChange={(e) => setFilterKind(e.target.value)}>
                 <option value="all">All kinds</option>
                 <option value="standard">Standard</option>
@@ -455,7 +482,6 @@ export default function QuestionManager() {
                   ) : (
                     <>
                       <DifficultyBadge value={q.difficulty || 'medium'} />
-                      <FormatBadge value={q.question_format || 'standard'} />
                       <span className={`qm-tag qm-tag-${q.answer_mode || 'text'}`}>{q.answer_mode || 'text'}</span>
                       {q.category && <span className="qm-tag qm-tag-cat">{q.category}</span>}
                       <span className="qm-points">{q.points} pt</span>
@@ -526,16 +552,17 @@ export default function QuestionManager() {
                   </label>
                 </div>
 
+                <div className="qm-media-pick">
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => setMediaPickerOpen(true)}>
+                    📁 Select / upload media
+                  </button>
+                  {form.media_url && <span className="qm-media-current" title={form.media_url}>📎 {form.media_url.split('/').pop()}</span>}
+                </div>
+
                 <div className="form-row form-row-3">
                   <label className="form-label">Answer mode
                     <select value={form.answer_mode} onChange={(e) => setForm({ ...form, answer_mode: e.target.value })}>
                       {ANSWER_MODES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
-                    </select>
-                  </label>
-
-                  <label className="form-label">Format
-                    <select value={form.question_format} onChange={(e) => setForm({ ...form, question_format: e.target.value })}>
-                      {QUESTION_FORMATS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
                     </select>
                   </label>
 
@@ -696,7 +723,7 @@ export default function QuestionManager() {
 
       {csvOpen && (
         <div className="modal-overlay" onClick={() => setCsvOpen(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>Import Questions from CSV</h3>
               <button onClick={() => setCsvOpen(false)} className="btn-close">×</button>
@@ -721,6 +748,16 @@ export default function QuestionManager() {
           onClose={() => setCatManagerOpen(false)}
           onChanged={reloadCategories}
           onError={setError}
+        />
+      )}
+
+      {mediaPickerOpen && (
+        <MediaPicker
+          onPick={(f) => {
+            setForm(prev => ({ ...prev, media_url: f.url, type: mimeToType(f.mime_type) }));
+            setMediaPickerOpen(false);
+          }}
+          onClose={() => setMediaPickerOpen(false)}
         />
       )}
 

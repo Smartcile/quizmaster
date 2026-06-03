@@ -334,6 +334,11 @@ ALTER TABLE questions ADD COLUMN IF NOT EXISTS source VARCHAR(10) NOT NULL DEFAU
 -- quiz via a quiz_widgets row of type='whoami' whose data references its id.
 ALTER TABLE questions ADD COLUMN IF NOT EXISTS is_whoami BOOLEAN NOT NULL DEFAULT FALSE;
 
+-- repo_hash: content fingerprint of a repo-sourced question, set on import. On
+-- the next sync we recompute it from the CSV and compare — a mismatch means the
+-- repo copy changed since we imported it, which the sync summary then reports.
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS repo_hash VARCHAR(64);
+
 -- Any question that carries MCQ options must be flagged as multiple choice so
 -- the options are never hidden behind a plain 'text' answer mode. The 'both'
 -- mode is intentional (the quizzer chooses MCQ vs free-text display) and is
