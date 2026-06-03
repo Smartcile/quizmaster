@@ -5,6 +5,7 @@ const {
   getQuiz,
   getQuizByCode,
   getActiveSession,
+  resolveCode,
   createQuiz,
   startQuiz,
   setSessionStatus,
@@ -21,6 +22,7 @@ const {
 } = require('../controllers/quizController');
 
 router.get('/', getAllQuizzes);
+router.get('/resolve/:code', resolveCode);
 router.get('/by-code/:code', getQuizByCode);
 router.get('/:id', getQuiz);
 router.get('/:id/active-session', getActiveSession);

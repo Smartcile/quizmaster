@@ -113,6 +113,20 @@ ALTER TABLE quiz_sessions ADD COLUMN IF NOT EXISTS locked_round_ids JSONB NOT NU
 -- scoreboard_visibility: per-surface show/hide flags for the live scoreboard,
 -- toggled by the host from the Control page and broadcast to all clients.
 ALTER TABLE quiz_sessions ADD COLUMN IF NOT EXISTS scoreboard_visibility JSONB NOT NULL DEFAULT '{"slideshow":false,"quizzer":false,"admin":false}';
+-- is_test: a "Test Quiz" run driven by bot teams from the admin Control page.
+-- Test sessions are hidden from Quiz History and the dashboard's active-session
+-- lookup, and are auto-deleted on close (cascading teams/answers/scores).
+ALTER TABLE quiz_sessions ADD COLUMN IF NOT EXISTS is_test BOOLEAN NOT NULL DEFAULT FALSE;
+-- code: per-session rotating join code. Generated when a session is started and
+-- kept across restarts; preserved after a session ends so teams can re-enter it
+-- to look up their answer/score history. The quiz's own code still resolves to
+-- the quiz's current live session as a fallback.
+ALTER TABLE quiz_sessions ADD COLUMN IF NOT EXISTS code VARCHAR(8);
+-- Backfill any existing sessions so old/finished ones are also code-addressable.
+UPDATE quiz_sessions
+  SET code = UPPER(SUBSTRING(MD5(id::text || COALESCE(created_at::text, '')) FROM 1 FOR 6))
+  WHERE code IS NULL;
+CREATE INDEX IF NOT EXISTS idx_quiz_sessions_code ON quiz_sessions(code);
 
 -- Create indexes
 CREATE INDEX IF NOT EXISTS idx_questions_type ON questions(type);
@@ -313,6 +327,12 @@ CREATE INDEX IF NOT EXISTS idx_media_files_filename ON media_files(filename);
 -- source: where a question came from — 'local' (added in-app / CSV), 'repo'
 -- (pulled from a configured GitHub repo), or 'both' (exists in both places).
 ALTER TABLE questions ADD COLUMN IF NOT EXISTS source VARCHAR(10) NOT NULL DEFAULT 'local';
+
+-- is_whoami: this "question" is actually a Who/What Am I? set, authored in the
+-- Question Builder. Its clues live in `options` as [{ text, points }] and the
+-- shared answer in `answer`. Excluded from normal round pickers; attached to a
+-- quiz via a quiz_widgets row of type='whoami' whose data references its id.
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS is_whoami BOOLEAN NOT NULL DEFAULT FALSE;
 
 -- Any question that carries MCQ options must be flagged as multiple choice so
 -- the options are never hidden behind a plain 'text' answer mode. The 'both'

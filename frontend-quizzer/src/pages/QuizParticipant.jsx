@@ -43,7 +43,8 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
     return slide;
   }, [viewingQuestionId, slide, questionsInCurrentRound]);
 
-  // Load existing team answers + scores when joining mid-quiz
+  // Load existing team answers + scores when joining mid-quiz so a reconnecting
+  // team resumes exactly where they left off (inputs refilled, scores restored).
   useEffect(() => {
     if (!team?.id) return;
     (async () => {
@@ -56,6 +57,12 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
           });
           setScores(next);
         }
+      } catch {}
+      try {
+        const rows = await api.get(`/teams/${team.id}/answers`);
+        const next = {};
+        (rows || []).forEach(r => { if (r.question_id != null && r.answer_text != null) next[r.question_id] = r.answer_text; });
+        if (Object.keys(next).length) setAnswers(prev => ({ ...next, ...prev }));
       } catch {}
     })();
   }, [team?.id]);
@@ -295,6 +302,16 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
     }
 
     if (slide.type === 'widget') {
+      if (slide.widgetType === 'review') {
+        return (
+          <AnswerReviewView
+            title={slide.data?.title || 'Your Answers'}
+            slides={slides}
+            answers={answers}
+            scores={scores}
+          />
+        );
+      }
       return <WaitingMessage text={`Coming up: ${slide.widgetType}`} />;
     }
 
@@ -418,11 +435,68 @@ function QuestionView({ slide, answer, score, locked, onChange }) {
         />
       )}
 
+      {/* When locked we only show that it's locked — never the score or whether
+          it was correct. Scores are revealed on the answer slides and on the
+          end-of-quiz Answer Review page only. */}
       {locked && (
-        <div className={`score-badge ${score === 1 ? 'score-full' : score === 0.5 ? 'score-half' : score === 0 ? 'score-zero' : 'score-pending'}`}>
-          {score !== undefined ? `${score} pt awarded` : 'Locked — awaiting marking'}
-        </div>
+        <div className="score-badge score-pending">🔒 Answer locked</div>
       )}
+    </div>
+  );
+}
+
+// ── End-of-quiz Answer Review (plugin page) ───────────────────────────────────
+// Lists every answer the team gave across the whole quiz, grouped by round, and
+// — uniquely among the quizzer pages — shows the score awarded for each one.
+export function AnswerReviewView({ title, slides, answers, scores }) {
+  // Group all question slides by round, preserving quiz order.
+  const groups = [];
+  let cur = null;
+  for (const s of slides) {
+    if (s.type !== 'question') continue;
+    if (!cur || cur.roundId !== s.roundId) {
+      cur = { roundId: s.roundId, roundName: s.roundName, questions: [] };
+      groups.push(cur);
+    }
+    cur.questions.push(s);
+  }
+
+  const scoreClass = (sc) =>
+    sc === 0 ? 'answer-wrong' : sc === 0.5 ? 'answer-half' : sc === 1 ? 'answer-correct' : '';
+  const scorePill = (sc) =>
+    sc === undefined ? null : `${sc} pt${sc !== 1 ? 's' : ''}`;
+
+  let total = 0;
+  for (const k in scores) total += Number(scores[k]) || 0;
+
+  return (
+    <div className="answer-review">
+      <h2 className="answer-review-title">{title}</h2>
+      <p className="answer-review-sub">Your answers and scores from tonight's quiz.</p>
+
+      {groups.map(g => (
+        <div key={g.roundId} className="answer-review-round">
+          <p className="mark-label">{g.roundName}</p>
+          <div className="mark-review-list">
+            {g.questions.map(q => {
+              const ans = answers[q.questionId];
+              const sc  = scores[q.questionId];
+              return (
+                <div key={q.questionId} className={`review-result-item ${scoreClass(sc)}`}>
+                  <span className="mark-review-q">Q{q.questionNumber}</span>
+                  <span className="mark-review-text">{q.text}</span>
+                  <span className="mark-review-ans">{ans || '(no answer)'}</span>
+                  <span className={`review-result-pts ${sc === 1 ? 'full' : sc === 0.5 ? 'half' : sc === 0 ? 'zero' : 'pending'}`}>
+                    {scorePill(sc) ?? '—'}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+
+      <div className="answer-review-total">Round total: <strong>{total}</strong> pt{total !== 1 ? 's' : ''}</div>
     </div>
   );
 }

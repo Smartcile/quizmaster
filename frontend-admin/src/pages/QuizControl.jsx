@@ -1,18 +1,22 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { buildSlides, slideShortLabel } from '../utils/buildSlides';
 import { api } from '../services/api';
 import LiveScoreboard from '../components/LiveScoreboard';
+import DownloadFilesModal from '../components/DownloadFilesModal';
+import { getTestSettings } from '../utils/testSettings';
 
 const EMPTY_VIS = { slideshow: false, quizzer: false, admin: false };
 
-export default function QuizControl({ sessionId, quiz, onSessionEnd }) {
+export default function QuizControl({ sessionId, quiz, onSessionEnd, isTest = false }) {
   const [currentSlide, setCurrentSlide] = useState(0);
   const [sessionStatus, setSessionStatus] = useState('lobby');
   const [teams, setTeams] = useState([]);
   const [lockedRounds, setLockedRounds] = useState(new Set());
   const [portalConfig, setPortalConfig] = useState(null);
   const [scoreboardVis, setScoreboardVis] = useState(EMPTY_VIS);
+  const [filesOpen, setFilesOpen] = useState(false);
+  const [sessionCode, setSessionCode] = useState(null); // per-session join code
   const socket = useWebSocket();
   const slides = useMemo(() => buildSlides(quiz), [quiz]);
   const teamsCount = teams.length;
@@ -27,11 +31,13 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd }) {
     portalConfig?.slideshowUrl ||
     `${window.location.protocol}//${window.location.hostname}:3002`
   ).replace(/\/+$/, '');
-  // Deep links straight to this quiz with the code pre-filled:
-  //   quizzer  → https://answer.website.com/ABC123
-  //   slideshow → https://show.website.com/ABC123
-  const quizzerJoinUrl   = `${quizzerBase}/${quiz.code}`;
-  const slideshowJoinUrl = `${slideshowBase}/${quiz.code}`;
+  // Deep links straight to this session with the per-session join code baked in
+  // (falls back to the quiz code until the session's code has loaded):
+  //   quizzer  → https://answer.website.com/GHQK7P
+  //   slideshow → https://show.website.com/GHQK7P
+  const joinCode = sessionCode || quiz.code;
+  const quizzerJoinUrl   = `${quizzerBase}/${joinCode}`;
+  const slideshowJoinUrl = `${slideshowBase}/${joinCode}`;
 
   // ── Load portal URL config once ──────────────────────────────────────────
   useEffect(() => {
@@ -44,6 +50,7 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd }) {
     api.get(`/quizzes/sessions/${sessionId}`).then(s => {
       setSessionStatus(s.status);
       setCurrentSlide(s.current_slide_index || 0);
+      setSessionCode(s.code || null);
       const locked = Array.isArray(s.locked_round_ids) ? s.locked_round_ids : [];
       setLockedRounds(new Set(locked));
       if (s.scoreboard_visibility) setScoreboardVis({ ...EMPTY_VIS, ...s.scoreboard_visibility });
@@ -123,6 +130,8 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd }) {
     };
   }, [sessionId, socket]);
 
+  const reloadTeams = () => api.get(`/teams/session/${sessionId}`).then(setTeams).catch(() => {});
+
   // ── Toggle scoreboard visibility on a surface (persists + broadcasts) ──────
   const toggleScoreboard = async (surface) => {
     const next = { ...scoreboardVis, [surface]: !scoreboardVis[surface] };
@@ -197,12 +206,22 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd }) {
   };
 
   const closeSession = async () => {
-    if (!confirm('Close this session? Teams will be disconnected and the session will be ended.')) return;
+    const autoClean = isTest && getTestSettings().autoCleanTest;
+    const msg = isTest
+      ? (autoClean
+          ? 'Close this test? The test session and its bot teams/answers will be deleted.'
+          : 'Close this test session?')
+      : 'Close this session? Teams will be disconnected and the session will be ended.';
+    if (!confirm(msg)) return;
     try {
       await api.put(`/quizzes/sessions/${sessionId}/status`, { status: 'finished' });
+      if (autoClean) {
+        // Test runs leave no trace: remove the session (cascades teams/answers/scores)
+        await api.delete(`/quizzes/sessions/${sessionId}`);
+      }
     } catch (err) {
       // Surface but still return to dashboard
-      console.error('Failed to set finished:', err);
+      console.error('Failed to close session:', err);
     }
     if (onSessionEnd) onSessionEnd();
   };
@@ -220,12 +239,20 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd }) {
   const next    = slides[currentSlide + 1];
 
   return (
-    <div className="quiz-control">
+    <div className={`quiz-control ${isTest ? 'quiz-control-test' : ''}`}>
+      {isTest && (
+        <div className="test-banner">
+          🧪 <strong>Quiz Testing</strong> — bot teams auto-answer as you advance the slides.
+          This run is hidden from History{getTestSettings().autoCleanTest ? ' and deleted when you close it' : ''}.
+        </div>
+      )}
+      <div className={isTest ? 'test-layout' : undefined}>
+        <div className={isTest ? 'test-controls-col' : undefined}>
       <div className="control-header">
         <div>
           <h2>{quiz.name}</h2>
           <p className="control-meta">
-            Code: <strong>{quiz.code}</strong> · Slide {currentSlide + 1}/{slides.length} ·
+            Join code: <strong>{joinCode}</strong> · Slide {currentSlide + 1}/{slides.length} ·
             Teams joined: <strong>{teamsCount}</strong>
           </p>
         </div>
@@ -267,6 +294,13 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd }) {
             <button onClick={onSessionEnd}   className="btn btn-secondary">✕ Close Session</button>
           </>
         )}
+        <button
+          onClick={() => setFilesOpen(true)}
+          className="btn btn-secondary"
+          title="Download offline quiz files (PDFs + slideshow)"
+        >
+          ⬇ Download Quiz Files
+        </button>
       </div>
 
       {(sessionStatus === 'lobby' || sessionStatus === 'active') && (
@@ -353,16 +387,24 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd }) {
 
           <div className="slide-thumbnails">
             <h3>All Slides</h3>
-            <div className="thumbnails">
-              {slides.map((slide, i) => (
-                <button
-                  key={i}
-                  onClick={() => goToSlide(i)}
-                  className={`thumbnail ${i === currentSlide ? 'active' : ''}`}
-                  title={slideShortLabel(slide)}
-                >
-                  {i + 1}
-                </button>
+            <div className="slide-groups">
+              {groupSlidesForControl(slides).map((group) => (
+                <div key={group.key} className="slide-group">
+                  <span className="slide-group-label">{group.label}</span>
+                  <div className="slide-group-thumbs">
+                    {group.slides.map(({ slide, index }) => (
+                      <button
+                        key={index}
+                        onClick={() => goToSlide(index)}
+                        className={`slide-thumb ${index === currentSlide ? 'active' : ''}`}
+                        title={`#${index + 1} · ${slideShortLabel(slide)}`}
+                      >
+                        <MiniSlide slide={slide} />
+                        <span className="slide-thumb-num">{index + 1}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
           </div>
@@ -375,7 +417,7 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd }) {
           <p className="lobby-join-instructions">
             Teams visit{' '}
             <code>{quizzerJoinUrl}</code>{' '}
-            (code <strong>{quiz.code}</strong> is pre-filled). Click <strong>Begin Quiz</strong> when ready.
+            (code <strong>{joinCode}</strong> is pre-filled). Click <strong>Begin Quiz</strong> when ready.
           </p>
 
           <div className="lobby-teams-panel">
@@ -409,6 +451,26 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd }) {
             )}
           </div>
         </div>
+      )}
+        </div>{/* /test-controls-col */}
+
+        {isTest && (
+          <TestHarness
+            sessionId={sessionId}
+            quiz={quiz}
+            slides={slides}
+            currentSlide={currentSlide}
+            sessionStatus={sessionStatus}
+            socket={socket}
+            quizzerBase={quizzerBase}
+            slideshowBase={slideshowBase}
+            onTeamsChanged={reloadTeams}
+          />
+        )}
+      </div>{/* /test-layout */}
+
+      {filesOpen && (
+        <DownloadFilesModal quiz={quiz} onClose={() => setFilesOpen(false)} />
       )}
     </div>
   );
@@ -445,6 +507,8 @@ function SlidePreview({ slide }) {
           <p className="preview-answer">✓ {slide.answer}</p>
         </div>
       );
+    case 'whoami_clue':
+      return <div><h4 style={{ color: '#b829ff' }}>🕵 Who Am I? — Clue {slide.clueIndex + 1}</h4><p>{slide.text}</p><p className="preview-label">{slide.points} pt if locked now</p></div>;
     case 'widget':
       return <div><h4>Widget</h4><p>Type: {slide.widgetType}</p></div>;
     case 'end':
@@ -452,4 +516,236 @@ function SlidePreview({ slide }) {
     default:
       return <p>{slide.type}</p>;
   }
+}
+
+// ── Group the flat slide list into per-module rows for the control thumbnails ──
+// Groups follow quiz order: Intro · Who Am I? #n · each Round (its intro →
+// questions → mark → answers) · each widget · End.
+function groupSlidesForControl(slides) {
+  const groups = [];
+  let cur = null;
+  const push = (key, label, slide, index) => {
+    if (!cur || cur.key !== key) {
+      cur = { key, label, slides: [] };
+      groups.push(cur);
+    }
+    cur.slides.push({ slide, index });
+  };
+
+  slides.forEach((slide, i) => {
+    switch (slide.type) {
+      case 'intro':
+        push('intro', 'Intro', slide, i);
+        break;
+      case 'whoami_clue':
+        push(`whoami-${slide.clueIndex}`, `Who Am I? #${slide.clueIndex + 1}`, slide, i);
+        break;
+      case 'round_intro':
+      case 'question':
+      case 'mark_answers':
+      case 'answer':
+        push(`round-${slide.roundId}`, slide.roundName || slide.title || 'Round', slide, i);
+        break;
+      case 'widget':
+        push(`widget-${i}`, slide.data?.title || labelForWidget(slide.widgetType), slide, i);
+        break;
+      case 'end':
+        push('end', 'End', slide, i);
+        break;
+      default:
+        push(`other-${i}`, slide.type, slide, i);
+    }
+  });
+  return groups;
+}
+
+function labelForWidget(type) {
+  switch (type) {
+    case 'scoreboard': return 'Scoreboard';
+    case 'rules':      return 'Rules';
+    case 'review':     return 'Answer Review';
+    case 'custom':     return 'Custom';
+    default:           return type || 'Widget';
+  }
+}
+
+// Compact in-box preview of a slide for the grouped thumbnails.
+function MiniSlide({ slide }) {
+  if (!slide) return <span className="mini-slide mini-empty">—</span>;
+  switch (slide.type) {
+    case 'intro':
+      return <span className="mini-slide"><span className="mini-icon">🎬</span><span className="mini-text">Title</span></span>;
+    case 'round_intro':
+      return <span className="mini-slide"><span className="mini-icon">🎯</span><span className="mini-text">{slide.title}</span></span>;
+    case 'question':
+      return <span className="mini-slide"><span className="mini-kicker">Q{slide.questionNumber}</span><span className="mini-text">{slide.text}</span></span>;
+    case 'mark_answers':
+      return <span className="mini-slide mini-mark"><span className="mini-icon">✦</span><span className="mini-text">Mark Answers</span></span>;
+    case 'answer':
+      return <span className="mini-slide mini-answer"><span className="mini-kicker">A{slide.questionNumber}</span><span className="mini-text">✓ {slide.answer}</span></span>;
+    case 'whoami_clue':
+      return <span className="mini-slide"><span className="mini-icon">🕵</span><span className="mini-text">Clue {slide.clueIndex + 1}</span></span>;
+    case 'widget':
+      return <span className="mini-slide"><span className="mini-icon">{slide.widgetType === 'scoreboard' ? '🏆' : slide.widgetType === 'review' ? '📝' : slide.widgetType === 'rules' ? '📋' : '🧩'}</span><span className="mini-text">{slide.data?.title || slide.widgetType}</span></span>;
+    case 'end':
+      return <span className="mini-slide"><span className="mini-icon">🏁</span><span className="mini-text">End</span></span>;
+    default:
+      return <span className="mini-slide mini-text">{slide.type}</span>;
+  }
+}
+
+// ── Test harness: bots + embedded preview panes (test mode only) ───────────────
+function TestHarness({ sessionId, quiz, slides, currentSlide, sessionStatus, socket, quizzerBase, slideshowBase, onTeamsChanged }) {
+  const [settings]            = useState(getTestSettings);
+  const [bots, setBots]       = useState([]);
+  const [quizzerMode, setQuizzerMode] = useState(settings.quizzerMode);
+  const createdRef       = useRef(false);
+  const answeredRef      = useRef(new Set());   // `${botId}:${questionId}`
+  const whoamiLockedRef  = useRef(new Set());   // botId
+
+  const { qmap, whoami } = useMemo(() => buildTestMaps(quiz), [quiz]);
+
+  // Create the bot teams once the session exists
+  useEffect(() => {
+    if (!sessionId || createdRef.current) return;
+    createdRef.current = true;
+    (async () => {
+      const created = [];
+      for (const b of settings.bots) {
+        try {
+          const team = await api.post('/teams/join', { sessionId, name: b.name, size: b.size });
+          created.push({ ...team, cfg: b, plan: makeWhoamiPlan(b, whoami) });
+        } catch { /* ignore */ }
+      }
+      setBots(created);
+      if (onTeamsChanged) onTeamsChanged();
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
+
+  // Bots answer as the host advances — questions per accuracy mix, Who-Am-I per plan
+  useEffect(() => {
+    if (!socket || bots.length === 0) return;
+    const slide = slides[currentSlide];
+    if (!slide) return;
+
+    if (slide.type === 'question' && slide.questionId) {
+      const q = qmap.get(slide.questionId);
+      for (const bot of bots) {
+        const key = `${bot.id}:${slide.questionId}`;
+        if (answeredRef.current.has(key)) continue;
+        answeredRef.current.add(key);
+        const roll = Math.random();
+        let answer = null;
+        if (roll < bot.cfg.correct)                      answer = String(q?.answer ?? '');
+        else if (roll < bot.cfg.correct + bot.cfg.wrong) answer = wrongAnswerText(q);
+        // else: skip (leave unanswered → auto-zero on lock)
+        if (answer != null && answer !== '') {
+          socket.emit('submit_answer', {
+            sessionId, teamId: bot.id, questionId: slide.questionId, roundId: slide.roundId, answer
+          });
+        }
+      }
+    }
+
+    if (slide.type === 'whoami_clue' && whoami) {
+      for (const bot of bots) {
+        if (whoamiLockedRef.current.has(bot.id)) continue;
+        const plan = bot.plan;
+        if (!plan || plan.clue !== slide.clueIndex) continue;
+        whoamiLockedRef.current.add(bot.id);
+        const guess = plan.correct ? whoami.answer : '(wrong guess)';
+        api.post('/whoami/lock', { sessionId, teamId: bot.id, clueIndex: slide.clueIndex, guess }).catch(() => {});
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentSlide, bots, socket]);
+
+  const slideshowUrl = `${slideshowBase}/${quiz.code}?session=${sessionId}`;
+  const mirrorBot = settings.bots[0];
+  const quizzerUrl = (quizzerMode === 'mirror' && mirrorBot)
+    ? `${quizzerBase}/${quiz.code}?session=${sessionId}&team=${encodeURIComponent(mirrorBot.name)}&size=${mirrorBot.size}&autojoin=1`
+    : `${quizzerBase}/${quiz.code}?session=${sessionId}`;
+
+  return (
+    <aside className="test-harness">
+      <div className="test-harness-head">
+        <h3>Live Preview</h3>
+        <span className="test-bot-status">{bots.length} bot{bots.length !== 1 ? 's' : ''} · {sessionStatus}</span>
+      </div>
+
+      <div className={`test-panes test-panes-${settings.layout}`}>
+        {settings.surfaces.slideshow && (
+          <div className="test-pane">
+            <div className="test-pane-head"><span>🖥 Slideshow</span>
+              <a href={slideshowUrl} target="_blank" rel="noreferrer" className="test-pane-pop" title="Open in new tab">↗</a>
+            </div>
+            <iframe title="Slideshow preview" src={slideshowUrl} className="test-iframe" />
+          </div>
+        )}
+        {settings.surfaces.quizzer && (
+          <div className="test-pane">
+            <div className="test-pane-head">
+              <span>📱 Quizzer</span>
+              <div className="test-qmode">
+                <button type="button" className={quizzerMode === 'mirror' ? 'on' : ''} onClick={() => setQuizzerMode('mirror')}>Mirror bot</button>
+                <button type="button" className={quizzerMode === 'interactive' ? 'on' : ''} onClick={() => setQuizzerMode('interactive')}>Interactive</button>
+              </div>
+              <a href={quizzerUrl} target="_blank" rel="noreferrer" className="test-pane-pop" title="Open in new tab">↗</a>
+            </div>
+            <iframe key={quizzerMode} title="Quizzer preview" src={quizzerUrl} className="test-iframe" />
+          </div>
+        )}
+      </div>
+
+      <div className="test-bots-list">
+        {bots.length === 0
+          ? <span className="test-bot-chip test-bot-chip-pending">Spawning bots…</span>
+          : bots.map(b => (
+              <span key={b.id} className="test-bot-chip" title={`${Math.round(b.cfg.correct*100)}% correct / ${Math.round(b.cfg.wrong*100)}% wrong`}>
+                {b.name} · {b.size}p
+              </span>
+            ))}
+      </div>
+    </aside>
+  );
+}
+
+// Build a questionId → { answer, options } map + the Who-Am-I config from a quiz.
+function buildTestMaps(quiz) {
+  const qmap = new Map();
+  let whoami = null;
+  const items = quiz?.items || [
+    ...((quiz?.rounds)  || []).map(r => ({ kind: 'round',  ...r })),
+    ...((quiz?.widgets) || []).map(w => ({ kind: 'widget', ...w }))
+  ];
+  for (const it of items) {
+    if (it.kind === 'round') {
+      for (const q of (it.questions || [])) {
+        if (q?.id) qmap.set(q.id, { answer: q.answer, options: q.options || [] });
+      }
+    } else if (it.kind === 'widget' && it.type === 'whoami') {
+      let d = it.data || {};
+      if (typeof d === 'string') { try { d = JSON.parse(d); } catch { d = {}; } }
+      whoami = { answer: d.answer || '', clues: Array.isArray(d.clues) ? d.clues : [] };
+    }
+  }
+  return { qmap, whoami };
+}
+
+function wrongAnswerText(q) {
+  const norm = (s) => String(s ?? '').toLowerCase().trim().replace(/\s+/g, ' ').replace(/^the\s+/, '');
+  const opts = Array.isArray(q?.options) ? q.options.filter(o => String(o).trim()) : [];
+  const wrong = opts.filter(o => norm(o) !== norm(q?.answer));
+  if (wrong.length) return wrong[Math.floor(Math.random() * wrong.length)];
+  return 'Definitely not the answer';
+}
+
+function makeWhoamiPlan(cfg, whoami) {
+  if (!whoami || whoami.clues.length === 0) return null;
+  const n = whoami.clues.length;
+  const r = Math.random();
+  if (r < cfg.correct)              return { clue: Math.floor(Math.random() * n), correct: true };
+  if (r < cfg.correct + cfg.wrong)  return { clue: Math.floor(Math.random() * n), correct: false };
+  return null; // this bot never locks in
 }

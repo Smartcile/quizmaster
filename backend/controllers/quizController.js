@@ -71,6 +71,34 @@ async function loadQuizWithRoundsAndWidgets(id) {
   quiz.rounds  = roundsResult.rows;
   quiz.widgets = widgetsResult.rows;
 
+  // Resolve a referenced Who/What Am I set. The quiz_widgets row stores only
+  // { whoamiId }; buildSlides + the lock flow need the title/answer/clues, so we
+  // hydrate them from the source question here. Legacy inline configs (data that
+  // already carries clues) are left as-is.
+  const whoamiItem = quiz.items.find(i => i.kind === 'widget' && i.type === 'whoami');
+  if (whoamiItem) {
+    let d = whoamiItem.data;
+    if (typeof d === 'string') { try { d = JSON.parse(d); } catch { d = {}; } }
+    if (d && d.whoamiId && !(Array.isArray(d.clues) && d.clues.length)) {
+      const wq = await db.query(
+        'SELECT text, answer, options FROM questions WHERE id = $1',
+        [d.whoamiId]
+      );
+      if (wq.rows.length) {
+        const opts = wq.rows[0].options;
+        d = {
+          whoamiId: d.whoamiId,
+          title:  wq.rows[0].text || 'Who Am I?',
+          answer: wq.rows[0].answer || '',
+          clues:  Array.isArray(opts) ? opts : []
+        };
+      }
+    }
+    whoamiItem.data = d;
+    const wRow = quiz.widgets.find(w => w.type === 'whoami');
+    if (wRow) wRow.data = d;
+  }
+
   return quiz;
 }
 
@@ -98,14 +126,53 @@ async function getQuizByCode(req, res) {
 async function getActiveSession(req, res) {
   try {
     const { id } = req.params;
+    // Test sessions are excluded so a running test never shows as "LIVE" on the
+    // dashboard. Test iframes target their session by explicit id instead.
     const result = await db.query(
       `SELECT * FROM quiz_sessions
-       WHERE quiz_id = $1 AND status IN ('lobby', 'active')
+       WHERE quiz_id = $1 AND status IN ('lobby', 'active') AND is_test = FALSE
        ORDER BY created_at DESC LIMIT 1`,
       [id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'No active session for this quiz' });
     res.json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
+// ── Resolve a join code → { quiz, session } ───────────────────────────────────
+// GET /api/quizzes/resolve/:code
+// Tries a per-session code first (exact session, any status — so old/finished
+// codes resolve for history lookup). Falls back to the quiz code → that quiz's
+// current live (lobby/active, non-test) session, or null if none is running.
+async function resolveCode(req, res) {
+  try {
+    const code = String(req.params.code || '').toUpperCase();
+    if (!code) return res.status(400).json({ error: 'code required' });
+
+    // 1) Session code (most recent if somehow duplicated)
+    const bySession = await db.query(
+      'SELECT * FROM quiz_sessions WHERE UPPER(code) = $1 ORDER BY created_at DESC LIMIT 1',
+      [code]
+    );
+    if (bySession.rows.length) {
+      const session = bySession.rows[0];
+      const quiz = await loadQuizWithRoundsAndWidgets(session.quiz_id);
+      return res.json({ quiz, session });
+    }
+
+    // 2) Quiz code → current live session (if any)
+    const quizRow = await db.query('SELECT id FROM quizzes WHERE code = $1', [code]);
+    if (!quizRow.rows.length) return res.status(404).json({ error: 'Code not found' });
+    const quiz = await loadQuizWithRoundsAndWidgets(quizRow.rows[0].id);
+    const active = await db.query(
+      `SELECT * FROM quiz_sessions
+       WHERE quiz_id = $1 AND status IN ('lobby', 'active') AND is_test = FALSE
+       ORDER BY created_at DESC LIMIT 1`,
+      [quizRow.rows[0].id]
+    );
+    return res.json({ quiz, session: active.rows[0] || null });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -164,23 +231,37 @@ async function createQuiz(req, res) {
   }
 }
 
+// Generate a session join code that isn't already in use.
+async function uniqueSessionCode(client) {
+  for (let i = 0; i < 25; i++) {
+    const code = generateQuizCode();
+    const r = await client.query('SELECT 1 FROM quiz_sessions WHERE code = $1', [code]);
+    if (!r.rows.length) return code;
+  }
+  return generateQuizCode();
+}
+
 async function startQuiz(req, res) {
   try {
     const { id } = req.params;
+    const isTest = req.body?.isTest === true;
     const client = await db.getClient();
     try {
       await client.query('BEGIN');
       const quizResult = await client.query('SELECT * FROM quizzes WHERE id = $1', [id]);
       if (quizResult.rows.length === 0) throw new Error('Quiz not found');
 
+      // Close any existing live session for this quiz. Test sessions are left
+      // alone so a test run never disturbs (or is disturbed by) a live one.
       await client.query(
-        "UPDATE quiz_sessions SET status = 'finished' WHERE quiz_id = $1 AND status IN ('lobby', 'active')",
+        "UPDATE quiz_sessions SET status = 'finished' WHERE quiz_id = $1 AND status IN ('lobby', 'active') AND is_test = FALSE",
         [id]
       );
 
+      const sessionCode = await uniqueSessionCode(client);
       const sessionResult = await client.query(
-        "INSERT INTO quiz_sessions (quiz_id, status, current_slide_index) VALUES ($1, 'lobby', 0) RETURNING *",
-        [id]
+        "INSERT INTO quiz_sessions (quiz_id, status, current_slide_index, is_test, code) VALUES ($1, 'lobby', 0, $2, $3) RETURNING *",
+        [id, isTest, sessionCode]
       );
 
       await client.query('COMMIT');
@@ -508,7 +589,7 @@ async function getSessionHistory(req, res) {
       FROM quiz_sessions qs
       JOIN quizzes q        ON qs.quiz_id = q.id
       LEFT JOIN teams t     ON t.quiz_session_id = qs.id
-      WHERE qs.status = 'finished'
+      WHERE qs.status = 'finished' AND qs.is_test = FALSE
       GROUP BY qs.id, q.id, q.name, q.code
       ORDER BY qs.created_at DESC
     `);
@@ -568,11 +649,13 @@ async function getSessionResults(req, res) {
 async function deleteSession(req, res) {
   try {
     const { sessionId } = req.params;
-    const check = await db.query('SELECT status FROM quiz_sessions WHERE id = $1', [sessionId]);
+    const check = await db.query('SELECT status, is_test FROM quiz_sessions WHERE id = $1', [sessionId]);
     if (check.rows.length === 0) {
       return res.status(404).json({ error: 'Session not found' });
     }
-    if (check.rows[0].status !== 'finished') {
+    // Test sessions can be removed at any time (auto-clean on close). Real
+    // sessions must be finished first, to protect live results.
+    if (!check.rows[0].is_test && check.rows[0].status !== 'finished') {
       return res.status(409).json({ error: 'Only finished sessions can be deleted. End the session first.' });
     }
     // FK cascades from quiz_sessions → teams → answers/scores/brownie_points
@@ -588,6 +671,7 @@ module.exports = {
   getQuiz,
   getQuizByCode,
   getActiveSession,
+  resolveCode,
   createQuiz,
   startQuiz,
   setSessionStatus,

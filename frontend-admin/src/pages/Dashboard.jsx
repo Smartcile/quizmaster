@@ -42,15 +42,15 @@ export default function Dashboard({ onResume, onQuizStart, activeQuizId }) {
     }
   };
 
-  const startQuiz = async (quizId) => {
+  const startQuiz = async (quizId, isTest = false) => {
     try {
       const [session, quiz] = await Promise.all([
-        api.post(`/quizzes/${quizId}/start`),
+        api.post(`/quizzes/${quizId}/start`, { isTest }),
         api.get(`/quizzes/${quizId}`)
       ]);
-      onQuizStart(session.id, quiz);
+      onQuizStart(session.id, quiz, isTest);
     } catch (err) {
-      setError('Failed to start: ' + err.message);
+      setError(`Failed to ${isTest ? 'start test' : 'start'}: ` + err.message);
     }
   };
 
@@ -169,11 +169,20 @@ export default function Dashboard({ onResume, onQuizStart, activeQuizId }) {
                 <div key={quiz.id} className={`quiz-card ${isLive ? 'is-live' : ''}`}>
                   <h4>{quiz.name}</h4>
                   <p>Code: <strong>{quiz.code}</strong></p>
-                  {isLive ? (
-                    <span className="live-indicator">● LIVE</span>
-                  ) : (
-                    <button onClick={() => startQuiz(quiz.id)} className="btn btn-success btn-sm">▶ Start Session</button>
-                  )}
+                  <div className="quiz-card-start-actions">
+                    {isLive ? (
+                      <span className="live-indicator">● LIVE</span>
+                    ) : (
+                      <button onClick={() => startQuiz(quiz.id)} className="btn btn-success btn-sm">▶ Start Session</button>
+                    )}
+                    <button
+                      onClick={() => startQuiz(quiz.id, true)}
+                      className="btn btn-secondary btn-sm btn-test-quiz"
+                      title="Run a test session with bot teams and embedded previews"
+                    >
+                      🧪 Test Quiz
+                    </button>
+                  </div>
                 </div>
               );
             })}

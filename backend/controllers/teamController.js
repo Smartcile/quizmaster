@@ -12,20 +12,27 @@ async function joinQuiz(req, res) {
     }
     const cleanName = String(name).trim();
 
-    // Reject joins into a finished session — they'd never see any slides.
     const sess = await db.query('SELECT status FROM quiz_sessions WHERE id = $1', [sessionId]);
     if (!sess.rows.length) return res.status(404).json({ error: 'Session not found' });
-    if (sess.rows[0].status === 'finished') {
-      return res.status(409).json({ error: 'This quiz session has finished. Ask the host for a new code.' });
-    }
+    const finished = sess.rows[0].status === 'finished';
 
-    // Look for an existing team with the same name (case-insensitive)
+    // Match purely on session + team name (case-insensitive) — team size never
+    // affects identity, so a guest can rejoin from any device.
     const existing = await db.query(
       `SELECT * FROM teams
        WHERE quiz_session_id = $1 AND LOWER(TRIM(name)) = LOWER($2)
        LIMIT 1`,
       [sessionId, cleanName]
     );
+
+    // A finished session is read-only: return the existing team for history
+    // lookup, but never create a new (ghost) team in it.
+    if (finished) {
+      if (existing.rows.length) {
+        return res.status(200).json({ ...existing.rows[0], rejoined: true, finished: true });
+      }
+      return res.status(404).json({ error: 'No team by that name in this finished session.' });
+    }
 
     if (existing.rows.length) {
       // Rejoin — return the existing team. Don't overwrite the original size
@@ -57,6 +64,21 @@ async function getTeamsBySession(req, res) {
     const result = await db.query(
       'SELECT * FROM teams WHERE quiz_session_id = $1 ORDER BY created_at',
       [sessionId]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
+// All of a team's submitted answers, keyed for the quizzer to restore its inputs
+// on rejoin (and to render the read-only history review of a finished session).
+async function getTeamAnswers(req, res) {
+  try {
+    const { teamId } = req.params;
+    const result = await db.query(
+      'SELECT question_id, round_id, answer_text FROM answers WHERE team_id = $1',
+      [teamId]
     );
     res.json(result.rows);
   } catch (error) {
@@ -210,6 +232,7 @@ module.exports = {
   joinQuiz,
   getTeamsBySession,
   getTeamScores,
+  getTeamAnswers,
   getTeamById,
   getSessionScoreboard
 };
