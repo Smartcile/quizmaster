@@ -73,10 +73,17 @@ export default function RoundBuilder() {
 
   const handleSave = async ({ form, selectedQuestions, formatOverrides }) => {
     try {
-      const questionsPayload = selectedQuestions.map(id => ({
-        id,
-        question_format_override: formatOverrides[id] || null
-      }));
+      const byId = new Map(questions.map(q => [q.id, q]));
+      const questionsPayload = selectedQuestions.map(id => {
+        const q = byId.get(id);
+        const opts = Array.isArray(q?.options) && q.options.filter(o => String(o).trim()).length > 0;
+        // Only "Both" questions carry a per-round override (Text vs MCQ),
+        // defaulting to MCQ. Everything else follows its own answer mode.
+        const override = (q?.answer_mode === 'both' && opts)
+          ? (formatOverrides[id] || 'multichoice')
+          : null;
+        return { id, question_format_override: override };
+      });
       const payload = { ...form, questions: questionsPayload };
       if (editingId) await api.put(`/rounds/${editingId}`, payload);
       else await api.post('/rounds', payload);
@@ -197,10 +204,16 @@ function RoundEditorModal({ editing, init, questions, categories, onSave, onClos
 
   // Whether a question can be shown as multiple-choice (has options).
   const hasOpt = (q) => Array.isArray(q.options) && q.options.filter(o => String(o).trim()).length > 0;
-  // Effective per-round mode: explicit override, else derived from answer_mode.
+  // Only questions whose Answer Mode is "Both" are switchable in a round — the
+  // host picks Text or MCQ per round. Pure MCQ / Text questions are fixed.
+  const isBoth = (q) => q.answer_mode === 'both' && hasOpt(q);
+  // Effective per-round mode used to highlight the toggle. "Both" questions
+  // default to MCQ (no "both" option in the round); everything else follows its
+  // own answer mode.
   const effMode = (q) => {
-    if (!hasOpt(q)) return 'standard';
-    return formatOverrides[q.id] || (q.answer_mode === 'both' ? 'both' : 'multichoice');
+    if (isBoth(q)) return formatOverrides[q.id] || 'multichoice';
+    if (q.answer_mode === 'mcq' && hasOpt(q)) return 'multichoice';
+    return 'standard';
   };
 
   const onDragEnd = (result) => {
@@ -322,7 +335,7 @@ function RoundEditorModal({ editing, init, questions, categories, onSave, onClos
                                 <div className="dnd-item-text">{q.text}</div>
                                 <div className="dnd-item-meta">
                                   <span className={`qm-tag qm-tag-${q.type}`}>{q.type}</span>
-                                  {hasOpt(q) && <span className="rq-both-label" title="Text & Multichoice available">🔀 T&M</span>}
+                                  {isBoth(q) && <span className="rq-both-label" title="Answer Mode: Both">🔀 T&M</span>}
                                   {q.category && <span className="qm-tag qm-tag-cat">{q.category}</span>}
                                 </div>
                               </div>
@@ -362,16 +375,15 @@ function RoundEditorModal({ editing, init, questions, categories, onSave, onClos
                                 <span className="dnd-order">{i + 1}</span>
                                 <div className="dnd-item-text">
                                   {q.text}
-                                  {hasOpt(q) && <span className="rq-both-label" title="Text & Multichoice available — pick how it's shown for this round">🔀 T&M</span>}
+                                  {isBoth(q) && <span className="rq-both-label" title="Answer Mode: Both — choose how it's shown for this round">🔀 T&M</span>}
                                 </div>
-                                {hasOpt(q) ? (
-                                  <div className="rq-format-toggle" onClick={e => e.stopPropagation()} title="How this question is shown to teams in this round">
+                                {isBoth(q) ? (
+                                  <div className="rq-format-toggle" onClick={e => e.stopPropagation()} title="How this 'Both' question is shown to teams in this round">
                                     <button type="button" className={`rq-toggle-btn ${effMode(q) === 'standard' ? 'active-std' : ''}`} onClick={() => toggleFormat(q.id, 'standard')}>Text</button>
                                     <button type="button" className={`rq-toggle-btn ${effMode(q) === 'multichoice' ? 'active-mcq' : ''}`} onClick={() => toggleFormat(q.id, 'multichoice')}>MCQ</button>
-                                    <button type="button" className={`rq-toggle-btn ${effMode(q) === 'both' ? 'active-both' : ''}`} onClick={() => toggleFormat(q.id, 'both')}>Both</button>
                                   </div>
                                 ) : (
-                                  <span className="rq-format-badge rq-format-badge-standard">Text</span>
+                                  <span className="rq-format-badge rq-format-badge-standard">{q.answer_mode === 'mcq' && hasOpt(q) ? 'MCQ' : 'Text'}</span>
                                 )}
                               </div>
                             )}

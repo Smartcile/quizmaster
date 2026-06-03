@@ -20,7 +20,8 @@ async function loadQuizWithRoundsAndWidgets(id) {
   const quizResult = await db.query(
     `SELECT q.*, sm.name AS master_name, sm.templates AS master_templates
      FROM quizzes q
-     LEFT JOIN slide_masters sm ON sm.id = q.master_id
+     LEFT JOIN slide_masters sm
+       ON sm.id = COALESCE(q.master_id, (SELECT id FROM slide_masters WHERE is_default = TRUE LIMIT 1))
      WHERE q.id = $1`,
     [id]
   );

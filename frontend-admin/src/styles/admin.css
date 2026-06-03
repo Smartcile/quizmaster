@@ -4391,6 +4391,11 @@ input[type="checkbox"] {
    ===================================================== */
 .qm-media-pick { display: flex; align-items: center; gap: 10px; margin: 4px 0 12px; flex-wrap: wrap; }
 .qm-media-current { font-size: 0.8rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; max-width: 60%; }
+/* Default Profile badge on the master card */
+.me-default-badge {
+  margin-left: 8px; padding: 2px 8px; border-radius: 999px; font-size: 0.7rem; font-weight: 700;
+  vertical-align: middle; color: #07091a; background: var(--neon-yellow, #ffe600);
+}
 /* Styled media chooser inside the question editor (shown only for media types) */
 .qm-media-btn {
   display: inline-flex; align-items: center; gap: 8px; margin-top: 6px;

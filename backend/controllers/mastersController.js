@@ -74,6 +74,13 @@ async function duplicateMaster(req, res) {
 
 async function deleteMaster(req, res) {
   try {
+    // The protected Default Profile is the standard for every quiz and can
+    // never be removed.
+    const target = await db.query('SELECT is_default FROM slide_masters WHERE id = $1', [req.params.id]);
+    if (!target.rows.length) return res.status(404).json({ error: 'Master not found' });
+    if (target.rows[0].is_default) {
+      return res.status(409).json({ error: 'The Default Profile is the standard for all quizzes and cannot be deleted.' });
+    }
     // Block deletion if any quiz references this master — surface which ones so
     // the admin can reassign them first (mirrors the Media Library in-use rule).
     const inUse = await db.query(

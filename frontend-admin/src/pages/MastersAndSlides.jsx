@@ -123,6 +123,10 @@ export default function MastersAndSlides() {
 
   // ── Open master for editing ───────────────────────────────────────────────
   const openMaster = (master) => {
+    if (master.is_default && !confirm(
+      'This is the Default Profile — the standard theme applied to every quiz that has no other master.\n\n' +
+      'Changes here affect all of those quizzes. Continue editing?'
+    )) return;
     setEditMaster(master);
     setMasterName(master.name);
     setBgColor(master.background_color || '#0a0e1f');
@@ -465,13 +469,15 @@ export default function MastersAndSlides() {
                   )}
                 </div>
                 <div className="me-card-body">
-                  <h4>{m.name}</h4>
+                  <h4>{m.name}{m.is_default && <span className="me-default-badge" title="Standard theme for every quiz — cannot be deleted">★ Default</span>}</h4>
                   <p className="me-card-meta">{Object.keys(m.styles || {}).join(' · ') || 'Default styles'}</p>
                 </div>
                 <div className="me-card-actions">
                   <button className="btn btn-primary btn-sm"    onClick={() => openMaster(m)}>Edit</button>
                   <button className="btn btn-secondary btn-sm"  onClick={() => duplicateMaster(m.id)}>Duplicate</button>
-                  <button className="btn btn-danger btn-sm"     onClick={() => deleteMaster(m)}>Delete</button>
+                  {!m.is_default && (
+                    <button className="btn btn-danger btn-sm"   onClick={() => deleteMaster(m)}>Delete</button>
+                  )}
                 </div>
               </div>
             );
