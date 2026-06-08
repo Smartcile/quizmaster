@@ -485,6 +485,8 @@ Copy `.env.example` to `.env` before running locally.
 
 - **Backend not reachable**: The backend exposes no host port by default. It is only reachable from the frontend containers via the internal `quiz-network`. Uncomment the `ports:` block in `backend:` if you need direct access for debugging.
 
+- **502s on the quizzer/slideshow after a redeploy (stale backend IP)**: each frontend's `nginx.conf` proxies to the `backend` service. nginx must **re-resolve** that hostname rather than cache its IP at startup — otherwise, when the backend container is recreated (new Docker IP on a `docker-compose up -d`/redeploy), nginx keeps dialing the **old** IP and every `/api` + `/socket.io` call returns **502 "connection refused"** while the backend itself is perfectly healthy. The fix (in all three `nginx.conf`): a `resolver 127.0.0.11 valid=10s ipv6=off;` plus a **variable** proxy target — `set $backend backend:5000; proxy_pass http://$backend$request_uri;` — which makes nginx look up the current IP per request (Docker's embedded DNS is always at `127.0.0.11`). Immediate stop-gap if it recurs before the new images are deployed: **restart the frontend containers** so they re-resolve.
+
 - **MCQ options not showing**: Options are stored as JSONB in `questions.options`. When creating/editing questions with `answer_mode: mcq` or `answer_mode: both`, always save the options array. The QuizParticipant renders `question.options` directly.
 
 - **Slide index out of sync**: If you change `buildSlides()` logic in one frontend but not the others, the admin and viewers will show different slides for the same index. Always update all three copies simultaneously.
