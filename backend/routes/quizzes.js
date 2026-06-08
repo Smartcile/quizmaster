@@ -17,6 +17,8 @@ const {
   updateQuiz,
   getSessionHistory,
   getSessionResults,
+  getActiveTestSessions,
+  deleteAllTestSessions,
   deleteSession,
   setScoreboardVisibility
 } = require('../controllers/quizController');
@@ -32,8 +34,10 @@ router.put('/:id/reorder', reorderQuiz);
 router.put('/:id', updateQuiz);
 router.delete('/:id', deleteQuiz);
 
-// Session lifecycle — history routes MUST precede /:sessionId to avoid param collision
+// Session lifecycle — literal routes MUST precede /:sessionId to avoid param collision
 router.get('/sessions/history',              getSessionHistory);
+router.get('/sessions/test',                 getActiveTestSessions);
+router.delete('/sessions/test',              deleteAllTestSessions);
 router.get('/sessions/:sessionId/results',   getSessionResults);
 router.get('/sessions/:sessionId', getSession);
 router.put('/sessions/:sessionId/status', setSessionStatus);

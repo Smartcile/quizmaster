@@ -7,6 +7,7 @@ export default function Dashboard({ onResume, onQuizStart, activeQuizId }) {
   const [stats, setStats] = useState(null);
   const [quizzes, setQuizzes] = useState([]);
   const [activeSessions, setActiveSessions] = useState([]);
+  const [testSessions, setTestSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -34,11 +35,42 @@ export default function Dashboard({ onResume, onQuizStart, activeQuizId }) {
         })
       );
       setActiveSessions(liveResults.filter(Boolean));
+      // Running test sessions (excluded from the live lookup above)
+      try { setTestSessions(await api.get('/quizzes/sessions/test')); }
+      catch { setTestSessions([]); }
       setError(null);
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const resumeTestSession = async (s) => {
+    try {
+      const fullQuiz = await api.get(`/quizzes/${s.quiz_id}`);
+      onQuizStart(s.id, fullQuiz, true);
+    } catch (err) {
+      setError('Failed to open test session: ' + err.message);
+    }
+  };
+
+  const deleteTestSession = async (s) => {
+    try {
+      await api.delete(`/quizzes/sessions/${s.id}`);
+      setTestSessions(prev => prev.filter(x => x.id !== s.id));
+    } catch (err) {
+      setError('Failed to delete test session: ' + err.message);
+    }
+  };
+
+  const clearAllTestSessions = async () => {
+    if (!confirm(`Delete all ${testSessions.length} test session(s)? This removes their bot teams/answers too. Real sessions are never affected.`)) return;
+    try {
+      await api.delete('/quizzes/sessions/test');
+      setTestSessions([]);
+    } catch (err) {
+      setError('Failed to clear test sessions: ' + err.message);
     }
   };
 
@@ -99,6 +131,36 @@ export default function Dashboard({ onResume, onQuizStart, activeQuizId }) {
           <div className="neutral-icon">⚫</div>
           <h3>No Active Session</h3>
           <p>Start a quiz below to begin a new session.</p>
+        </div>
+      )}
+
+      {/* Test sessions — hidden from the live lookup; surfaced here so they can
+          be reviewed and cleaned up (auto-clean doesn't always fire). */}
+      {testSessions.length > 0 && (
+        <div className="panel test-sessions-panel">
+          <div className="test-sessions-head">
+            <h3>🧪 Test Sessions ({testSessions.length})</h3>
+            <button onClick={clearAllTestSessions} className="btn btn-danger btn-sm">🗑 Clear all</button>
+          </div>
+          <p className="qm-empty" style={{ margin: '0 0 10px' }}>
+            Bot/test runs. They don't appear as live sessions and never affect real results — safe to delete.
+          </p>
+          <div className="test-sessions-list">
+            {testSessions.map(s => (
+              <div key={s.id} className="test-session-row">
+                <div className="test-session-info">
+                  <strong>{s.quiz_name}</strong>
+                  <span className="test-session-meta">
+                    {s.status === 'active' ? '● live' : '● lobby'} · code {s.code || '—'} · slide {(s.current_slide_index || 0) + 1}
+                  </span>
+                </div>
+                <div className="test-session-actions">
+                  <button onClick={() => resumeTestSession(s)} className="btn btn-secondary btn-sm">Open</button>
+                  <button onClick={() => deleteTestSession(s)} className="btn btn-danger btn-sm">Delete</button>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

@@ -535,6 +535,21 @@ select {
 .neutral-state h3 { color: var(--text-muted); margin-bottom: 8px; }
 .neutral-state p { color: var(--text-dim); }
 
+/* Test sessions panel (dashboard) */
+.test-sessions-panel { border: 1px solid rgba(255, 157, 0, 0.4); }
+.test-sessions-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.test-sessions-head h3 { margin: 0; color: var(--neon-orange, #ff9d00); }
+.test-sessions-list { display: flex; flex-direction: column; gap: 8px; }
+.test-session-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px;
+  background: rgba(255, 157, 0, 0.06);
+}
+.test-session-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.test-session-info strong { color: var(--text-primary); }
+.test-session-meta { font-size: 0.8rem; color: var(--text-muted); }
+.test-session-actions { display: flex; gap: 8px; flex: 0 0 auto; }
+
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
