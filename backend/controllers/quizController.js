@@ -652,6 +652,36 @@ async function getSessionResults(req, res) {
 }
 
 // ── Delete a finished session and all its data (teams/answers/scores cascade) ──
+// List running test sessions (lobby/active, is_test) so the dashboard can show
+// and clean them — they're deliberately excluded from the normal active-session
+// lookup, so without this they'd be invisible if auto-clean didn't fire.
+async function getActiveTestSessions(req, res) {
+  try {
+    const result = await db.query(
+      `SELECT s.id, s.quiz_id, s.code, s.status, s.current_slide_index, s.created_at,
+              q.name AS quiz_name, q.code AS quiz_code
+       FROM quiz_sessions s
+       JOIN quizzes q ON q.id = s.quiz_id
+       WHERE s.is_test = TRUE AND s.status IN ('lobby', 'active')
+       ORDER BY s.created_at DESC`
+    );
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
+// Bulk-delete every test session (any status). Cascades teams/answers/scores.
+// Never touches real sessions.
+async function deleteAllTestSessions(req, res) {
+  try {
+    const result = await db.query('DELETE FROM quiz_sessions WHERE is_test = TRUE RETURNING id');
+    res.json({ ok: true, deleted: result.rows.length });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
 async function deleteSession(req, res) {
   try {
     const { sessionId } = req.params;
@@ -690,6 +720,8 @@ module.exports = {
   loadQuizWithRoundsAndWidgets,
   getSessionHistory,
   getSessionResults,
+  getActiveTestSessions,
+  deleteAllTestSessions,
   deleteSession,
   setScoreboardVisibility
 };

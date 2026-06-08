@@ -79,7 +79,7 @@ async function getStats(req, res) {
       db.query('SELECT COUNT(*)::int AS count FROM questions'),
       db.query('SELECT COUNT(*)::int AS count FROM rounds'),
       db.query('SELECT COUNT(*)::int AS count FROM quizzes'),
-      db.query("SELECT COUNT(*)::int AS count FROM quiz_sessions WHERE status IN ('lobby', 'active')"),
+      db.query("SELECT COUNT(*)::int AS count FROM quiz_sessions WHERE status IN ('lobby', 'active') AND is_test = FALSE"),
       db.query("SELECT COALESCE(difficulty, 'medium') AS difficulty, COUNT(*)::int AS count FROM questions GROUP BY difficulty"),
       db.query("SELECT COALESCE(category, '(uncategorized)') AS category, COUNT(*)::int AS count FROM questions GROUP BY category ORDER BY count DESC LIMIT 10")
     ]);
