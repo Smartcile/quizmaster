@@ -6,7 +6,10 @@ import LiveScoreboard from '../components/LiveScoreboard';
 import DownloadFilesModal from '../components/DownloadFilesModal';
 import { getTestSettings } from '../utils/testSettings';
 
-const EMPTY_VIS = { slideshow: false, quizzer: false, admin: false };
+// Per-surface "reveal scores on the scoreboard slide" flags. Big screen +
+// quizzer default ON (scores show when you reach a scoreboard slide); the admin
+// inline panel ("This screen") defaults OFF.
+const EMPTY_VIS = { slideshow: true, quizzer: true, admin: false };
 
 export default function QuizControl({ sessionId, quiz, onSessionEnd, isTest = false }) {
   const [currentSlide, setCurrentSlide] = useState(0);
@@ -347,25 +350,28 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd, isTest = fa
 
       {(sessionStatus === 'active' || sessionStatus === 'finished') && (
         <div className="scoreboard-controls">
-          <span className="scoreboard-controls-label">📊 Scoreboard — show on:</span>
+          <span className="scoreboard-controls-label" title="Only affects scoreboard slides — turn a surface off to keep scores hidden when you land on one">📊 On a scoreboard slide, reveal scores on:</span>
           <button
             type="button"
             className={`sb-toggle ${scoreboardVis.slideshow ? 'on' : ''}`}
             onClick={() => toggleScoreboard('slideshow')}
+            title="Reveal/hide scores on the scoreboard slide for the big screen"
           >
-            🖥 Display {scoreboardVis.slideshow ? '✓' : ''}
+            🖥 Display {scoreboardVis.slideshow ? '✓' : '✕'}
           </button>
           <button
             type="button"
             className={`sb-toggle ${scoreboardVis.quizzer ? 'on' : ''}`}
             onClick={() => toggleScoreboard('quizzer')}
+            title="Reveal/hide scores on the scoreboard slide for the quizzers"
           >
-            📱 Quizzers {scoreboardVis.quizzer ? '✓' : ''}
+            📱 Quizzers {scoreboardVis.quizzer ? '✓' : '✕'}
           </button>
           <button
             type="button"
             className={`sb-toggle ${scoreboardVis.admin ? 'on' : ''}`}
             onClick={() => toggleScoreboard('admin')}
+            title="Show the live scoreboard on this control screen"
           >
             👁 This screen {scoreboardVis.admin ? '✓' : ''}
           </button>
@@ -602,7 +608,9 @@ function MiniSlide({ slide }) {
     case 'mark_answers':
       return <span className="mini-slide mini-mark"><span className="mini-icon">✦</span><span className="mini-text">Mark Answers</span></span>;
     case 'answer':
-      return <span className="mini-slide mini-answer"><span className="mini-kicker">A{slide.questionNumber}</span><span className="mini-text">✓ {slide.answer}</span></span>;
+      // Deliberately NOT showing the answer text here — the All-Slides strip can
+      // be visible to others, so reveals stay hidden until the slide is live.
+      return <span className="mini-slide mini-answer"><span className="mini-kicker">A{slide.questionNumber}</span><span className="mini-text">Answer reveal</span></span>;
     case 'whoami_clue':
       return <span className="mini-slide"><span className="mini-icon">🕵</span><span className="mini-text">Clue {slide.clueIndex + 1}</span></span>;
     case 'widget':
@@ -658,7 +666,7 @@ function PreviewPanes({ sessionId, quizCode, quizzerBase, slideshowBase, teams =
             )}
             <a href={quizzerUrl} target="_blank" rel="noreferrer" className="preview-pop" title="Open in new tab">↗</a>
           </div>
-          <iframe key={`${mode}:${teamName}`} title="Quizzer preview" src={quizzerUrl} className="preview-iframe" />
+          <iframe key={`${mode}:${teamName}`} title="Quizzer preview" src={quizzerUrl} className="preview-iframe preview-iframe-phone" />
         </div>
       )}
     </div>

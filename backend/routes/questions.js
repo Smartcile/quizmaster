@@ -9,7 +9,8 @@ const {
   updateQuestion,
   deleteQuestion,
   exportQuestionsCSV,
-  importQuestions
+  importQuestions,
+  cleanSpecialCharacters
 } = require('../controllers/questionController');
 
 router.get('/', getAllQuestions);
@@ -18,6 +19,7 @@ router.get('/stats', getStats);
 router.get('/export', exportQuestionsCSV);
 router.get('/:id', getQuestion);
 router.post('/import', importQuestions);
+router.post('/clean-special-chars', cleanSpecialCharacters);
 router.post('/', createQuestion);
 router.put('/:id', updateQuestion);
 router.delete('/:id', deleteQuestion);

@@ -1,4 +1,5 @@
 const db = require('../config/database');
+const { cleanText, cleanOptions } = require('../utils/cleanText');
 
 const QUESTION_FIELDS = 'text, answer, type, media_url, points, tags, category, options, difficulty, answer_mode, approved, question_format';
 
@@ -113,13 +114,15 @@ async function createQuestion(req, res) {
     const isWhoami = req.body.is_whoami === true;
     // Who/What Am I sets store their clues ([{text,points}]) in options and are
     // never multiple-choice; everything else goes through the MCQ resolver.
-    const am = isWhoami ? 'text'     : resolveMcqMode(options, answer_mode, question_format).answer_mode;
-    const qf = isWhoami ? 'standard' : resolveMcqMode(options, answer_mode, question_format).question_format;
+    // Tidy special characters on the way in (smart quotes/dashes/etc.)
+    const cText = cleanText(text), cAnswer = cleanText(answer), cOptions = cleanOptions(options || []);
+    const am = isWhoami ? 'text'     : resolveMcqMode(cOptions, answer_mode, question_format).answer_mode;
+    const qf = isWhoami ? 'standard' : resolveMcqMode(cOptions, answer_mode, question_format).question_format;
     const result = await db.query(
       `INSERT INTO questions (text, answer, type, media_url, points, tags, category, options, difficulty, answer_mode, approved, question_format, is_whoami)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *`,
-      [text, answer, type || 'text', media_url, points, tags, category,
-       JSON.stringify(options || []), difficulty || 'medium', am,
+      [cText, cAnswer, type || 'text', media_url, points, tags, category,
+       JSON.stringify(cOptions), difficulty || 'medium', am,
        approved ?? false, qf, isWhoami]
     );
     res.status(201).json(result.rows[0]);
@@ -132,15 +135,16 @@ async function updateQuestion(req, res) {
   try {
     const { text, answer, type, media_url, points, tags, category, options, difficulty, answer_mode, approved, question_format } = req.body;
     const isWhoami = req.body.is_whoami === true;
-    const am = isWhoami ? 'text'     : resolveMcqMode(options, answer_mode, question_format).answer_mode;
-    const qf = isWhoami ? 'standard' : resolveMcqMode(options, answer_mode, question_format).question_format;
+    const cText = cleanText(text), cAnswer = cleanText(answer), cOptions = cleanOptions(options || []);
+    const am = isWhoami ? 'text'     : resolveMcqMode(cOptions, answer_mode, question_format).answer_mode;
+    const qf = isWhoami ? 'standard' : resolveMcqMode(cOptions, answer_mode, question_format).question_format;
     const result = await db.query(
       `UPDATE questions SET text=$1, answer=$2, type=$3, media_url=$4, points=$5,
        tags=$6, category=$7, options=$8, difficulty=$9, answer_mode=$10,
        approved=$11, question_format=$12, is_whoami=$13
        WHERE id=$14 RETURNING *`,
-      [text, answer, type || 'text', media_url, points, tags, category,
-       JSON.stringify(options || []), difficulty || 'medium', am,
+      [cText, cAnswer, type || 'text', media_url, points, tags, category,
+       JSON.stringify(cOptions), difficulty || 'medium', am,
        approved ?? false, qf, isWhoami,
        req.params.id]
     );
@@ -208,16 +212,17 @@ async function importQuestions(req, res) {
   }
 
   const norm = (q) => {
-    const mode = resolveMcqMode(q.options, q.answer_mode, q.question_format);
+    const cOptions = cleanOptions(Array.isArray(q.options) ? q.options : []);
+    const mode = resolveMcqMode(cOptions, q.answer_mode, q.question_format);
     return {
-      text: q.text,
-      answer: q.answer,
+      text: cleanText(q.text),
+      answer: cleanText(q.answer),
       type: q.type || 'text',
       media_url: q.media_url || null,
       points: q.points ?? 1,
       tags: q.tags || null,
       category: q.category || null,
-      options: JSON.stringify(Array.isArray(q.options) ? q.options : []),
+      options: JSON.stringify(cOptions),
       difficulty: q.difficulty || 'medium',
       answer_mode: mode.answer_mode,
       approved: q.approved ?? false,
@@ -270,6 +275,40 @@ async function importQuestions(req, res) {
   }
 }
 
+// ── cleanSpecialCharacters ────────────────────────────────────────────────────
+// POST /api/questions/clean-special-chars
+// Bulk "reformat" pass over the whole bank: tidy smart quotes/dashes/ellipsis/
+// non-breaking spaces in text, answer and options for questions already stored
+// (imported or entered before cleaning existed). Only rows that actually change
+// are written. Returns { cleaned, total }.
+async function cleanSpecialCharacters(req, res) {
+  const client = await db.getClient();
+  try {
+    const all = await db.query('SELECT id, text, answer, options FROM questions');
+    let cleaned = 0;
+    await client.query('BEGIN');
+    for (const q of all.rows) {
+      const nt = cleanText(q.text);
+      const na = cleanText(q.answer);
+      const storedOpts = Array.isArray(q.options) ? q.options : [];
+      const no = cleanOptions(storedOpts);
+      const optsChanged = JSON.stringify(no) !== JSON.stringify(storedOpts);
+      if (nt !== (q.text ?? '') || na !== (q.answer ?? '') || optsChanged) {
+        await client.query('UPDATE questions SET text=$1, answer=$2, options=$3 WHERE id=$4',
+          [nt, na, JSON.stringify(no), q.id]);
+        cleaned++;
+      }
+    }
+    await client.query('COMMIT');
+    res.json({ ok: true, cleaned, total: all.rows.length });
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch { /* noop */ }
+    res.status(500).json({ error: error.message });
+  } finally {
+    client.release();
+  }
+}
+
 async function deleteQuestion(req, res) {
   try {
     const result = await db.query('DELETE FROM questions WHERE id = $1 RETURNING *', [req.params.id]);
@@ -289,5 +328,6 @@ module.exports = {
   updateQuestion,
   deleteQuestion,
   exportQuestionsCSV,
-  importQuestions
+  importQuestions,
+  cleanSpecialCharacters
 };

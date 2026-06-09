@@ -41,7 +41,10 @@ function App() {
   const [status, setStatus] = useState('idle'); // idle | loading | waiting | ready
   const [sessionCode, setSessionCode] = useState(null); // per-session join code to display
   const [portalConfig, setPortalConfig] = useState(null);
-  const [scoreboardVisible, setScoreboardVisible] = useState(false);
+  // Whether the scoreboard SLIDE reveals scores on this surface. Default true —
+  // the host can toggle it off (from Control) to keep scores hidden for suspense
+  // while sitting on a scoreboard slide. (No longer a full-screen overlay.)
+  const [scoreboardVisible, setScoreboardVisible] = useState(true);
   const [qrSize, setQrSize] = useState(qrSizeFor);
   const socket = useWebSocket();
   const slides = useMemo(() => buildSlides(quiz), [quiz]);
@@ -240,7 +243,7 @@ function App() {
     return (
       <div className="slideshow-container">
         <div className="slide" style={slide?.background ? { background: slide.background } : undefined}>
-          <SlideRenderer slide={slide} sessionId={sessionId} socket={socket} />
+          <SlideRenderer slide={slide} sessionId={sessionId} socket={socket} scoresVisible={scoreboardVisible} />
         </div>
         <div className="slide-counter">
           {currentSlide + 1} / {slides.length}
@@ -265,11 +268,6 @@ function App() {
   return (
     <>
       {renderView()}
-      {scoreboardVisible && sessionId && (
-        <div className="sb-overlay">
-          <LiveScoreboard sessionId={sessionId} socket={socket} title={`${quiz?.name || 'Quiz'} — Scoreboard`} />
-        </div>
-      )}
       {showJoinQr && (
         <div className="join-qr">
           <div className="join-qr-code">
@@ -324,7 +322,7 @@ function FullScreenMessage({ title, subtitle, message }) {
   );
 }
 
-function SlideRenderer({ slide, sessionId, socket }) {
+function SlideRenderer({ slide, sessionId, socket, scoresVisible = true }) {
   if (!slide) return <div className="slide-empty"><h2>End of quiz</h2></div>;
 
   switch (slide.type) {
@@ -422,7 +420,7 @@ function SlideRenderer({ slide, sessionId, socket }) {
       );
 
     case 'widget':
-      return <WidgetSlide slide={slide} sessionId={sessionId} socket={socket} />;
+      return <WidgetSlide slide={slide} sessionId={sessionId} socket={socket} scoresVisible={scoresVisible} />;
 
     case 'end':
       return (
@@ -443,11 +441,11 @@ function SlideRenderer({ slide, sessionId, socket }) {
   }
 }
 
-function WidgetSlide({ slide, sessionId, socket }) {
+function WidgetSlide({ slide, sessionId, socket, scoresVisible = true }) {
   // The Answer Review page is per-device (teams review on their phones), so the
   // big screen shows the scoreboard (scores) for it, same as a scoreboard slide.
   if (slide.widgetType === 'scoreboard' || slide.widgetType === 'review') {
-    return <ScoreboardWidget slide={slide} sessionId={sessionId} socket={socket} />;
+    return <ScoreboardWidget slide={slide} sessionId={sessionId} socket={socket} scoresVisible={scoresVisible} />;
   }
 
   const data = slide.data || {};
@@ -469,14 +467,21 @@ function WidgetSlide({ slide, sessionId, socket }) {
 
 // Scoreboard widget slide — renders the full per-round breakdown table, kept
 // live via LiveScoreboard's own socket subscriptions.
-function ScoreboardWidget({ slide, sessionId, socket }) {
+function ScoreboardWidget({ slide, sessionId, socket, scoresVisible = true }) {
   const data = slide.data || {};
   const style = {
     background: data.bg_image ? `url(${data.bg_image}) center/cover` : (data.bg_color || undefined)
   };
   return (
     <div className="slide-widget slide-scoreboard" style={style}>
-      <LiveScoreboard sessionId={sessionId} socket={socket} title={data.title || 'Leaderboard'} />
+      {scoresVisible ? (
+        <LiveScoreboard sessionId={sessionId} socket={socket} title={data.title || 'Leaderboard'} />
+      ) : (
+        <div className="sb-hidden">
+          <h2 className="sb-title">{data.title || 'Leaderboard'}</h2>
+          <p className="sb-msg">Scores hidden — revealing shortly…</p>
+        </div>
+      )}
     </div>
   );
 }

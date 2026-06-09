@@ -21,17 +21,28 @@ router.post('/media', upload.single('file'), async (req, res) => {
     return res.status(400).json({ error: 'No file uploaded' });
   }
   const url = `/uploads/${req.file.filename}`;
+  // Optional friendly name + virtual folder (sent by the editors / picker as
+  // multipart text fields). display_name falls back to the original filename.
+  const displayName = (req.body?.display_name || '').trim() || req.file.originalname;
+  const folder = (req.body?.folder || '').trim() || null;
+  let row = null;
   try {
-    await db.query(
-      `INSERT INTO media_files (filename, original_name, mime_type, size_bytes, url)
-       VALUES ($1, $2, $3, $4, $5) ON CONFLICT (filename) DO NOTHING`,
-      [req.file.filename, req.file.originalname, req.file.mimetype, req.file.size, url]
+    const r = await db.query(
+      `INSERT INTO media_files (filename, original_name, display_name, folder, mime_type, size_bytes, url)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (filename) DO NOTHING RETURNING *`,
+      [req.file.filename, req.file.originalname, displayName, folder, req.file.mimetype, req.file.size, url]
     );
+    row = r.rows[0] || null;
   } catch { /* non-fatal — media library tracking is best-effort */ }
   res.json({
     filename: req.file.filename,
     url,
-    size: req.file.size
+    size: req.file.size,
+    original_name: req.file.originalname,
+    display_name: displayName,
+    folder,
+    mime_type: req.file.mimetype,
+    ...(row ? { id: row.id } : {})
   });
 });
 

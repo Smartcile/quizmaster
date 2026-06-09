@@ -398,7 +398,7 @@ async function setScoreboardVisibility(req, res) {
     const cur = await db.query('SELECT scoreboard_visibility FROM quiz_sessions WHERE id = $1', [sessionId]);
     if (cur.rows.length === 0) return res.status(404).json({ error: 'Session not found' });
 
-    const next = { slideshow: false, quizzer: false, admin: false, ...(cur.rows[0].scoreboard_visibility || {}) };
+    const next = { slideshow: true, quizzer: true, admin: false, ...(cur.rows[0].scoreboard_visibility || {}) };
     if (visibility && typeof visibility === 'object') {
       VALID.forEach(k => { if (k in visibility) next[k] = !!visibility[k]; });
     } else if (VALID.includes(surface)) {

@@ -41,6 +41,10 @@ function FileIcon({ file }) {
   return <span className="media-icon">📄</span>;
 }
 
+// Friendly name shown in the library — never the real filename/url, which stay
+// fixed so references don't break.
+const displayName = (f) => f.display_name || f.original_name || f.filename;
+
 export default function MediaLibrary() {
   const [files,      setFiles]      = useState([]);
   const [loading,    setLoading]    = useState(true);
@@ -49,7 +53,18 @@ export default function MediaLibrary() {
   const [usageData,  setUsageData]  = useState(null);   // { file, usage }
   const [uploading,  setUploading]  = useState(false);
   const [editor,     setEditor]     = useState(null);   // { kind: 'image'|'audio', file }
+  const [folderFilter, setFolderFilter] = useState('all'); // 'all' | '__unfiled__' | <name>
+  const [editName,   setEditName]   = useState('');
+  const [editFolder, setEditFolder] = useState('');
   const fileInputRef = useRef(null);
+
+  // Virtual folders derived from the loaded files
+  const folders = [...new Set(files.map(f => f.folder).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const visibleFiles = files.filter(f =>
+    folderFilter === 'all' ? true :
+    folderFilter === '__unfiled__' ? !f.folder :
+    f.folder === folderFilter
+  );
 
   const loadFiles = async () => {
     setLoading(true);
@@ -67,6 +82,8 @@ export default function MediaLibrary() {
 
   const openDetail = async (file) => {
     setSelected(file);
+    setEditName(displayName(file));
+    setEditFolder(file.folder || '');
     setUsageData(null);
     try {
       const data = await api.get(`/media/${file.id}/usage`);
@@ -104,6 +121,21 @@ export default function MediaLibrary() {
     await loadFiles();
   };
 
+  // Save the friendly name + virtual folder (display only — file/url untouched).
+  const saveMeta = async () => {
+    if (!selected) return;
+    try {
+      const updated = await api.put(`/media/${selected.id}`, {
+        display_name: editName.trim(),
+        folder: editFolder.trim()
+      });
+      setSelected(s => ({ ...s, ...updated }));
+      setFiles(prev => prev.map(f => f.id === updated.id ? { ...f, ...updated } : f));
+    } catch (err) {
+      setError(err.message.replace(/^\d+:\s*/, ''));
+    }
+  };
+
   const handleDelete = async (file) => {
     if (!confirm(`Delete "${file.original_name || file.filename}"? This cannot be undone.`)) return;
     try {
@@ -120,6 +152,16 @@ export default function MediaLibrary() {
       <div className="qm-toolbar">
         <h2>Media Library</h2>
         <div className="qm-toolbar-actions">
+          <select
+            className="media-folder-filter"
+            value={folderFilter}
+            onChange={(e) => setFolderFilter(e.target.value)}
+            title="Filter by folder"
+          >
+            <option value="all">📂 All folders</option>
+            <option value="__unfiled__">Unfiled</option>
+            {folders.map(f => <option key={f} value={f}>{f}</option>)}
+          </select>
           <button
             className="btn btn-primary"
             onClick={() => fileInputRef.current?.click()}
@@ -152,16 +194,16 @@ export default function MediaLibrary() {
         </div>
       ) : (
         <div className="media-grid">
-          {files.map(file => (
+          {visibleFiles.map(file => (
             <button
               key={file.id}
               className={`media-card ${file.in_use ? 'media-card-in-use' : ''}`}
               onClick={() => openDetail(file)}
-              title={file.original_name || file.filename}
+              title={displayName(file)}
             >
               {isImage(file) ? (
                 <div className="media-thumb">
-                  <img src={file.url} alt={file.original_name || file.filename} loading="lazy" />
+                  <img src={file.url} alt={displayName(file)} loading="lazy" />
                 </div>
               ) : (
                 <div className="media-thumb media-thumb-icon">
@@ -169,8 +211,8 @@ export default function MediaLibrary() {
                 </div>
               )}
               <div className="media-card-body">
-                <p className="media-card-name">{file.original_name || file.filename}</p>
-                <p className="media-card-meta">{formatBytes(file.size_bytes)}</p>
+                <p className="media-card-name">{displayName(file)}</p>
+                <p className="media-card-meta">{formatBytes(file.size_bytes)}{file.folder ? ` · 📂 ${file.folder}` : ''}</p>
                 <div className="media-card-chips">
                   {file.labels.map(label => (
                     <span
@@ -193,7 +235,7 @@ export default function MediaLibrary() {
         <div className="modal-overlay" onClick={closeDetail}>
           <div className="modal modal-lg media-detail-modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>{selected.original_name || selected.filename}</h3>
+              <h3>{displayName(selected)}</h3>
               <button onClick={closeDetail} className="btn-close">×</button>
             </div>
             <div className="modal-body">
@@ -211,6 +253,22 @@ export default function MediaLibrary() {
               {isAudio(selected) && (
                 <audio src={selected.url} controls style={{ width: '100%' }} />
               )}
+
+              {/* Rename + move (display only — file/url untouched) */}
+              <div className="media-rename-row">
+                <label className="form-label" style={{ flex: 2 }}>Name
+                  <input type="text" value={editName} onChange={e => setEditName(e.target.value)} placeholder="Friendly name" />
+                </label>
+                <label className="form-label" style={{ flex: 1 }}>Folder
+                  <input type="text" list="media-folders-dl" value={editFolder} onChange={e => setEditFolder(e.target.value)} placeholder="(unfiled)" />
+                  <datalist id="media-folders-dl">{folders.map(f => <option key={f} value={f} />)}</datalist>
+                </label>
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={saveMeta}
+                  disabled={editName.trim() === displayName(selected) && (editFolder.trim() || '') === (selected.folder || '')}
+                >Save</button>
+              </div>
 
               {/* Metadata */}
               <div className="media-detail-meta">

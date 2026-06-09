@@ -411,6 +411,20 @@ export default function QuestionManager() {
           <button onClick={() => setCatManagerOpen(true)} className="btn btn-secondary btn-sm" title="Manage categories">
             🏷 Categories
           </button>
+          <button
+            onClick={async () => {
+              if (!confirm('Reformat every question to strip special characters (smart quotes, en/em dashes, ellipsis, non-breaking spaces)? This is safe — it only swaps fancy punctuation for the plain equivalent.')) return;
+              try {
+                const r = await api.post('/questions/clean-special-chars', {});
+                await loadAll();
+                alert(`Cleaned ${r.cleaned} of ${r.total} question(s).`);
+              } catch (e) { setError(e.message.replace(/^\d+:\s*/, '')); }
+            }}
+            className="btn btn-secondary btn-sm"
+            title="Tidy smart quotes / dashes / ellipsis across the whole bank"
+          >
+            ✨ Clean characters
+          </button>
         </div>
       </div>
 

@@ -305,6 +305,16 @@ export default function MastersAndSlides() {
     } catch (err) { flash('err', err.message); }
   };
 
+  const setAsDefault = async (m) => {
+    if (!confirm(`Make "${m.name}" the default profile?\n\nIt becomes the standard theme for every quiz with no master set, and (like the current default) can't be deleted while it's the default.`)) return;
+    try {
+      const updated = await api.put(`/masters/${m.id}/default`, {});
+      // Exactly one default — reflect the swap locally
+      setMasters(prev => prev.map(x => ({ ...x, is_default: x.id === updated.id })));
+      flash('ok', `"${m.name}" is now the default profile`);
+    } catch (err) { flash('err', err.message.replace(/^\d+:\s*/, '')); }
+  };
+
   const deleteMaster = async (m) => {
     if (!confirm(`Delete master "${m.name}"? This cannot be undone.`)) return;
     try {
@@ -475,6 +485,9 @@ export default function MastersAndSlides() {
                 <div className="me-card-actions">
                   <button className="btn btn-primary btn-sm"    onClick={() => openMaster(m)}>Edit</button>
                   <button className="btn btn-secondary btn-sm"  onClick={() => duplicateMaster(m.id)}>Duplicate</button>
+                  {!m.is_default && (
+                    <button className="btn btn-secondary btn-sm" onClick={() => setAsDefault(m)} title="Make this the standard theme for every quiz">★ Set default</button>
+                  )}
                   {!m.is_default && (
                     <button className="btn btn-danger btn-sm"   onClick={() => deleteMaster(m)}>Delete</button>
                   )}

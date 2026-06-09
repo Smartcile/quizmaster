@@ -122,9 +122,14 @@ export default function ImageCropEditor({ file, onClose, onSaved }) {
       const blob = await new Promise((resolve) => canvas.toBlob(resolve, type, 0.92));
       if (!blob) throw new Error('Could not render the crop.');
       const base = (file.original_name || file.filename || 'image').replace(/\.[^.]+$/, '');
-      const newFile = new File([blob], `${base}-${aspectKey}.${ext}`, { type });
+      const suggested = `${base}-${aspectKey}`;
+      const name = window.prompt('Save the cropped image as (name shown in the Media Library):', suggested);
+      if (name === null) { setSaving(false); return; } // cancelled
+      const newFile = new File([blob], `${suggested}.${ext}`, { type });
       const fd = new FormData();
       fd.append('file', newFile);
+      fd.append('display_name', name.trim() || suggested);
+      if (file.folder) fd.append('folder', file.folder);
       const res = await fetch('/api/upload/media', {
         method: 'POST',
         headers: { Authorization: `Bearer ${localStorage.getItem('qm_admin_token')}` },

@@ -110,9 +110,14 @@ ALTER TABLE quiz_sessions ADD COLUMN IF NOT EXISTS started_at TIMESTAMP;
 -- locked_round_ids: JSONB array of round IDs whose answers have been locked by the admin.
 -- Persisted so rejoining clients know which rounds are already locked.
 ALTER TABLE quiz_sessions ADD COLUMN IF NOT EXISTS locked_round_ids JSONB NOT NULL DEFAULT '[]';
--- scoreboard_visibility: per-surface show/hide flags for the live scoreboard,
--- toggled by the host from the Control page and broadcast to all clients.
-ALTER TABLE quiz_sessions ADD COLUMN IF NOT EXISTS scoreboard_visibility JSONB NOT NULL DEFAULT '{"slideshow":false,"quizzer":false,"admin":false}';
+-- scoreboard_visibility: per-surface reveal/hide flags for the scoreboard SLIDE,
+-- toggled by the host from the Control page and broadcast to all clients. The
+-- big screen + quizzer default to showing scores on a scoreboard slide; the
+-- admin's own inline panel ("This screen") defaults off.
+ALTER TABLE quiz_sessions ADD COLUMN IF NOT EXISTS scoreboard_visibility JSONB NOT NULL DEFAULT '{"slideshow":true,"quizzer":true,"admin":false}';
+-- Update the default on installs where the column already existed (the ADD above
+-- is skipped once the column is present, so set the new default explicitly).
+ALTER TABLE quiz_sessions ALTER COLUMN scoreboard_visibility SET DEFAULT '{"slideshow":true,"quizzer":true,"admin":false}';
 -- is_test: a "Test Quiz" run driven by bot teams from the admin Control page.
 -- Test sessions are hidden from Quiz History and the dashboard's active-session
 -- lookup, and are auto-deleted on close (cascading teams/answers/scores).
@@ -328,6 +333,11 @@ CREATE TABLE IF NOT EXISTS media_files (
   uploaded_at   TIMESTAMP DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_media_files_filename ON media_files(filename);
+-- display_name: friendly label shown in the Media Library (the real filename /
+-- url are never renamed, so nothing referencing a file breaks). folder: a
+-- virtual folder for organising the library — no effect on where files live.
+ALTER TABLE media_files ADD COLUMN IF NOT EXISTS display_name VARCHAR(500);
+ALTER TABLE media_files ADD COLUMN IF NOT EXISTS folder VARCHAR(200);
 
 -- ============================================================
 -- Question source + GitHub repositories (additive)

@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
 import { api } from '../services/api';
 import { buildSlides } from '../utils/buildSlides';
+import LiveScoreboard from '../components/LiveScoreboard';
 
-export default function QuizParticipant({ quiz, sessionId, team, currentSlide, socket }) {
+export default function QuizParticipant({ quiz, sessionId, team, currentSlide, socket, scoresVisible = true, showViewAnswers = false, onViewAnswers }) {
   const [answers,          setAnswers]          = useState({});
   const [lockedRounds,     setLockedRounds]      = useState(new Set());
   const [scores,           setScores]            = useState({});
@@ -310,6 +311,19 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
             answers={answers}
             scores={scores}
           />
+        );
+      }
+      // On a scoreboard slide, reveal the live scoreboard — unless the host has
+      // toggled scores off for the quizzer (then keep it hidden for suspense).
+      if (slide.widgetType === 'scoreboard') {
+        if (!scoresVisible) return <WaitingMessage text="Scores hidden — revealing shortly…" />;
+        return (
+          <div className="quizzer-scoreboard">
+            <LiveScoreboard sessionId={sessionId} socket={socket} title={slide.data?.title || 'Leaderboard'} />
+            {showViewAnswers && (
+              <button className="sb-view-answers" onClick={onViewAnswers}>📝 View my answers</button>
+            )}
+          </div>
         );
       }
       return <WaitingMessage text={`Coming up: ${slide.widgetType}`} />;

@@ -102,4 +102,28 @@ async function deleteMaster(req, res) {
   }
 }
 
-module.exports = { getAllMasters, getMaster, createMaster, updateMaster, duplicateMaster, deleteMaster };
+// Make a master THE protected default (the standard for every quiz). Exactly
+// one master carries is_default at a time, so unset all others in the same
+// transaction. The new default then inherits the no-delete + edit-warning rules.
+async function setDefaultMaster(req, res) {
+  const client = await db.getClient();
+  try {
+    const exists = await client.query('SELECT id FROM slide_masters WHERE id = $1', [req.params.id]);
+    if (!exists.rows.length) { client.release(); return res.status(404).json({ error: 'Master not found' }); }
+    await client.query('BEGIN');
+    await client.query('UPDATE slide_masters SET is_default = FALSE WHERE is_default = TRUE');
+    const result = await client.query(
+      'UPDATE slide_masters SET is_default = TRUE, updated_at = NOW() WHERE id = $1 RETURNING *',
+      [req.params.id]
+    );
+    await client.query('COMMIT');
+    res.json(result.rows[0]);
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch { /* noop */ }
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+}
+
+module.exports = { getAllMasters, getMaster, createMaster, updateMaster, duplicateMaster, deleteMaster, setDefaultMaster };
