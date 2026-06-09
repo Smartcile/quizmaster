@@ -31,7 +31,7 @@ function setupWebSocketHandlers(io) {
             slideIndex:     current_slide_index || 0,
             status:         status || 'lobby',
             lockedRoundIds: locked_round_ids   || [],
-            scoreboardVisibility: scoreboard_visibility || { slideshow: false, quizzer: false, admin: false }
+            scoreboardVisibility: scoreboard_visibility || { slideshow: true, quizzer: true, admin: false }
           });
         }
       } catch (err) {

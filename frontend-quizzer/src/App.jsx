@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { useWebSocket } from './hooks/useWebSocket';
 import JoinQuiz from './pages/JoinQuiz';
 import QuizParticipant, { AnswerReviewView } from './pages/QuizParticipant';
-import LiveScoreboard from './components/LiveScoreboard';
 import { buildSlides } from './utils/buildSlides';
 import { api } from './services/api';
 
@@ -32,7 +31,9 @@ function App() {
   const [team, setTeam] = useState(null);
   const [currentSlide, setCurrentSlide] = useState(0);
   const [error, setError] = useState(null);
-  const [scoreboardVisible, setScoreboardVisible] = useState(false);
+  // Whether the scoreboard SLIDE reveals scores on the quizzer. Default true;
+  // the host can toggle it off from Control to keep scores hidden for suspense.
+  const [scoreboardVisible, setScoreboardVisible] = useState(true);
   const [ctx] = useState(getUrlContext);
   const [reviewOpen, setReviewOpen] = useState(false);
   const autoJoinedRef = useRef(false);
@@ -216,6 +217,9 @@ function App() {
         team={team}
         currentSlide={currentSlide}
         socket={socket}
+        scoresVisible={scoreboardVisible}
+        showViewAnswers={reviewOnScoreboard && !!team}
+        onViewAnswers={() => setReviewOpen(true)}
       />
     );
   };
@@ -223,16 +227,6 @@ function App() {
   return (
     <>
       {renderView()}
-      {scoreboardVisible && sessionId && (
-        <div className="sb-overlay">
-          <LiveScoreboard sessionId={sessionId} socket={socket} title="Scoreboard" />
-          {reviewOnScoreboard && team && (
-            <button className="sb-view-answers" onClick={() => setReviewOpen(true)}>
-              📝 View my answers
-            </button>
-          )}
-        </div>
-      )}
 
       {reviewOpen && team && (
         <div className="modal-overlay" onClick={() => setReviewOpen(false)}>

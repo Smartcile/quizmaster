@@ -100,9 +100,14 @@ export default function VideoEditor({ file, onClose, onSaved }) {
       const mime = file.mime_type || `video/${ext}`;
       const blob = new Blob([data.buffer], { type: mime });
       const base = (file.original_name || file.filename || 'video').replace(/\.[^.]+$/, '');
-      const newFile = new File([blob], `${base}-trimmed.${ext}`, { type: mime });
+      const suggested = `${base}-trimmed`;
+      const name = window.prompt('Save the trimmed video as (name shown in the Media Library):', suggested);
+      if (name === null) { setBusy(false); setStatus(''); return; } // cancelled
+      const newFile = new File([blob], `${suggested}.${ext}`, { type: mime });
       const fd = new FormData();
       fd.append('file', newFile);
+      fd.append('display_name', name.trim() || suggested);
+      if (file.folder) fd.append('folder', file.folder);
       setStatus('Uploading…');
       const res = await fetch('/api/upload/media', {
         method: 'POST',

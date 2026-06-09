@@ -83,4 +83,47 @@ async function deleteMedia(req, res) {
   }
 }
 
-module.exports = { listMedia, getMediaUsage, deleteMedia };
+// GET /api/media/folders — distinct virtual folders (for filters + datalists)
+async function listFolders(req, res) {
+  try {
+    const r = await db.query(
+      "SELECT DISTINCT folder FROM media_files WHERE folder IS NOT NULL AND folder <> '' ORDER BY folder"
+    );
+    res.json(r.rows.map(x => x.folder));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
+// PATCH/PUT /api/media/:id — rename (display_name) and/or move (folder). Only
+// the friendly label + virtual folder change; the file/url are never touched,
+// so questions and masters that reference it keep working.
+async function updateMedia(req, res) {
+  try {
+    const { id } = req.params;
+    const { display_name, folder } = req.body || {};
+    const fields = [];
+    const values = [];
+    let i = 1;
+    if (display_name !== undefined) {
+      fields.push(`display_name = $${i++}`);
+      values.push(String(display_name).trim() || null);
+    }
+    if (folder !== undefined) {
+      fields.push(`folder = $${i++}`);
+      values.push((folder == null || String(folder).trim() === '') ? null : String(folder).trim());
+    }
+    if (!fields.length) return res.status(400).json({ error: 'Nothing to update' });
+    values.push(id);
+    const r = await db.query(
+      `UPDATE media_files SET ${fields.join(', ')} WHERE id = $${i} RETURNING *`,
+      values
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'File not found' });
+    res.json(r.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
+module.exports = { listMedia, getMediaUsage, deleteMedia, listFolders, updateMedia };

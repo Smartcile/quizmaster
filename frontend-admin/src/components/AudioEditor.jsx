@@ -243,9 +243,14 @@ export default function AudioEditor({ file, onClose, onSaved }) {
       const blob = fmtOut === 'wav' ? audioBufferToWav(edited) : await audioBufferToMp3(edited);
       const ext = fmtOut === 'wav' ? 'wav' : 'mp3';
       const base = (file.original_name || file.filename || 'audio').replace(/\.[^.]+$/, '');
-      const newFile = new File([blob], `${base}-edited.${ext}`, { type: blob.type });
+      const suggested = `${base}-edited`;
+      const name = window.prompt('Save the edited audio as (name shown in the Media Library):', suggested);
+      if (name === null) { setSaving(false); return; } // cancelled
+      const newFile = new File([blob], `${suggested}.${ext}`, { type: blob.type });
       const fd = new FormData();
       fd.append('file', newFile);
+      fd.append('display_name', name.trim() || suggested);
+      if (file.folder) fd.append('folder', file.folder);
       const res = await fetch('/api/upload/media', {
         method: 'POST',
         headers: { Authorization: `Bearer ${localStorage.getItem('qm_admin_token')}` },

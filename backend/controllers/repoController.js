@@ -1,5 +1,6 @@
 const db = require('../config/database');
 const crypto = require('crypto');
+const { cleanOptions } = require('../utils/cleanText');
 
 // ── GitHub CSV question repositories ─────────────────────────────────────────
 // Repos are synced on demand: we resolve the configured repo/branch/path to one
@@ -234,10 +235,10 @@ async function syncRepo(req, res) {
     }
 
     // Existing questions indexed by normalised text
-    const existing = await db.query('SELECT id, text, source, repo_hash FROM questions');
+    const existing = await db.query('SELECT id, text, answer, options, source, repo_hash FROM questions');
     const byText = new Map(existing.rows.map(q => [norm(q.text), q]));
 
-    const summary = { added: 0, relabeled: 0, ignored: 0, updated: 0, changed: [], files: files.length, applied: apply };
+    const summary = { added: 0, relabeled: 0, ignored: 0, updated: 0, cleaned: 0, changed: [], files: files.length, applied: apply };
     const client = await db.getClient();
     try {
       await client.query('BEGIN');
@@ -252,6 +253,23 @@ async function syncRepo(req, res) {
         const answerMode = promote ? 'mcq' : q.answer_mode;
         const qFormat = promote ? 'multichoice' : q.question_format;
         const optsJson = JSON.stringify(q.options || []);
+
+        // Bulletproof clean-up: whenever a re-sync RECOGNISES an existing
+        // question (matched accent/punctuation-insensitively), tidy any special
+        // characters in its stored copy in place — so old rows imported/entered
+        // before cleaning get fixed too, without being treated as different.
+        if (match && match.id) {
+          const ct = cleanText(match.text);
+          const ca = cleanText(match.answer);
+          const co = cleanOptions(Array.isArray(match.options) ? match.options : []);
+          const optsChanged = JSON.stringify(co) !== JSON.stringify(Array.isArray(match.options) ? match.options : []);
+          if (ct !== (match.text ?? '') || ca !== (match.answer ?? '') || optsChanged) {
+            await client.query('UPDATE questions SET text=$1, answer=$2, options=$3 WHERE id=$4',
+              [ct, ca, optsChanged ? JSON.stringify(co) : JSON.stringify(match.options || []), match.id]);
+            match.text = ct; match.answer = ca; match.options = co;
+            summary.cleaned++;
+          }
+        }
 
         if (!match) {
           await client.query(
