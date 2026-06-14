@@ -433,6 +433,15 @@ QuizControl shows portal link buttons for both **lobby** and **active** states. 
 
 **Rename + virtual folders (display-only):** `media_files` carries `display_name` and `folder` columns (additive). The library shows `display_name || original_name || filename`; the real `filename`/`url` are **never** renamed, so questions/masters that reference a file never break. The detail modal has a **Name** + **Folder** editor (`PUT /api/media/:id`, body `{ display_name?, folder? }`); the toolbar has a folder filter (All / Unfiled / each folder), and `GET /api/media/folders` lists distinct folders. Folders are virtual organisation only. When an in-browser editor (crop/audio/video) saves, it **prompts for a name** and uploads it as `display_name` (multipart field on `POST /api/upload/media`), inheriting the source file's `folder`.
 
+### Global settings store (`app_settings`)
+A tiny key/value table for **global** admin settings (unlike the browser-local Quiz Control test settings). `GET /api/settings` → `{ key: value }` (public read so any surface can check a flag); `PUT /api/settings` upserts keys (auth). First key: `audio_rounds_enabled` (default `false`). Add future global toggles here.
+
+### Audio rounds (beta) — metadata, lyrics, Name the Song / Finish the Lyrics
+Gated globally by `app_settings.audio_rounds_enabled` (Settings → "Audio Rounds (beta)"). Three layers:
+- **Metadata** — `media_files` gains `artist/title/album/duration_seconds/lyrics/lyrics_synced`. On audio upload the backend parses ID3 tags with `music-metadata` (dynamic-imported for CJS) and stores them **in the DB** (so they survive the editor's re-encode); editable in the Media Library detail modal. The crop/audio/video editors carry the source track's metadata forward on save.
+- **Lyrics** — `POST /api/media/:id/fetch-lyrics` looks up synced LRC on **LRCLIB** (free, no key) by artist+title+(duration); stored in `lyrics` with `lyrics_synced`. Editable/pasteable. The **AudioEditor** parses LRC and shows the current line while scrubbing the start handle / during preview playback.
+- **Round forms** — `questions.audio_form` (`name_the_song` | `finish_the_lyrics` | `other`) + `questions.audio_stop_seconds`, set in the Question editor (audio-only, shown only when the global flag is on). `loadQuizWithRoundsAndWidgets` joins `media_files` and exposes `audio_form`, `audio_stop_seconds`, `media_artist`, `media_title`; **all three `buildSlides` copies** add these to the question + answer slides (One Rule — keep identical). Quizzer (`QuizParticipant`): `name_the_song` renders two boxes (Artist + Song) stored as `"Artist — Song"`; `finish_the_lyrics`/`other` use a normal text box, and the audio element pauses at `audioStop` so the answer isn't heard. Auto-scoring is in the socket `submit_answer` handler: **name_the_song** awards ½ for artist + ½ for song (normalised exact-or-contained vs the linked track's metadata); other forms use the existing loose match. The slideshow answer reveal shows Artist — Song for name_the_song.
+
 ---
 
 ## CI/CD

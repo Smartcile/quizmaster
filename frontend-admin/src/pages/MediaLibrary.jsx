@@ -56,6 +56,12 @@ export default function MediaLibrary() {
   const [folderFilter, setFolderFilter] = useState('all'); // 'all' | '__unfiled__' | <name>
   const [editName,   setEditName]   = useState('');
   const [editFolder, setEditFolder] = useState('');
+  const [editArtist, setEditArtist] = useState('');
+  const [editTitle,  setEditTitle]  = useState('');
+  const [editAlbum,  setEditAlbum]  = useState('');
+  const [editLyrics, setEditLyrics] = useState('');
+  const [lyricsSynced, setLyricsSynced] = useState(false);
+  const [fetchingLyrics, setFetchingLyrics] = useState(false);
   const fileInputRef = useRef(null);
 
   // Virtual folders derived from the loaded files
@@ -84,6 +90,11 @@ export default function MediaLibrary() {
     setSelected(file);
     setEditName(displayName(file));
     setEditFolder(file.folder || '');
+    setEditArtist(file.artist || '');
+    setEditTitle(file.title || '');
+    setEditAlbum(file.album || '');
+    setEditLyrics(file.lyrics || '');
+    setLyricsSynced(!!file.lyrics_synced);
     setUsageData(null);
     try {
       const data = await api.get(`/media/${file.id}/usage`);
@@ -121,14 +132,38 @@ export default function MediaLibrary() {
     await loadFiles();
   };
 
+  // Fetch synced lyrics from LRCLIB using the (possibly just-edited) artist/title.
+  const fetchLyrics = async () => {
+    if (!selected) return;
+    setFetchingLyrics(true);
+    try {
+      const updated = await api.post(`/media/${selected.id}/fetch-lyrics`, {
+        artist: editArtist.trim(), title: editTitle.trim()
+      });
+      setSelected(s => ({ ...s, ...updated }));
+      setFiles(prev => prev.map(f => f.id === updated.id ? { ...f, ...updated } : f));
+      setEditLyrics(updated.lyrics || '');
+      setLyricsSynced(!!updated.lyrics_synced);
+    } catch (err) {
+      setError(err.message.replace(/^\d+:\s*/, ''));
+    } finally {
+      setFetchingLyrics(false);
+    }
+  };
+
   // Save the friendly name + virtual folder (display only — file/url untouched).
   const saveMeta = async () => {
     if (!selected) return;
     try {
-      const updated = await api.put(`/media/${selected.id}`, {
-        display_name: editName.trim(),
-        folder: editFolder.trim()
-      });
+      const body = { display_name: editName.trim(), folder: editFolder.trim() };
+      if (isAudio(selected)) {
+        body.artist = editArtist.trim();
+        body.title = editTitle.trim();
+        body.album = editAlbum.trim();
+        body.lyrics = editLyrics;
+        body.lyrics_synced = lyricsSynced;
+      }
+      const updated = await api.put(`/media/${selected.id}`, body);
       setSelected(s => ({ ...s, ...updated }));
       setFiles(prev => prev.map(f => f.id === updated.id ? { ...f, ...updated } : f));
     } catch (err) {
@@ -263,12 +298,49 @@ export default function MediaLibrary() {
                   <input type="text" list="media-folders-dl" value={editFolder} onChange={e => setEditFolder(e.target.value)} placeholder="(unfiled)" />
                   <datalist id="media-folders-dl">{folders.map(f => <option key={f} value={f} />)}</datalist>
                 </label>
-                <button
-                  className="btn btn-primary btn-sm"
-                  onClick={saveMeta}
-                  disabled={editName.trim() === displayName(selected) && (editFolder.trim() || '') === (selected.folder || '')}
-                >Save</button>
+                <button className="btn btn-primary btn-sm" onClick={saveMeta}>Save</button>
               </div>
+
+              {/* Audio metadata — drives song matching, lyrics + auto-scoring */}
+              {isAudio(selected) && (
+                <div className="media-rename-row">
+                  <label className="form-label" style={{ flex: 1 }}>Artist
+                    <input type="text" value={editArtist} onChange={e => setEditArtist(e.target.value)} placeholder="Artist" />
+                  </label>
+                  <label className="form-label" style={{ flex: 1 }}>Song title
+                    <input type="text" value={editTitle} onChange={e => setEditTitle(e.target.value)} placeholder="Song title" />
+                  </label>
+                  <label className="form-label" style={{ flex: 1 }}>Album
+                    <input type="text" value={editAlbum} onChange={e => setEditAlbum(e.target.value)} placeholder="Album (optional)" />
+                  </label>
+                </div>
+              )}
+
+              {/* Lyrics — fetched from LRCLIB or pasted; LRC (timed) drives karaoke scrubbing */}
+              {isAudio(selected) && (
+                <div className="media-lyrics-row">
+                  <div className="media-lyrics-head">
+                    <span className="form-label" style={{ margin: 0 }}>
+                      Lyrics {lyricsSynced ? <em className="lyrics-badge synced">⏱ timed (LRC)</em>
+                              : editLyrics ? <em className="lyrics-badge plain">plain</em> : ''}
+                    </span>
+                    <button className="btn btn-secondary btn-sm" onClick={fetchLyrics} disabled={fetchingLyrics}>
+                      {fetchingLyrics ? 'Fetching…' : '🎤 Fetch lyrics (LRCLIB)'}
+                    </button>
+                  </div>
+                  <textarea
+                    className="media-lyrics-text"
+                    rows={6}
+                    value={editLyrics}
+                    onChange={e => setEditLyrics(e.target.value)}
+                    placeholder="Paste lyrics, or fetch from LRCLIB by artist + title. Timed (LRC) lines look like [00:12.34] words. Press Save to keep."
+                  />
+                  <label className="qc-check" style={{ marginTop: 4 }}>
+                    <input type="checkbox" checked={lyricsSynced} onChange={e => setLyricsSynced(e.target.checked)} />
+                    These are timed (LRC) lyrics
+                  </label>
+                </div>
+              )}
 
               {/* Metadata */}
               <div className="media-detail-meta">

@@ -70,7 +70,11 @@ export function buildSlides(quiz) {
           questionType: q.type,
           mediaUrl: q.media_url,
           options: q.options || [],
-          points: q.points
+          points: q.points,
+          audioForm: q.audio_form || null,
+          audioStop: q.audio_stop_seconds != null ? Number(q.audio_stop_seconds) : null,
+          mediaArtist: q.media_artist || null,
+          mediaTitle: q.media_title || null
         });
       });
 
@@ -95,7 +99,10 @@ export function buildSlides(quiz) {
           roundName: round.name,
           text: q.text,
           answer: q.answer,
-          points: q.points
+          points: q.points,
+          audioForm: q.audio_form || null,
+          mediaArtist: q.media_artist || null,
+          mediaTitle: q.media_title || null
         });
       });
 

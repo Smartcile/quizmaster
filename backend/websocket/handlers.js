@@ -204,15 +204,37 @@ function setupWebSocketHandlers(io) {
           [teamId, questionId]
         );
         if (!scoreExists.rows.length) {
-          const qr = await db.query('SELECT answer FROM questions WHERE id = $1', [questionId]);
+          const qr = await db.query(
+            `SELECT q.answer, q.audio_form, mf.artist AS media_artist, mf.title AS media_title
+             FROM questions q LEFT JOIN media_files mf ON mf.url = q.media_url
+             WHERE q.id = $1`,
+            [questionId]
+          );
           if (qr.rows.length) {
+            const row = qr.rows[0];
             const norm = s => String(s ?? '').toLowerCase().trim().replace(/\s+/g, ' ').replace(/^the\s+/, '');
-            if (norm(answer) === norm(qr.rows[0].answer)) {
+            let pts = null;
+            if (row.audio_form === 'name_the_song') {
+              // Answer is "Artist — Song"; award ½ for each part matched against
+              // the linked track's metadata (exact-normalised OR contained).
+              const SEP = ' — ';
+              const idx = String(answer || '').indexOf(SEP);
+              const aPart = idx === -1 ? (answer || '') : String(answer).slice(0, idx);
+              const sPart = idx === -1 ? '' : String(answer).slice(idx + SEP.length);
+              const whole = norm(answer);
+              const artistOk = row.media_artist && (norm(aPart) === norm(row.media_artist) || whole.includes(norm(row.media_artist)));
+              const songOk   = row.media_title  && (norm(sPart) === norm(row.media_title)  || whole.includes(norm(row.media_title)));
+              const half = (artistOk ? 0.5 : 0) + (songOk ? 0.5 : 0);
+              if (half > 0) pts = half;
+            } else if (norm(answer) === norm(row.answer)) {
+              pts = 1;
+            }
+            if (pts != null) {
               await db.query(
-                'INSERT INTO scores (team_id, question_id, points_awarded) VALUES ($1, $2, 1)',
-                [teamId, questionId]
+                'INSERT INTO scores (team_id, question_id, points_awarded) VALUES ($1, $2, $3)',
+                [teamId, questionId, pts]
               );
-              autoMarked = 1;
+              autoMarked = pts;
             }
           }
         }

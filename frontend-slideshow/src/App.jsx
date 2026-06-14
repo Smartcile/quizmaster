@@ -355,7 +355,15 @@ function SlideRenderer({ slide, sessionId, socket, scoresVisible = true }) {
             <div className="slide-media">
               {slide.questionType === 'image' && <img src={slide.mediaUrl} alt="Question media" />}
               {slide.questionType === 'video' && <video controls src={slide.mediaUrl} />}
-              {slide.questionType === 'audio' && <audio controls src={slide.mediaUrl} />}
+              {slide.questionType === 'audio' && (
+                <audio
+                  controls
+                  src={slide.mediaUrl}
+                  onTimeUpdate={(slide.audioForm === 'finish_the_lyrics' && slide.audioStop)
+                    ? (e) => { if (e.target.currentTime >= slide.audioStop) e.target.pause(); }
+                    : undefined}
+                />
+              )}
             </div>
           )}
           {slide.questionType === 'mcq' && slide.options && slide.options.length > 0 && (
@@ -410,14 +418,20 @@ function SlideRenderer({ slide, sessionId, socket, scoresVisible = true }) {
         </div>
       );
 
-    case 'answer':
+    case 'answer': {
+      // Name the Song reveals the linked track's Artist — Song; everything else
+      // shows the stored answer.
+      const revealText = slide.audioForm === 'name_the_song'
+        ? [slide.mediaArtist, slide.mediaTitle].filter(Boolean).join(' — ') || slide.answer
+        : slide.answer;
       return (
         <div className="slide-answer">
           <p className="answer-label">{slide.roundName} · Q{slide.questionNumber}</p>
           <h3 className="answer-question">{slide.text}</h3>
-          <p className="answer-text">{slide.answer}</p>
+          <p className="answer-text">{revealText}</p>
         </div>
       );
+    }
 
     case 'widget':
       return <WidgetSlide slide={slide} sessionId={sessionId} socket={socket} scoresVisible={scoresVisible} />;

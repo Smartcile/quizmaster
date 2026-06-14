@@ -396,10 +396,18 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
   );
 }
 
+// "Name the Song" stores the answer as "Artist — Song" so it reads nicely and
+// the backend can score each half.
+const NTS_SEP = ' — ';
+const splitNTS = (v) => { const i = (v || '').indexOf(NTS_SEP); return i === -1 ? [v || '', ''] : [v.slice(0, i), v.slice(i + NTS_SEP.length)]; };
+const combineNTS = (a, s) => (a || s) ? `${a}${NTS_SEP}${s}` : '';
+
 function QuestionView({ slide, answer, score, locked, onChange }) {
   const mode = slide.answerMode || 'text';
-  const showText = mode === 'text' || mode === 'both';
+  const isNameTheSong = slide.audioForm === 'name_the_song';
+  const showText = (mode === 'text' || mode === 'both') && !isNameTheSong;
   const showMcq = (mode === 'mcq' || mode === 'both') && Array.isArray(slide.options) && slide.options.length > 0;
+  const [ntsArtist, ntsSong] = splitNTS(answer);
 
   return (
     <div className="question-card">
@@ -415,7 +423,15 @@ function QuestionView({ slide, answer, score, locked, onChange }) {
         <div className="media-container">
           {slide.questionType === 'image' && <img src={slide.mediaUrl} alt="Question" />}
           {slide.questionType === 'video' && <video controls src={slide.mediaUrl} />}
-          {slide.questionType === 'audio' && <audio controls src={slide.mediaUrl} />}
+          {slide.questionType === 'audio' && (
+            <audio
+              controls
+              src={slide.mediaUrl}
+              onTimeUpdate={(slide.audioForm === 'finish_the_lyrics' && slide.audioStop)
+                ? (e) => { if (e.target.currentTime >= slide.audioStop) e.target.pause(); }
+                : undefined}
+            />
+          )}
         </div>
       )}
 
@@ -438,7 +454,22 @@ function QuestionView({ slide, answer, score, locked, onChange }) {
         </div>
       )}
 
-      {showText && (
+      {isNameTheSong ? (
+        <div className="nts-inputs">
+          <input
+            type="text" className="answer-input" placeholder="Artist"
+            value={ntsArtist}
+            onChange={(e) => onChange(combineNTS(e.target.value, ntsSong))}
+            disabled={locked}
+          />
+          <input
+            type="text" className="answer-input" placeholder="Song title"
+            value={ntsSong}
+            onChange={(e) => onChange(combineNTS(ntsArtist, e.target.value))}
+            disabled={locked}
+          />
+        </div>
+      ) : showText && (
         <input
           type="text"
           className="answer-input"

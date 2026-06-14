@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 
 // ── WAV (16-bit PCM) encoder for an AudioBuffer ───────────────────────────────
 function audioBufferToWav(buffer) {
@@ -110,6 +110,22 @@ const fmt = (s) => {
   return `${m}:${String(sec).padStart(2, '0')}`;
 };
 
+// Parse LRC (timed lyrics): lines like "[00:12.34] words" → [{ t, text }] sorted.
+const LRC_TS = /\[(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?\]/g;
+function parseLRC(text) {
+  if (!text) return [];
+  const out = [];
+  for (const raw of String(text).split(/\r?\n/)) {
+    const stamps = [...raw.matchAll(LRC_TS)];
+    const lyric = raw.replace(LRC_TS, '').trim();
+    for (const m of stamps) {
+      const t = (+m[1]) * 60 + (+m[2]) + (m[3] ? Number(`0.${m[3]}`) : 0);
+      out.push({ t, text: lyric });
+    }
+  }
+  return out.sort((a, b) => a.t - b.t);
+}
+
 // In-browser audio trimmer: trim start/end, fade in/out, gain/normalise, then
 // export to WAV and upload as a NEW media file (the original is untouched).
 export default function AudioEditor({ file, onClose, onSaved }) {
@@ -127,6 +143,19 @@ export default function AudioEditor({ file, onClose, onSaved }) {
 
   const canvasRef = useRef(null);
   const playRef = useRef(null);   // { ctx, node }
+  const rafRef = useRef(null);
+
+  // Timed lyrics (for the karaoke scrub display). focusTime tracks the start
+  // handle when idle, and live playback position while previewing.
+  const lrc = useMemo(() => (file.lyrics_synced ? parseLRC(file.lyrics) : []), [file.lyrics, file.lyrics_synced]);
+  const [focusTime, setFocusTime] = useState(0);
+  useEffect(() => { if (!playing) setFocusTime(start); }, [start, playing]);
+  const currentLyric = useMemo(() => {
+    if (!lrc.length) return null;
+    let cur = null;
+    for (const l of lrc) { if (l.t <= focusTime + 0.05) cur = l; else break; }
+    return cur;
+  }, [lrc, focusTime]);
 
   // Decode the source file
   useEffect(() => {
@@ -196,12 +225,14 @@ export default function AudioEditor({ file, onClose, onSaved }) {
   useEffect(() => { draw(); }, [draw]);
 
   function stopPreview() {
+    if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
     if (playRef.current) {
       try { playRef.current.node.stop(); } catch { /* already stopped */ }
       try { playRef.current.ctx.close(); } catch { /* noop */ }
       playRef.current = null;
     }
     setPlaying(false);
+    setFocusTime(start);
   }
 
   async function preview() {
@@ -218,6 +249,13 @@ export default function AudioEditor({ file, onClose, onSaved }) {
       node.start(0);
       playRef.current = { ctx, node };
       setPlaying(true);
+      // Track playback position (original-track time) to drive the lyric line.
+      const tick = () => {
+        if (!playRef.current) return;
+        setFocusTime(Math.min(end, start + playRef.current.ctx.currentTime));
+        rafRef.current = requestAnimationFrame(tick);
+      };
+      rafRef.current = requestAnimationFrame(tick);
     } catch (err) {
       setError('Preview failed: ' + err.message);
     }
@@ -251,6 +289,12 @@ export default function AudioEditor({ file, onClose, onSaved }) {
       fd.append('file', newFile);
       fd.append('display_name', name.trim() || suggested);
       if (file.folder) fd.append('folder', file.folder);
+      // Carry the source track's metadata forward — the re-encoded clip has no
+      // tags, so without this it would lose artist/title/album/lyrics.
+      if (file.artist) fd.append('artist', file.artist);
+      if (file.title) fd.append('title', file.title);
+      if (file.album) fd.append('album', file.album);
+      if (file.lyrics) { fd.append('lyrics', file.lyrics); fd.append('lyrics_synced', String(!!file.lyrics_synced)); }
       const res = await fetch('/api/upload/media', {
         method: 'POST',
         headers: { Authorization: `Bearer ${localStorage.getItem('qm_admin_token')}` },
@@ -284,6 +328,17 @@ export default function AudioEditor({ file, onClose, onSaved }) {
           ) : (
             <>
               <canvas ref={canvasRef} width={620} height={140} className="ae-wave" />
+              {file.lyrics_synced && lrc.length > 0 && (
+                <div className="ae-lyrics">
+                  <span className="ae-lyrics-time">{fmt(focusTime)}</span>
+                  <span className="ae-lyrics-line">{currentLyric?.text || '♪ …'}</span>
+                </div>
+              )}
+              {file.lyrics && !file.lyrics_synced && (
+                <p className="help-text" style={{ marginTop: 6 }}>
+                  Lyrics for this track are plain (no timing) — fetch/paste timed (LRC) lyrics in the Media Library to see them line up while you scrub.
+                </p>
+              )}
               <div className="ae-row">
                 <label className="ae-field">
                   <span>Start — {fmt(start)}</span>
