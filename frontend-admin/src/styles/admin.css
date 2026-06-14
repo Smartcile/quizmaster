@@ -4447,7 +4447,17 @@ input[type="checkbox"] {
 
 /* ===== Media editing tools (audio trim / image crop) ===== */
 .ae-wave { width: 100%; max-width: 620px; height: 140px; border: 1px solid var(--border); border-radius: 8px; display: block; }
+.ae-lyrics { display: flex; align-items: baseline; gap: 10px; margin-top: 8px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: rgba(0,240,255,0.05); }
+.ae-lyrics-time { font-variant-numeric: tabular-nums; color: var(--neon-cyan); font-size: 0.8rem; flex: 0 0 auto; }
+.ae-lyrics-line { color: var(--text-primary); font-size: 1.05rem; font-weight: 600; }
+.media-lyrics-row { margin: 4px 0 14px; }
+.media-lyrics-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+.media-lyrics-text { width: 100%; resize: vertical; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.82rem; }
+.lyrics-badge { font-style: normal; font-size: 0.72rem; padding: 1px 7px; border-radius: 999px; margin-left: 6px; }
+.lyrics-badge.synced { background: rgba(0,255,159,0.15); color: var(--neon-green, #00ff9f); }
+.lyrics-badge.plain { background: rgba(139,157,195,0.15); color: var(--text-muted); }
 .ae-row { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; margin-top: 12px; }
+.audio-form-block { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; margin-top: 4px; padding: 10px; border: 1px solid rgba(255,157,0,0.35); border-radius: 8px; background: rgba(255,157,0,0.05); }
 .ae-field { display: flex; flex-direction: column; gap: 4px; font-size: 0.82rem; color: var(--text-muted); min-width: 150px; flex: 1; }
 .ae-field input[type="range"] { width: 100%; }
 .ae-field input[type="number"] { width: 90px; }

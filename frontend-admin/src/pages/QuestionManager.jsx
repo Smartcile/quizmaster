@@ -51,6 +51,8 @@ const EMPTY_FORM = {
   approved: false,
   options: ['', '', '', ''],
   is_whoami: false,
+  audio_form: '',
+  audio_stop_seconds: '',
   clues: defaultClues()
 };
 
@@ -149,8 +151,10 @@ export default function QuestionManager() {
   const [resolveOpen, setResolveOpen]   = useState(false);
   const [successSummary, setSuccessSummary] = useState(null);
   const [importing, setImporting]       = useState(false);
+  const [audioRoundsEnabled, setAudioRoundsEnabled] = useState(false);
 
   useEffect(() => { loadAll(); }, []);
+  useEffect(() => { api.get('/settings').then(s => setAudioRoundsEnabled(!!s.audio_rounds_enabled)).catch(() => {}); }, []);
 
   const loadAll = async () => {
     try {
@@ -214,6 +218,8 @@ export default function QuestionManager() {
       // For a Who/What Am I, options holds the clue objects [{text,points}]
       options: (!isWhoami && Array.isArray(q.options) && q.options.length) ? [...q.options] : ['', '', '', ''],
       is_whoami: isWhoami,
+      audio_form: q.audio_form || '',
+      audio_stop_seconds: q.audio_stop_seconds ?? '',
       clues: isWhoami && Array.isArray(q.options) && q.options.length
         ? q.options.map(c => ({ text: c?.text || '', points: c?.points ?? 1 }))
         : defaultClues()
@@ -586,6 +592,38 @@ export default function QuestionManager() {
                     </datalist>
                   </label>
                 </div>
+
+                {/* Audio round form — only for audio questions, only when the
+                    global Audio Rounds (beta) setting is on. */}
+                {form.type === 'audio' && audioRoundsEnabled && (
+                  <div className="form-row form-row-2 audio-form-block">
+                    <label className="form-label">Audio round form
+                      <select value={form.audio_form} onChange={(e) => setForm({ ...form, audio_form: e.target.value })}>
+                        <option value="">— Normal (just play it) —</option>
+                        <option value="name_the_song">🎵 Name the Song (artist + song, ½ each)</option>
+                        <option value="finish_the_lyrics">🎤 Finish the Lyrics</option>
+                        <option value="other">Other (sound round)</option>
+                      </select>
+                    </label>
+                    {form.audio_form === 'finish_the_lyrics' && (
+                      <label className="form-label">Stop snippet at (seconds)
+                        <input
+                          type="number" min="0" step="0.1"
+                          value={form.audio_stop_seconds}
+                          onChange={(e) => setForm({ ...form, audio_stop_seconds: e.target.value })}
+                          placeholder="e.g. 18.5"
+                        />
+                      </label>
+                    )}
+                    <p className="help-text" style={{ flexBasis: '100%', marginTop: 4 }}>
+                      {form.audio_form === 'name_the_song'
+                        ? 'Scored on the linked track’s Artist + Song title (set those in the Media Library). Teams get two boxes, ½ point each.'
+                        : form.audio_form === 'finish_the_lyrics'
+                        ? 'The snippet plays from the start until the stop time; put the missing lyrics in the Answer field. Auto-mark is loose — override as needed.'
+                        : 'Choose a form to enable music scoring; "Normal" just plays the audio with a standard answer.'}
+                    </p>
+                  </div>
+                )}
               </>
             )}
 

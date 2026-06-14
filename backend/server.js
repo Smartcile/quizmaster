@@ -19,6 +19,7 @@ const categoriesRoutes = require('./routes/categories');
 const mediaRoutes = require('./routes/media');
 const repoRoutes = require('./routes/repos');
 const whoamiRoutes = require('./routes/whoami');
+const settingsRoutes = require('./routes/settings');
 const { setupWebSocketHandlers } = require('./websocket/handlers');
 const { errorHandler } = require('./middleware/errorHandler');
 const { login, requireAdminForWrites } = require('./middleware/auth');
@@ -64,6 +65,7 @@ app.use('/api/whoami', whoamiRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/media', requireAdminForWrites, mediaRoutes);
 app.use('/api/repos', requireAdminForWrites, repoRoutes);
+app.use('/api/settings', requireAdminForWrites, settingsRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

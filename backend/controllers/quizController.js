@@ -39,10 +39,15 @@ async function loadQuizWithRoundsAndWidgets(id) {
             WHEN 'multichoice' THEN 'mcq'
             WHEN 'both'        THEN 'both'
             ELSE q.answer_mode END,
+          'audio_form', q.audio_form,
+          'audio_stop_seconds', q.audio_stop_seconds,
+          'media_artist', mf.artist,
+          'media_title', mf.title,
           'order', rq."order"
         ) ORDER BY rq."order")
         FROM round_questions rq
         JOIN questions q ON rq.question_id = q.id
+        LEFT JOIN media_files mf ON mf.url = q.media_url
         WHERE rq.round_id = r.id),
         '[]'::json
       ) as questions

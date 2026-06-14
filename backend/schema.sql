@@ -338,6 +338,33 @@ CREATE INDEX IF NOT EXISTS idx_media_files_filename ON media_files(filename);
 -- virtual folder for organising the library — no effect on where files live.
 ALTER TABLE media_files ADD COLUMN IF NOT EXISTS display_name VARCHAR(500);
 ALTER TABLE media_files ADD COLUMN IF NOT EXISTS folder VARCHAR(200);
+-- Audio metadata (parsed from ID3 tags on upload, but stored here so it survives
+-- the in-browser editor re-encoding and can be corrected by hand). duration is
+-- in seconds. lyrics holds LRC (synced) or plain text; lyrics_synced flags which.
+ALTER TABLE media_files ADD COLUMN IF NOT EXISTS artist VARCHAR(500);
+ALTER TABLE media_files ADD COLUMN IF NOT EXISTS title VARCHAR(500);
+ALTER TABLE media_files ADD COLUMN IF NOT EXISTS album VARCHAR(500);
+ALTER TABLE media_files ADD COLUMN IF NOT EXISTS duration_seconds NUMERIC(10,3);
+ALTER TABLE media_files ADD COLUMN IF NOT EXISTS lyrics TEXT;
+ALTER TABLE media_files ADD COLUMN IF NOT EXISTS lyrics_synced BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Audio round forms (beta). audio_form selects how an audio question behaves:
+-- 'name_the_song' (artist+song, half each), 'finish_the_lyrics' (snippet stops
+-- at audio_stop_seconds; answer = the missing lyrics), or 'other'. Only relevant
+-- when type='audio'. Gated globally by app_settings.audio_rounds_enabled.
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS audio_form VARCHAR(30);
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS audio_stop_seconds NUMERIC(10,3);
+
+-- app_settings: small key/value store for global admin settings (applies to all
+-- users + surfaces, unlike the browser-local Quiz Control test settings).
+CREATE TABLE IF NOT EXISTS app_settings (
+  key        VARCHAR(100) PRIMARY KEY,
+  value      JSONB NOT NULL,
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+-- Audio rounds (Name the Song / Finish the Lyrics) — a beta feature, off by default.
+INSERT INTO app_settings (key, value) VALUES ('audio_rounds_enabled', 'false')
+  ON CONFLICT (key) DO NOTHING;
 
 -- ============================================================
 -- Question source + GitHub repositories (additive)

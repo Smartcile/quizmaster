@@ -311,6 +311,7 @@ body {
   background: rgba(0, 240, 255, 0.08);
 }
 
+.nts-inputs { display: flex; flex-direction: column; gap: 10px; }
 .answer-input {
   padding: 16px 18px;
   background: var(--bg-base);
