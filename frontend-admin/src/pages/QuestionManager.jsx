@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { api } from '../services/api';
 import MediaPicker from '../components/MediaPicker';
+import AudioEditor from '../components/AudioEditor';
 
 // Map an uploaded file's MIME type to a question media type.
 const mimeToType = (mime) =>
@@ -144,6 +145,8 @@ export default function QuestionManager() {
   const [csvOpen, setCsvOpen] = useState(false);
   const [catManagerOpen, setCatManagerOpen] = useState(false);
   const [mediaPickerOpen, setMediaPickerOpen] = useState(false);
+  const [audioEditorOpen, setAudioEditorOpen] = useState(false);
+  const [mediaByUrl, setMediaByUrl] = useState({}); // url → full media record (lyrics, ftl…)
   const [managedCategories, setManagedCategories] = useState([]);
   // Duplicate-aware import state
   const [importDupes, setImportDupes]   = useState([]); // [{ question, existingId, existingText }]
@@ -151,26 +154,67 @@ export default function QuestionManager() {
   const [resolveOpen, setResolveOpen]   = useState(false);
   const [successSummary, setSuccessSummary] = useState(null);
   const [importing, setImporting]       = useState(false);
-  const [audioRoundsEnabled, setAudioRoundsEnabled] = useState(false);
 
   useEffect(() => { loadAll(); }, []);
-  useEffect(() => { api.get('/settings').then(s => setAudioRoundsEnabled(!!s.audio_rounds_enabled)).catch(() => {}); }, []);
 
   const loadAll = async () => {
     try {
-      const [qs, cats, managed] = await Promise.all([
+      const [qs, cats, managed, media] = await Promise.all([
         api.get('/questions'),
         api.get('/questions/categories'),
-        api.get('/categories').catch(() => [])
+        api.get('/categories').catch(() => []),
+        api.get('/media').catch(() => [])
       ]);
       setQuestions(qs);
       setCategories(cats);
       setManagedCategories(managed);
+      setMediaByUrl(Object.fromEntries((media || []).map(f => [f.url, f])));
       setError(null);
     } catch (err) {
       setError(err.message);
     }
   };
+
+  // Apply a picked/edited media file to the form, importing a remembered
+  // Finish-the-Lyrics answer from the track when relevant (without clobbering
+  // anything the user has already typed).
+  const applyMedia = (f, { setFinishLyrics = false } = {}) => {
+    if (!f?.url) return;
+    setMediaByUrl(prev => ({ ...prev, [f.url]: f }));
+    setForm(prev => {
+      const next = { ...prev, media_url: f.url, type: mimeToType(f.mime_type) };
+      if (setFinishLyrics) next.audio_form = 'finish_the_lyrics';
+      const wantFtl = setFinishLyrics || next.audio_form === 'finish_the_lyrics';
+      if (next.type === 'audio' && wantFtl && f.ftl_answer) {
+        if (!String(prev.answer || '').trim()) next.answer = f.ftl_answer;
+        if (f.ftl_stop_seconds != null && (prev.audio_stop_seconds === '' || prev.audio_stop_seconds == null))
+          next.audio_stop_seconds = f.ftl_stop_seconds;
+      }
+      return next;
+    });
+  };
+
+  // The audio editor saved a (trimmed) clip as a NEW file. Point the question at
+  // it and pull through any highlighted Finish-the-Lyrics answer + stop time.
+  const handleAudioEdited = (data, extra) => {
+    setAudioEditorOpen(false);
+    if (!data?.url) return;
+    setMediaByUrl(prev => ({ ...prev, [data.url]: data }));
+    setForm(prev => {
+      const next = { ...prev, media_url: data.url, type: 'audio' };
+      if (extra?.answer) {
+        next.audio_form = 'finish_the_lyrics';
+        next.answer = extra.answer;
+        if (extra.stopSeconds != null) next.audio_stop_seconds = extra.stopSeconds;
+      }
+      return next;
+    });
+  };
+
+  // Build a file object for the audio editor from the current selection.
+  const currentMediaFile = () =>
+    mediaByUrl[form.media_url] ||
+    { url: form.media_url, mime_type: 'audio/mpeg', original_name: (form.media_url || '').split('/').pop() };
 
   const reloadCategories = async () => {
     try {
@@ -593,12 +637,27 @@ export default function QuestionManager() {
                   </label>
                 </div>
 
-                {/* Audio round form — only for audio questions, only when the
-                    global Audio Rounds (beta) setting is on. */}
-                {form.type === 'audio' && audioRoundsEnabled && (
+                {/* Audio round form — shown whenever an audio file is the media,
+                    just like the MCQ block appears for multiple-choice. */}
+                {form.type === 'audio' && (
                   <div className="form-row form-row-2 audio-form-block">
                     <label className="form-label">Audio round form
-                      <select value={form.audio_form} onChange={(e) => setForm({ ...form, audio_form: e.target.value })}>
+                      <select
+                        value={form.audio_form}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setForm(prev => {
+                            const next = { ...prev, audio_form: v };
+                            const f = mediaByUrl[prev.media_url];
+                            if (v === 'finish_the_lyrics' && f?.ftl_answer) {
+                              if (!String(prev.answer || '').trim()) next.answer = f.ftl_answer;
+                              if (f.ftl_stop_seconds != null && (prev.audio_stop_seconds === '' || prev.audio_stop_seconds == null))
+                                next.audio_stop_seconds = f.ftl_stop_seconds;
+                            }
+                            return next;
+                          });
+                        }}
+                      >
                         <option value="">— Normal (just play it) —</option>
                         <option value="name_the_song">🎵 Name the Song (artist + song, ½ each)</option>
                         <option value="finish_the_lyrics">🎤 Finish the Lyrics</option>
@@ -619,7 +678,7 @@ export default function QuestionManager() {
                       {form.audio_form === 'name_the_song'
                         ? 'Scored on the linked track’s Artist + Song title (set those in the Media Library). Teams get two boxes, ½ point each.'
                         : form.audio_form === 'finish_the_lyrics'
-                        ? 'The snippet plays from the start until the stop time; put the missing lyrics in the Answer field. Auto-mark is loose — override as needed.'
+                        ? 'Use “✂ Cut down / lyrics” above to trim the snippet and highlight the missing lyric lines — that fills the Answer + stop time for you. Auto-mark is loose; override as needed.'
                         : 'Choose a form to enable music scoring; "Normal" just plays the audio with a standard answer.'}
                     </p>
                   </div>
@@ -703,6 +762,11 @@ export default function QuestionManager() {
                         <button type="button" className="btn btn-secondary btn-sm" onClick={() => setMediaPickerOpen(true)}>
                           Change
                         </button>
+                        {form.type === 'audio' && (
+                          <button type="button" className="btn btn-secondary btn-sm" onClick={() => setAudioEditorOpen(true)} title="Trim the snippet and highlight the Finish-the-Lyrics answer">
+                            ✂ Cut down / lyrics
+                          </button>
+                        )}
                         <button type="button" className="btn btn-danger btn-sm" onClick={() => setForm({ ...form, media_url: '' })}>
                           ✕
                         </button>
@@ -818,10 +882,19 @@ export default function QuestionManager() {
       {mediaPickerOpen && (
         <MediaPicker
           onPick={(f) => {
-            setForm(prev => ({ ...prev, media_url: f.url, type: mimeToType(f.mime_type) }));
+            applyMedia(f);
             setMediaPickerOpen(false);
           }}
           onClose={() => setMediaPickerOpen(false)}
+        />
+      )}
+
+      {audioEditorOpen && (
+        <AudioEditor
+          file={currentMediaFile()}
+          defaultMarkAnswer={form.audio_form === 'finish_the_lyrics'}
+          onClose={() => setAudioEditorOpen(false)}
+          onSaved={handleAudioEdited}
         />
       )}
 

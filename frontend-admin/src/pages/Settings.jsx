@@ -21,52 +21,6 @@ export default function Settings() {
       <CollapsibleSection title="Quiz Control & Testing" subtitle="Bots, embedded previews and test-run cleanup">
         <QuizControlSettings />
       </CollapsibleSection>
-
-      <CollapsibleSection title="Audio Rounds (beta)" subtitle="Name the Song / Finish the Lyrics — music metadata, lyrics & auto-scoring">
-        <AudioRoundsSettings onError={setError} />
-      </CollapsibleSection>
-    </div>
-  );
-}
-
-// ── Audio Rounds (global, server-side) ────────────────────────────────────────
-function AudioRoundsSettings({ onError }) {
-  const [enabled, setEnabled] = useState(false);
-  const [loaded, setLoaded] = useState(false);
-  const [saved, setSaved] = useState(false);
-
-  useEffect(() => {
-    api.get('/settings')
-      .then(s => setEnabled(!!s.audio_rounds_enabled))
-      .catch(() => {})
-      .finally(() => setLoaded(true));
-  }, []);
-
-  const toggle = async (next) => {
-    setEnabled(next); setSaved(false);
-    try {
-      await api.put('/settings', { audio_rounds_enabled: next });
-      setSaved(true); setTimeout(() => setSaved(false), 2000);
-    } catch (err) {
-      setEnabled(!next); // revert
-      onError?.(err.message.replace(/^\d+:\s*/, ''));
-    }
-  };
-
-  return (
-    <div className="qc-settings">
-      <p className="help-text" style={{ marginTop: 0 }}>
-        Enables the music round types (Name the Song, Finish the Lyrics) with song metadata,
-        synced lyrics and artist/title auto-scoring. This is a <strong>global</strong> setting —
-        it applies to everyone. Off by default while in beta.
-      </p>
-      <div className="qc-block">
-        <label className="qc-check">
-          <input type="checkbox" checked={enabled} disabled={!loaded} onChange={(e) => toggle(e.target.checked)} />
-          {enabled ? 'Audio rounds enabled' : 'Audio rounds disabled'}
-        </label>
-        {saved && <span className="qc-saved" style={{ marginLeft: 10 }}>✓ Saved</span>}
-      </div>
     </div>
   );
 }

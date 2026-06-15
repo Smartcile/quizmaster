@@ -128,6 +128,15 @@ async function updateMedia(req, res) {
       fields.push(`lyrics_synced = $${i++}`);
       values.push(!!body.lyrics_synced);
     }
+    // Remembered "Finish the Lyrics" answer (set from the audio editor).
+    if (body.ftl_answer !== undefined) {
+      fields.push(`ftl_answer = $${i++}`);
+      values.push(String(body.ftl_answer || '').trim() || null);
+    }
+    if (body.ftl_stop_seconds !== undefined) {
+      fields.push(`ftl_stop_seconds = $${i++}`);
+      values.push((body.ftl_stop_seconds === null || body.ftl_stop_seconds === '') ? null : Number(body.ftl_stop_seconds));
+    }
     if (!fields.length) return res.status(400).json({ error: 'Nothing to update' });
     values.push(id);
     const r = await db.query(

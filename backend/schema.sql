@@ -347,6 +347,12 @@ ALTER TABLE media_files ADD COLUMN IF NOT EXISTS album VARCHAR(500);
 ALTER TABLE media_files ADD COLUMN IF NOT EXISTS duration_seconds NUMERIC(10,3);
 ALTER TABLE media_files ADD COLUMN IF NOT EXISTS lyrics TEXT;
 ALTER TABLE media_files ADD COLUMN IF NOT EXISTS lyrics_synced BOOLEAN NOT NULL DEFAULT FALSE;
+-- A remembered "Finish the Lyrics" answer for this track: ftl_answer is the
+-- missing lyric text the team must supply; ftl_stop_seconds is where playback
+-- cuts off (relative to this file). Set in the audio editor by highlighting the
+-- answer lines; a question using this file as a finish_the_lyrics auto-imports it.
+ALTER TABLE media_files ADD COLUMN IF NOT EXISTS ftl_answer TEXT;
+ALTER TABLE media_files ADD COLUMN IF NOT EXISTS ftl_stop_seconds NUMERIC(10,3);
 
 -- Audio round forms (beta). audio_form selects how an audio question behaves:
 -- 'name_the_song' (artist+song, half each), 'finish_the_lyrics' (snippet stops
