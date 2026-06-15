@@ -128,7 +128,7 @@ function parseLRC(text) {
 
 // In-browser audio trimmer: trim start/end, fade in/out, gain/normalise, then
 // export to WAV and upload as a NEW media file (the original is untouched).
-export default function AudioEditor({ file, onClose, onSaved }) {
+export default function AudioEditor({ file, onClose, onSaved, defaultMarkAnswer = false }) {
   const [buffer, setBuffer] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(true);
@@ -145,17 +145,53 @@ export default function AudioEditor({ file, onClose, onSaved }) {
   const playRef = useRef(null);   // { ctx, node }
   const rafRef = useRef(null);
 
-  // Timed lyrics (for the karaoke scrub display). focusTime tracks the start
-  // handle when idle, and live playback position while previewing.
+  // Lyrics for the karaoke view. Synced (LRC) lines carry timestamps so they can
+  // light up + auto-scroll while you scrub; plain lyrics show as a static list.
   const lrc = useMemo(() => (file.lyrics_synced ? parseLRC(file.lyrics) : []), [file.lyrics, file.lyrics_synced]);
+  const synced = file.lyrics_synced && lrc.length > 0;
+  const lines = useMemo(() => {
+    if (synced) return lrc;
+    return String(file.lyrics || '').split(/\r?\n/).map(t => ({ t: null, text: t.trim() })).filter(l => l.text);
+  }, [synced, lrc, file.lyrics]);
+
   const [focusTime, setFocusTime] = useState(0);
   useEffect(() => { if (!playing) setFocusTime(start); }, [start, playing]);
-  const currentLyric = useMemo(() => {
-    if (!lrc.length) return null;
-    let cur = null;
-    for (const l of lrc) { if (l.t <= focusTime + 0.05) cur = l; else break; }
-    return cur;
-  }, [lrc, focusTime]);
+
+  // Index of the line currently playing (synced only) — drives highlight + scroll.
+  const curIdx = useMemo(() => {
+    if (!synced) return -1;
+    let idx = -1;
+    for (let k = 0; k < lines.length; k++) { if (lines[k].t <= focusTime + 0.05) idx = k; else break; }
+    return idx;
+  }, [synced, lines, focusTime]);
+
+  // Answer selection: click lyric lines to mark the "missing" Finish-the-Lyrics
+  // answer (highlighted yellow). Reconstruct any previously-saved selection.
+  const [markAnswer, setMarkAnswer] = useState(!!defaultMarkAnswer);
+  const [answerSel, setAnswerSel] = useState(() => new Set());
+  useEffect(() => {
+    if (!file.ftl_answer || !lines.length) return;
+    const ansLines = new Set(String(file.ftl_answer).split(/\r?\n/).map(s => s.trim()).filter(Boolean));
+    const pre = new Set();
+    lines.forEach((l, k) => { if (ansLines.has(l.text.trim())) pre.add(k); });
+    if (pre.size) { setAnswerSel(pre); setMarkAnswer(true); }
+  }, [file.ftl_answer, lines]);
+
+  const toggleLine = (k) => {
+    if (!markAnswer) return;
+    setAnswerSel(prev => { const n = new Set(prev); if (n.has(k)) n.delete(k); else n.add(k); return n; });
+  };
+
+  const selIdx = useMemo(() => [...answerSel].sort((a, b) => a - b), [answerSel]);
+  const answerText = useMemo(() => selIdx.map(k => lines[k]?.text || '').filter(Boolean).join('\n'), [selIdx, lines]);
+  const answerStop = (synced && selIdx.length) ? Math.max(0, +(lines[selIdx[0]].t - start).toFixed(3)) : null;
+
+  const lyricsBoxRef = useRef(null);
+  const activeLineRef = useRef(null);
+  useEffect(() => {
+    const el = activeLineRef.current, box = lyricsBoxRef.current;
+    if (el && box) box.scrollTop = el.offsetTop - box.clientHeight / 2 + el.clientHeight / 2;
+  }, [curIdx]);
 
   // Decode the source file
   useEffect(() => {
@@ -295,6 +331,12 @@ export default function AudioEditor({ file, onClose, onSaved }) {
       if (file.title) fd.append('title', file.title);
       if (file.album) fd.append('album', file.album);
       if (file.lyrics) { fd.append('lyrics', file.lyrics); fd.append('lyrics_synced', String(!!file.lyrics_synced)); }
+      // A marked Finish-the-Lyrics answer is remembered on the new clip and
+      // (for the question editor) handed back via onSaved's second argument.
+      if (markAnswer && answerText) {
+        fd.append('ftl_answer', answerText);
+        if (answerStop != null) fd.append('ftl_stop_seconds', String(answerStop));
+      }
       const res = await fetch('/api/upload/media', {
         method: 'POST',
         headers: { Authorization: `Bearer ${localStorage.getItem('qm_admin_token')}` },
@@ -302,7 +344,7 @@ export default function AudioEditor({ file, onClose, onSaved }) {
       });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json().catch(() => null);
-      onSaved?.(data);
+      onSaved?.(data, { answer: answerText, stopSeconds: answerStop, markAnswer });
     } catch (err) {
       setError('Save failed: ' + err.message);
     } finally {
@@ -328,15 +370,60 @@ export default function AudioEditor({ file, onClose, onSaved }) {
           ) : (
             <>
               <canvas ref={canvasRef} width={620} height={140} className="ae-wave" />
-              {file.lyrics_synced && lrc.length > 0 && (
-                <div className="ae-lyrics">
-                  <span className="ae-lyrics-time">{fmt(focusTime)}</span>
-                  <span className="ae-lyrics-line">{currentLyric?.text || '♪ …'}</span>
+              {lines.length > 0 ? (
+                <div className="ae-lyrics-panel">
+                  <div className="ae-lyrics-bar">
+                    <span className="ae-lyrics-time">{synced ? `▶ ${fmt(focusTime)}` : 'Lyrics'}</span>
+                    <label className="ae-lyrics-mark">
+                      <input
+                        type="checkbox"
+                        checked={markAnswer}
+                        onChange={(e) => { setMarkAnswer(e.target.checked); if (!e.target.checked) setAnswerSel(new Set()); }}
+                      />
+                      🎤 Mark “Finish the Lyrics” answer
+                    </label>
+                  </div>
+                  {markAnswer && (
+                    <p className="ae-lyrics-hint">
+                      Click the line(s) the teams must complete — they turn <span className="ae-ans-chip">yellow</span>.
+                      {synced
+                        ? ' The snippet stops right before the first highlighted line.'
+                        : ' These lyrics aren’t timed, so set the stop time on the question manually.'}
+                    </p>
+                  )}
+                  <div className="ae-lyrics-box" ref={lyricsBoxRef}>
+                    {lines.map((l, k) => {
+                      const outside = synced && l.t != null && (l.t < start || l.t > end);
+                      const cls = [
+                        'ae-lyric-line',
+                        k === curIdx ? 'is-current' : '',
+                        answerSel.has(k) ? 'is-answer' : '',
+                        outside ? 'is-outside' : '',
+                        markAnswer ? 'is-clickable' : ''
+                      ].filter(Boolean).join(' ');
+                      return (
+                        <div
+                          key={k}
+                          className={cls}
+                          ref={k === curIdx ? activeLineRef : null}
+                          onClick={() => toggleLine(k)}
+                        >
+                          {synced && l.t != null && <span className="ae-lyric-t">{fmt(l.t)}</span>}
+                          <span className="ae-lyric-txt">{l.text}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {markAnswer && answerText && (
+                    <p className="help-text ae-ans-preview">
+                      Answer: <strong>{answerText.replace(/\n/g, ' / ')}</strong>
+                      {answerStop != null && <> · snippet stops at {fmt(answerStop)}</>}
+                    </p>
+                  )}
                 </div>
-              )}
-              {file.lyrics && !file.lyrics_synced && (
+              ) : (
                 <p className="help-text" style={{ marginTop: 6 }}>
-                  Lyrics for this track are plain (no timing) — fetch/paste timed (LRC) lyrics in the Media Library to see them line up while you scrub.
+                  No lyrics on this track yet — add or fetch them in the Media Library to see them here while you scrub and to mark a Finish-the-Lyrics answer.
                 </p>
               )}
               <div className="ae-row">

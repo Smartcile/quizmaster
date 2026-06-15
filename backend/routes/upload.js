@@ -62,17 +62,22 @@ router.post('/media', upload.single('file'), async (req, res) => {
     : (meta.duration_seconds ?? null);
   const lyrics = (req.body?.lyrics || '').trim() || null;
   const lyricsSynced = String(req.body?.lyrics_synced) === 'true';
+  // A "Finish the Lyrics" answer marked in the audio editor — remembered on the
+  // file so a question that picks it can auto-import the missing lyrics + cut.
+  const ftlAnswer = (req.body?.ftl_answer || '').trim() || null;
+  const ftlStop = (req.body?.ftl_stop_seconds != null && req.body.ftl_stop_seconds !== '')
+    ? Number(req.body.ftl_stop_seconds) : null;
 
   let row = null;
   try {
     const r = await db.query(
       `INSERT INTO media_files
          (filename, original_name, display_name, folder, mime_type, size_bytes, url,
-          artist, title, album, duration_seconds, lyrics, lyrics_synced)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+          artist, title, album, duration_seconds, lyrics, lyrics_synced, ftl_answer, ftl_stop_seconds)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
        ON CONFLICT (filename) DO NOTHING RETURNING *`,
       [req.file.filename, req.file.originalname, displayName, folder, req.file.mimetype, req.file.size, url,
-       artist, title, album, duration_seconds, lyrics, lyricsSynced]
+       artist, title, album, duration_seconds, lyrics, lyricsSynced, ftlAnswer, ftlStop]
     );
     row = r.rows[0] || null;
   } catch { /* non-fatal — media library tracking is best-effort */ }
@@ -85,6 +90,8 @@ router.post('/media', upload.single('file'), async (req, res) => {
     folder,
     mime_type: req.file.mimetype,
     artist, title, album, duration_seconds,
+    lyrics, lyrics_synced: lyricsSynced,
+    ftl_answer: ftlAnswer, ftl_stop_seconds: ftlStop,
     ...(row ? { id: row.id } : {})
   });
 });

@@ -4447,9 +4447,26 @@ input[type="checkbox"] {
 
 /* ===== Media editing tools (audio trim / image crop) ===== */
 .ae-wave { width: 100%; max-width: 620px; height: 140px; border: 1px solid var(--border); border-radius: 8px; display: block; }
-.ae-lyrics { display: flex; align-items: baseline; gap: 10px; margin-top: 8px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: rgba(0,240,255,0.05); }
-.ae-lyrics-time { font-variant-numeric: tabular-nums; color: var(--neon-cyan); font-size: 0.8rem; flex: 0 0 auto; }
-.ae-lyrics-line { color: var(--text-primary); font-size: 1.05rem; font-weight: 600; }
+/* Multi-line karaoke lyrics panel in the audio editor */
+.ae-lyrics-panel { margin-top: 10px; border: 1px solid var(--border); border-radius: 8px; background: rgba(0,240,255,0.04); padding: 8px 10px; }
+.ae-lyrics-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+.ae-lyrics-time { font-variant-numeric: tabular-nums; color: var(--neon-cyan); font-size: 0.82rem; font-weight: 600; }
+.ae-lyrics-mark { display: inline-flex; align-items: center; gap: 6px; font-size: 0.82rem; color: var(--text-muted); cursor: pointer; }
+.ae-lyrics-hint { font-size: 0.78rem; color: var(--text-muted); margin: 0 0 6px; }
+.ae-ans-chip { color: #1a1206; background: var(--neon-yellow, #ffe600); padding: 0 6px; border-radius: 4px; font-weight: 700; }
+/* ~10 lines tall, scrolls; position:relative so active-line offsetTop is local */
+.ae-lyrics-box { position: relative; max-height: 17em; overflow-y: auto; scroll-behavior: smooth; border-top: 1px solid var(--border); padding-top: 4px; }
+.ae-lyric-line { display: flex; align-items: baseline; gap: 10px; padding: 3px 8px; border-radius: 5px; color: var(--text-primary); font-size: 0.98rem; line-height: 1.45; }
+.ae-lyric-line.is-clickable { cursor: pointer; }
+.ae-lyric-line.is-clickable:hover { background: rgba(0,240,255,0.08); }
+.ae-lyric-line.is-outside { opacity: 0.4; }
+.ae-lyric-line.is-current { background: rgba(0,240,255,0.16); font-weight: 700; }
+.ae-lyric-line.is-answer { background: rgba(255,230,0,0.22); box-shadow: inset 0 0 0 1px var(--neon-yellow, #ffe600); }
+.ae-lyric-line.is-answer.is-current { background: rgba(255,230,0,0.34); }
+.ae-lyric-t { flex: 0 0 auto; font-variant-numeric: tabular-nums; font-size: 0.72rem; color: var(--text-muted); min-width: 3.2em; }
+.ae-lyric-txt { flex: 1; }
+.ae-ans-preview { margin-top: 6px; }
+.ae-ans-preview strong { color: var(--neon-yellow, #ffe600); }
 .media-lyrics-row { margin: 4px 0 14px; }
 .media-lyrics-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
 .media-lyrics-text { width: 100%; resize: vertical; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.82rem; }
