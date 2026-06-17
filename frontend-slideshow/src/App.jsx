@@ -46,6 +46,9 @@ function App() {
   // while sitting on a scoreboard slide. (No longer a full-screen overlay.)
   const [scoreboardVisible, setScoreboardVisible] = useState(true);
   const [qrSize, setQrSize] = useState(qrSizeFor);
+  // Manual media playback: the host sends media_play (slideIndex + nonce). Media
+  // never autoplays — it only plays when this matches the current slide.
+  const [playToken, setPlayToken] = useState(null);
   const socket = useWebSocket();
   const slides = useMemo(() => buildSlides(quiz), [quiz]);
 
@@ -153,6 +156,9 @@ function App() {
     const onScoreboardVis = (data) => {
       if (data?.visibility) setScoreboardVisible(!!data.visibility.slideshow);
     };
+    const onMediaPlay = (data) => {
+      if (typeof data?.slideIndex === 'number') setPlayToken({ slideIndex: data.slideIndex, nonce: data.nonce });
+    };
 
     socket.on('connect',                rejoin);
     socket.on('session_state',          onSessionState);
@@ -160,6 +166,7 @@ function App() {
     socket.on('session_status_changed', onStatus);
     socket.on('team_joined',            onTeamJoin);
     socket.on('scoreboard_visibility_changed', onScoreboardVis);
+    socket.on('media_play',             onMediaPlay);
 
     // If socket is already connected when the effect runs, join immediately
     if (socket.connected) rejoin();
@@ -174,6 +181,7 @@ function App() {
       socket.off('session_status_changed', onStatus);
       socket.off('team_joined',            onTeamJoin);
       socket.off('scoreboard_visibility_changed', onScoreboardVis);
+      socket.off('media_play',             onMediaPlay);
     };
   }, [socket, sessionId]);
 
@@ -243,7 +251,7 @@ function App() {
     return (
       <div className="slideshow-container">
         <div className="slide" style={slide?.background ? { background: slide.background } : undefined}>
-          <SlideRenderer slide={slide} sessionId={sessionId} socket={socket} scoresVisible={scoreboardVisible} />
+          <SlideRenderer slide={slide} slideIndex={currentSlide} playToken={playToken} sessionId={sessionId} socket={socket} scoresVisible={scoreboardVisible} />
         </div>
         <div className="slide-counter">
           {currentSlide + 1} / {slides.length}
@@ -322,7 +330,52 @@ function FullScreenMessage({ title, subtitle, message }) {
   );
 }
 
-function SlideRenderer({ slide, sessionId, socket, scoresVisible = true }) {
+// Question audio/video on the big screen. No native controls and never
+// autoplays — it only plays when the host's media_play (nonce) targets this
+// slide. Keyed by slide index at the call site, so leaving the slide unmounts
+// this and stops playback. Honours the finish_the_lyrics stop time.
+function QuestionMedia({ slide, slideIndex, playToken }) {
+  const ref = useRef(null);
+  const [state, setState] = useState('idle'); // idle | playing | ended
+
+  useEffect(() => {
+    if (!playToken || playToken.slideIndex !== slideIndex) return;
+    const el = ref.current;
+    if (!el) return;
+    try { el.currentTime = 0; } catch { /* not seekable yet */ }
+    el.play().then(() => setState('playing')).catch(() => {});
+  }, [playToken, slideIndex]);
+
+  const onTimeUpdate = (e) => {
+    if (slide.audioForm === 'finish_the_lyrics' && slide.audioStop && e.target.currentTime >= slide.audioStop) {
+      e.target.pause();
+    }
+  };
+  const common = {
+    ref,
+    src: slide.mediaUrl,
+    onTimeUpdate,
+    onEnded: () => setState('ended'),
+    onPause: () => setState(s => (s === 'playing' ? 'idle' : s)),
+    onPlaying: () => setState('playing'),
+  };
+
+  if (slide.questionType === 'video') {
+    return <video {...common} className="slide-video" playsInline />;
+  }
+  // Audio: no visible player — a non-interactive status badge tells the room.
+  return (
+    <div className={`slide-audio-badge ${state}`}>
+      <span className="slide-audio-icon">{state === 'playing' ? '🔊' : '🎵'}</span>
+      <span className="slide-audio-text">
+        {state === 'playing' ? 'Now playing…' : state === 'ended' ? 'Track finished' : 'Audio ready'}
+      </span>
+      <audio {...common} hidden />
+    </div>
+  );
+}
+
+function SlideRenderer({ slide, slideIndex, playToken, sessionId, socket, scoresVisible = true }) {
   if (!slide) return <div className="slide-empty"><h2>End of quiz</h2></div>;
 
   switch (slide.type) {
@@ -354,15 +407,8 @@ function SlideRenderer({ slide, sessionId, socket, scoresVisible = true }) {
           {slide.mediaUrl && (
             <div className="slide-media">
               {slide.questionType === 'image' && <img src={slide.mediaUrl} alt="Question media" />}
-              {slide.questionType === 'video' && <video controls src={slide.mediaUrl} />}
-              {slide.questionType === 'audio' && (
-                <audio
-                  controls
-                  src={slide.mediaUrl}
-                  onTimeUpdate={(slide.audioForm === 'finish_the_lyrics' && slide.audioStop)
-                    ? (e) => { if (e.target.currentTime >= slide.audioStop) e.target.pause(); }
-                    : undefined}
-                />
+              {(slide.questionType === 'video' || slide.questionType === 'audio') && (
+                <QuestionMedia key={slideIndex} slide={slide} slideIndex={slideIndex} playToken={playToken} />
               )}
             </div>
           )}

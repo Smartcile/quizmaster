@@ -4449,9 +4449,14 @@ input[type="checkbox"] {
 .ae-wave { width: 100%; max-width: 620px; height: 140px; border: 1px solid var(--border); border-radius: 8px; display: block; }
 /* Multi-line karaoke lyrics panel in the audio editor */
 .ae-lyrics-panel { margin-top: 10px; border: 1px solid var(--border); border-radius: 8px; background: rgba(0,240,255,0.04); padding: 8px 10px; }
-.ae-lyrics-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+.ae-lyrics-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 12px; margin-bottom: 6px; }
 .ae-lyrics-time { font-variant-numeric: tabular-nums; color: var(--neon-cyan); font-size: 0.82rem; font-weight: 600; }
 .ae-lyrics-mark { display: inline-flex; align-items: center; gap: 6px; font-size: 0.82rem; color: var(--text-muted); cursor: pointer; }
+.ae-lyrics-sync { display: inline-flex; align-items: center; gap: 4px; font-size: 0.76rem; color: var(--text-muted); }
+.ae-lyrics-sync button { padding: 1px 6px; font-size: 0.74rem; border: 1px solid var(--border); border-radius: 5px; background: rgba(0,240,255,0.06); color: var(--text-primary); cursor: pointer; }
+.ae-lyrics-sync button:hover { background: rgba(0,240,255,0.16); }
+.ae-sync-val { min-width: 3.2em; text-align: center; font-variant-numeric: tabular-nums; color: var(--neon-cyan); }
+.ae-wave { cursor: crosshair; }
 .ae-lyrics-hint { font-size: 0.78rem; color: var(--text-muted); margin: 0 0 6px; }
 .ae-ans-chip { color: #1a1206; background: var(--neon-yellow, #ffe600); padding: 0 6px; border-radius: 4px; font-weight: 700; }
 /* ~10 lines tall, scrolls; position:relative so active-line offsetTop is local */

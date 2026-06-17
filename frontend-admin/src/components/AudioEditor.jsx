@@ -126,6 +126,19 @@ function parseLRC(text) {
   return out.sort((a, b) => a.t - b.t);
 }
 
+// Re-serialize LRC text with every timestamp shifted by `offset` seconds
+// (clamped at 0) — used to bake a lyric-sync nudge into the saved file.
+function shiftLrcText(text, offset) {
+  if (!text || !offset) return text;
+  return String(text).replace(LRC_TS, (m, mm, ss, frac) => {
+    let t = (+mm) * 60 + (+ss) + (frac ? Number(`0.${frac}`) : 0) + offset;
+    if (t < 0) t = 0;
+    const M = Math.floor(t / 60);
+    const S = t - M * 60;
+    return `[${String(M).padStart(2, '0')}:${S.toFixed(2).padStart(5, '0')}]`;
+  });
+}
+
 // In-browser audio trimmer: trim start/end, fade in/out, gain/normalise, then
 // export to WAV and upload as a NEW media file (the original is untouched).
 export default function AudioEditor({ file, onClose, onSaved, defaultMarkAnswer = false }) {
@@ -141,13 +154,22 @@ export default function AudioEditor({ file, onClose, onSaved, defaultMarkAnswer 
   const [fadeOut, setFadeOut] = useState(0);
   const [gain, setGain] = useState(1);
 
+  const [playhead, setPlayhead] = useState(0);   // scrub cursor (Audacity-style)
+  const [lyricsOffset, setLyricsOffset] = useState(0); // sync nudge (seconds)
+
   const canvasRef = useRef(null);
   const playRef = useRef(null);   // { ctx, node }
   const rafRef = useRef(null);
+  const dragRef = useRef(null);   // 'start' | 'end' | 'seek' | null
+  const peaksRef = useRef(null);  // cached [min,max] per pixel column
 
   // Lyrics for the karaoke view. Synced (LRC) lines carry timestamps so they can
   // light up + auto-scroll while you scrub; plain lyrics show as a static list.
-  const lrc = useMemo(() => (file.lyrics_synced ? parseLRC(file.lyrics) : []), [file.lyrics, file.lyrics_synced]);
+  // The sync nudge shifts every timestamp live so you can line them up.
+  const lrc = useMemo(() => {
+    const base = file.lyrics_synced ? parseLRC(file.lyrics) : [];
+    return lyricsOffset ? base.map(l => ({ ...l, t: Math.max(0, l.t + lyricsOffset) })) : base;
+  }, [file.lyrics, file.lyrics_synced, lyricsOffset]);
   const synced = file.lyrics_synced && lrc.length > 0;
   const lines = useMemo(() => {
     if (synced) return lrc;
@@ -155,7 +177,7 @@ export default function AudioEditor({ file, onClose, onSaved, defaultMarkAnswer 
   }, [synced, lrc, file.lyrics]);
 
   const [focusTime, setFocusTime] = useState(0);
-  useEffect(() => { if (!playing) setFocusTime(start); }, [start, playing]);
+  useEffect(() => { if (!playing) setFocusTime(playhead); }, [playhead, playing]);
 
   // Index of the line currently playing (synced only) — drives highlight + scroll.
   const curIdx = useMemo(() => {
@@ -209,6 +231,7 @@ export default function AudioEditor({ file, onClose, onSaved, defaultMarkAnswer 
         setBuffer(buf);
         setStart(0);
         setEnd(buf.duration);
+        setPlayhead(0);
       } catch (err) {
         if (!cancelled) setError('Could not decode this audio file: ' + err.message);
       } finally {
@@ -218,7 +241,23 @@ export default function AudioEditor({ file, onClose, onSaved, defaultMarkAnswer 
     return () => { cancelled = true; stopPreview(); };
   }, [file.url]);
 
-  // Draw waveform + selection shading
+  // Cache the waveform peaks once per buffer so per-frame redraws (playhead
+  // animation) stay cheap.
+  useEffect(() => {
+    if (!buffer) { peaksRef.current = null; return; }
+    const w = canvasRef.current?.width || 620;
+    const data = buffer.getChannelData(0);
+    const step = Math.max(1, Math.floor(data.length / w));
+    const peaks = new Array(w);
+    for (let x = 0; x < w; x++) {
+      let min = 1, max = -1;
+      for (let i = 0; i < step; i++) { const v = data[x * step + i] || 0; if (v < min) min = v; if (v > max) max = v; }
+      peaks[x] = [min, max];
+    }
+    peaksRef.current = peaks;
+  }, [buffer]);
+
+  // Draw waveform + selection shading + handles + playhead cursor
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas || !buffer) return;
@@ -228,21 +267,17 @@ export default function AudioEditor({ file, onClose, onSaved, defaultMarkAnswer 
     ctx.fillStyle = '#0a0e1f';
     ctx.fillRect(0, 0, w, h);
 
-    const data = buffer.getChannelData(0);
-    const step = Math.max(1, Math.floor(data.length / w));
-    ctx.strokeStyle = '#00f0ff';
-    ctx.beginPath();
-    for (let x = 0; x < w; x++) {
-      let min = 1, max = -1;
-      for (let i = 0; i < step; i++) {
-        const v = data[x * step + i] || 0;
-        if (v < min) min = v;
-        if (v > max) max = v;
+    const peaks = peaksRef.current;
+    if (peaks) {
+      ctx.strokeStyle = '#00f0ff';
+      ctx.beginPath();
+      for (let x = 0; x < w; x++) {
+        const [min, max] = peaks[x] || [0, 0];
+        ctx.moveTo(x, (1 + min) * h / 2);
+        ctx.lineTo(x, (1 + max) * h / 2);
       }
-      ctx.moveTo(x, (1 + min) * h / 2);
-      ctx.lineTo(x, (1 + max) * h / 2);
+      ctx.stroke();
     }
-    ctx.stroke();
 
     // Dim the regions outside [start, end]
     const dur = buffer.duration || 1;
@@ -255,10 +290,52 @@ export default function AudioEditor({ file, onClose, onSaved, defaultMarkAnswer 
     ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, h); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(ex, 0); ctx.lineTo(ex, h); ctx.stroke();
+
+    // Playhead cursor (white)
+    const px = (Math.min(Math.max(focusTime, 0), dur) / dur) * w;
+    ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 1;
-  }, [buffer, start, end]);
+    ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px, h); ctx.stroke();
+  }, [buffer, start, end, focusTime]);
 
   useEffect(() => { draw(); }, [draw]);
+
+  // ── Audacity-style waveform interaction ──────────────────────────────────
+  // Click sets the playhead; drag the orange handles to trim; drag elsewhere
+  // scrubs the cursor. (Audio doesn't live-seek — press Play to hear from here.)
+  const xToTime = (clientX) => {
+    const canvas = canvasRef.current;
+    if (!canvas || !buffer) return 0;
+    const rect = canvas.getBoundingClientRect();
+    const frac = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    return frac * buffer.duration;
+  };
+  const applyWaveDrag = (clientX, mode) => {
+    const t = xToTime(clientX);
+    if (mode === 'start') setStart(Math.min(t, end - 0.05));
+    else if (mode === 'end') setEnd(Math.max(t, start + 0.05));
+    else setPlayhead(Math.min(Math.max(t, 0), buffer.duration));
+  };
+  const onWaveMove = (e) => { if (dragRef.current) applyWaveDrag(e.clientX, dragRef.current); };
+  const onWaveUp = () => {
+    dragRef.current = null;
+    window.removeEventListener('mousemove', onWaveMove);
+    window.removeEventListener('mouseup', onWaveUp);
+  };
+  const onWaveDown = (e) => {
+    if (!buffer) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    const dur = buffer.duration || 1;
+    const xOf = (t) => (t / dur) * rect.width;
+    const mx = e.clientX - rect.left;
+    let mode = 'seek';
+    if (Math.abs(mx - xOf(start)) <= 7) mode = 'start';
+    else if (Math.abs(mx - xOf(end)) <= 7) mode = 'end';
+    dragRef.current = mode;
+    applyWaveDrag(e.clientX, mode);
+    window.addEventListener('mousemove', onWaveMove);
+    window.addEventListener('mouseup', onWaveUp);
+  };
 
   function stopPreview() {
     if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
@@ -268,14 +345,17 @@ export default function AudioEditor({ file, onClose, onSaved, defaultMarkAnswer 
       playRef.current = null;
     }
     setPlaying(false);
-    setFocusTime(start);
+    setFocusTime(playhead);
   }
 
   async function preview() {
     if (!buffer) return;
     stopPreview();
+    // Play from the cursor if it sits inside the clip, else from the clip start.
+    const from = Math.min(Math.max(playhead, start), Math.max(start, end - 0.05));
+    const fadeFromStart = Math.abs(from - start) < 0.02;
     try {
-      const edited = await renderEdited(buffer, { start, end, fadeIn, fadeOut, gain });
+      const edited = await renderEdited(buffer, { start: from, end, fadeIn: fadeFromStart ? fadeIn : 0, fadeOut, gain });
       const Ctx = window.AudioContext || window.webkitAudioContext;
       const ctx = new Ctx();
       const node = ctx.createBufferSource();
@@ -285,10 +365,10 @@ export default function AudioEditor({ file, onClose, onSaved, defaultMarkAnswer 
       node.start(0);
       playRef.current = { ctx, node };
       setPlaying(true);
-      // Track playback position (original-track time) to drive the lyric line.
+      // Track playback position (original-track time) to drive the lyric line + cursor.
       const tick = () => {
         if (!playRef.current) return;
-        setFocusTime(Math.min(end, start + playRef.current.ctx.currentTime));
+        setFocusTime(Math.min(end, from + playRef.current.ctx.currentTime));
         rafRef.current = requestAnimationFrame(tick);
       };
       rafRef.current = requestAnimationFrame(tick);
@@ -307,8 +387,13 @@ export default function AudioEditor({ file, onClose, onSaved, defaultMarkAnswer 
     if (peak > 0) setGain(Math.min(4, +(1 / peak).toFixed(2)));
   }
 
-  async function save() {
+  // mode: 'new' (upload a fresh file) | 'overwrite' (replace the original in place)
+  async function save(mode) {
     if (!buffer) return;
+    if (mode === 'overwrite') {
+      if (!file.id) { setError('Cannot overwrite this file — use Save as new.'); return; }
+      if (!window.confirm('Overwrite the original file? This replaces it everywhere it is already used (existing questions / slides).')) return;
+    }
     setSaving(true); setError(null);
     stopPreview();
     try {
@@ -317,31 +402,42 @@ export default function AudioEditor({ file, onClose, onSaved, defaultMarkAnswer 
       const blob = fmtOut === 'wav' ? audioBufferToWav(edited) : await audioBufferToMp3(edited);
       const ext = fmtOut === 'wav' ? 'wav' : 'mp3';
       const base = (file.original_name || file.filename || 'audio').replace(/\.[^.]+$/, '');
-      const suggested = `${base}-edited`;
-      const name = window.prompt('Save the edited audio as (name shown in the Media Library):', suggested);
-      if (name === null) { setSaving(false); return; } // cancelled
-      const newFile = new File([blob], `${suggested}.${ext}`, { type: blob.type });
+      // Bake any lyric-sync nudge into the saved copy so timing stays corrected.
+      const lyricsToSave = (file.lyrics_synced && lyricsOffset) ? shiftLrcText(file.lyrics, lyricsOffset) : file.lyrics;
+
       const fd = new FormData();
-      fd.append('file', newFile);
-      fd.append('display_name', name.trim() || suggested);
-      if (file.folder) fd.append('folder', file.folder);
-      // Carry the source track's metadata forward — the re-encoded clip has no
-      // tags, so without this it would lose artist/title/album/lyrics.
-      if (file.artist) fd.append('artist', file.artist);
-      if (file.title) fd.append('title', file.title);
-      if (file.album) fd.append('album', file.album);
-      if (file.lyrics) { fd.append('lyrics', file.lyrics); fd.append('lyrics_synced', String(!!file.lyrics_synced)); }
-      // A marked Finish-the-Lyrics answer is remembered on the new clip and
+      fd.append('file', new File([blob], `${base}.${ext}`, { type: blob.type }));
+      if (lyricsToSave) { fd.append('lyrics', lyricsToSave); fd.append('lyrics_synced', String(!!file.lyrics_synced)); }
+      // A marked Finish-the-Lyrics answer is remembered on the saved file and
       // (for the question editor) handed back via onSaved's second argument.
       if (markAnswer && answerText) {
         fd.append('ftl_answer', answerText);
         if (answerStop != null) fd.append('ftl_stop_seconds', String(answerStop));
       }
-      const res = await fetch('/api/upload/media', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${localStorage.getItem('qm_admin_token')}` },
-        body: fd
-      });
+
+      let res;
+      if (mode === 'overwrite') {
+        res = await fetch(`/api/upload/media/${file.id}`, {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${localStorage.getItem('qm_admin_token')}` },
+          body: fd
+        });
+      } else {
+        const suggested = `${base}-edited`;
+        const name = window.prompt('Save the edited audio as (name shown in the Media Library):', suggested);
+        if (name === null) { setSaving(false); return; } // cancelled
+        fd.append('display_name', name.trim() || suggested);
+        if (file.folder) fd.append('folder', file.folder);
+        // Carry the source track's tags forward — the re-encoded clip has none.
+        if (file.artist) fd.append('artist', file.artist);
+        if (file.title) fd.append('title', file.title);
+        if (file.album) fd.append('album', file.album);
+        res = await fetch('/api/upload/media', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${localStorage.getItem('qm_admin_token')}` },
+          body: fd
+        });
+      }
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json().catch(() => null);
       onSaved?.(data, { answer: answerText, stopSeconds: answerStop, markAnswer });
@@ -369,11 +465,22 @@ export default function AudioEditor({ file, onClose, onSaved, defaultMarkAnswer 
             <p className="help-text">No audio loaded.</p>
           ) : (
             <>
-              <canvas ref={canvasRef} width={620} height={140} className="ae-wave" />
+              <canvas ref={canvasRef} width={620} height={140} className="ae-wave" onMouseDown={onWaveDown} title="Click to place the cursor · drag the orange edges to trim" />
               {lines.length > 0 ? (
                 <div className="ae-lyrics-panel">
                   <div className="ae-lyrics-bar">
                     <span className="ae-lyrics-time">{synced ? `▶ ${fmt(focusTime)}` : 'Lyrics'}</span>
+                    {synced && (
+                      <span className="ae-lyrics-sync" title="Nudge the lyric timing if it's slightly out of sync">
+                        Sync
+                        <button type="button" onClick={() => setLyricsOffset(o => +(o - 0.5).toFixed(2))}>−0.5</button>
+                        <button type="button" onClick={() => setLyricsOffset(o => +(o - 0.1).toFixed(2))}>−0.1</button>
+                        <span className="ae-sync-val">{lyricsOffset > 0 ? '+' : ''}{lyricsOffset.toFixed(1)}s</span>
+                        <button type="button" onClick={() => setLyricsOffset(o => +(o + 0.1).toFixed(2))}>+0.1</button>
+                        <button type="button" onClick={() => setLyricsOffset(o => +(o + 0.5).toFixed(2))}>+0.5</button>
+                        {lyricsOffset !== 0 && <button type="button" onClick={() => setLyricsOffset(0)}>reset</button>}
+                      </span>
+                    )}
                     <label className="ae-lyrics-mark">
                       <input
                         type="checkbox"
@@ -457,19 +564,24 @@ export default function AudioEditor({ file, onClose, onSaved, defaultMarkAnswer 
                 <button type="button" className="btn btn-secondary btn-sm" onClick={normalize}>Normalise</button>
               </div>
               <p className="help-text">
-                Clip: {fmt(start)} → {fmt(end)} ({fmt(Math.max(0, end - start))}).
+                Click the waveform to place the cursor, drag the orange edges to trim. Clip: {fmt(start)} → {fmt(end)} ({fmt(Math.max(0, end - start))}).
                 {' '}Exported as <strong>{outFormatFor(file) === 'wav' ? 'WAV (lossless)' : 'MP3'}</strong> to match the source.
               </p>
             </>
           )}
         </div>
         <div className="modal-footer">
-          <button className="btn btn-secondary" onClick={playing ? stopPreview : preview} disabled={!buffer}>
-            {playing ? '■ Stop' : '▶ Preview'}
+          <button className="btn btn-secondary" onClick={playing ? stopPreview : preview} disabled={!buffer} title="Play from the cursor">
+            {playing ? '■ Stop' : '▶ Play'}
           </button>
-          <button className="btn btn-primary" onClick={save} disabled={!buffer || saving}>
-            {saving ? 'Saving…' : '💾 Save as new file'}
+          <button className="btn btn-primary" onClick={() => save('new')} disabled={!buffer || saving}>
+            {saving ? 'Saving…' : '💾 Save as new'}
           </button>
+          {file.id && (
+            <button className="btn btn-warning" onClick={() => save('overwrite')} disabled={!buffer || saving} title="Replace the original file everywhere it's used">
+              ♻ Overwrite original
+            </button>
+          )}
           <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
         </div>
       </div>

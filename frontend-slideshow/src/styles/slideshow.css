@@ -280,11 +280,26 @@ html, body, #root {
   box-shadow: 0 0 30px rgba(0, 240, 255, 0.2);
 }
 .slide-media img,
-.slide-media video {
+.slide-media video,
+.slide-media .slide-video {
   width: 100%;
   display: block;
 }
-.slide-media audio { width: 100%; padding: 20px; }
+/* Audio question: no player controls on the big screen — just a status badge.
+   The host triggers playback from Control (it never autoplays). */
+.slide-audio-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  padding: 1.4rem 1.8rem;
+  font-size: 1.4rem;
+  color: var(--text-secondary, #b8c0e0);
+}
+.slide-audio-badge .slide-audio-icon { font-size: 2.2rem; }
+.slide-audio-badge.playing { color: var(--neon-cyan, #00f0ff); }
+.slide-audio-badge.playing .slide-audio-icon { animation: ae-pulse 1s ease-in-out infinite; }
+@keyframes ae-pulse { 0%,100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.18); opacity: 0.7; } }
 
 .slide-options {
   display: grid;
