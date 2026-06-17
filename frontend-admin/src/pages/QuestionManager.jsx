@@ -57,6 +57,34 @@ const EMPTY_FORM = {
   clues: defaultClues()
 };
 
+// On-screen prompts auto-filled into the Question Text when an audio form is
+// picked. Switching forms updates the text only if it's blank or still one of
+// these auto values (never clobbers a custom prompt).
+const AUDIO_PROMPTS = {
+  name_the_song:     'Name the Song & Artist',
+  finish_the_lyrics: 'Finish the Lyrics',
+  both:              'Name the Song & Finish the Lyrics',
+};
+const isAutoPrompt = (t) => Object.values(AUDIO_PROMPTS).includes(String(t || '').trim());
+
+// Apply an audio form to the form state, autofilling the prompt + answer/stop
+// from the linked track (f) where empty. NTS answer = "Artist — Song" (metadata);
+// FTL/Both answer = the track's remembered lyrics answer.
+function applyAudioForm(prev, v, f) {
+  const next = { ...prev, audio_form: v };
+  if (v && (!String(prev.text || '').trim() || isAutoPrompt(prev.text))) next.text = AUDIO_PROMPTS[v] || prev.text;
+  const emptyAns = !String(prev.answer || '').trim();
+  if (v === 'name_the_song' && f && (f.artist || f.title) && emptyAns) {
+    next.answer = [f.artist, f.title].filter(Boolean).join(' — ');
+  }
+  if ((v === 'finish_the_lyrics' || v === 'both') && f?.ftl_answer) {
+    if (emptyAns) next.answer = f.ftl_answer;
+    if (f.ftl_stop_seconds != null && (prev.audio_stop_seconds === '' || prev.audio_stop_seconds == null))
+      next.audio_stop_seconds = f.ftl_stop_seconds;
+  }
+  return next;
+}
+
 // Duplicate-detection key: accent/punctuation/quote/dash-insensitive so that
 // "Café — São!" and "Cafe - Sao" are treated as the same question (stops the
 // import making copies when special characters differ).
@@ -183,14 +211,9 @@ export default function QuestionManager() {
     if (!f?.url) return;
     setMediaByUrl(prev => ({ ...prev, [f.url]: f }));
     setForm(prev => {
-      const next = { ...prev, media_url: f.url, type: mimeToType(f.mime_type) };
+      let next = { ...prev, media_url: f.url, type: mimeToType(f.mime_type) };
       if (setFinishLyrics) next.audio_form = 'finish_the_lyrics';
-      const wantFtl = setFinishLyrics || next.audio_form === 'finish_the_lyrics';
-      if (next.type === 'audio' && wantFtl && f.ftl_answer) {
-        if (!String(prev.answer || '').trim()) next.answer = f.ftl_answer;
-        if (f.ftl_stop_seconds != null && (prev.audio_stop_seconds === '' || prev.audio_stop_seconds == null))
-          next.audio_stop_seconds = f.ftl_stop_seconds;
-      }
+      if (next.type === 'audio' && next.audio_form) next = applyAudioForm(next, next.audio_form, f);
       return next;
     });
   };
@@ -688,27 +711,16 @@ export default function QuestionManager() {
                     <label className="form-label">Audio round form
                       <select
                         value={form.audio_form}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          setForm(prev => {
-                            const next = { ...prev, audio_form: v };
-                            const f = mediaByUrl[prev.media_url];
-                            if (v === 'finish_the_lyrics' && f?.ftl_answer) {
-                              if (!String(prev.answer || '').trim()) next.answer = f.ftl_answer;
-                              if (f.ftl_stop_seconds != null && (prev.audio_stop_seconds === '' || prev.audio_stop_seconds == null))
-                                next.audio_stop_seconds = f.ftl_stop_seconds;
-                            }
-                            return next;
-                          });
-                        }}
+                        onChange={(e) => setForm(prev => applyAudioForm(prev, e.target.value, mediaByUrl[prev.media_url]))}
                       >
                         <option value="">— Normal (just play it) —</option>
                         <option value="name_the_song">🎵 Name the Song (artist + song, ½ each)</option>
                         <option value="finish_the_lyrics">🎤 Finish the Lyrics</option>
+                        <option value="both">🔀 Both (pick Name the Song or Finish the Lyrics per round)</option>
                         <option value="other">Other (sound round)</option>
                       </select>
                     </label>
-                    {form.audio_form === 'finish_the_lyrics' && (
+                    {(form.audio_form === 'finish_the_lyrics' || form.audio_form === 'both') && (
                       <label className="form-label">Stop snippet at (seconds)
                         <input
                           type="number" min="0" step="0.1"
@@ -718,11 +730,21 @@ export default function QuestionManager() {
                         />
                       </label>
                     )}
+                    {form.media_url && (
+                      <div className="audio-form-preview">
+                        <audio controls src={form.media_url} />
+                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => setAudioEditorOpen(true)} title="Trim the snippet / mark the lyrics answer">
+                          ✂ Edit / cut
+                        </button>
+                      </div>
+                    )}
                     <p className="help-text" style={{ flexBasis: '100%', marginTop: 4 }}>
                       {form.audio_form === 'name_the_song'
                         ? 'Scored on the linked track’s Artist + Song title (set those in the Media Library). Teams get two boxes, ½ point each.'
                         : form.audio_form === 'finish_the_lyrics'
-                        ? 'Use “✂ Cut down / lyrics” above to trim the snippet and highlight the missing lyric lines — that fills the Answer + stop time for you. Auto-mark is loose; override as needed.'
+                        ? 'Use “✂ Edit / cut” to trim the snippet and highlight the missing lyric lines — that fills the Answer + stop time. Auto-mark is loose; override as needed.'
+                        : form.audio_form === 'both'
+                        ? 'Same audio works as either form — pick Name the Song or Finish the Lyrics per round (like the Text/MCQ toggle). The Answer field holds the lyrics (for FTL); the song/artist come from the track metadata (for NTS).'
                         : 'Choose a form to enable music scoring; "Normal" just plays the audio with a standard answer.'}
                     </p>
                   </div>

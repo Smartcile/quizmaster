@@ -4496,6 +4496,8 @@ input[type="checkbox"] {
 .lyrics-badge.plain { background: rgba(139,157,195,0.15); color: var(--text-muted); }
 .ae-row { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; margin-top: 12px; }
 .audio-form-block { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; margin-top: 4px; padding: 10px; border: 1px solid rgba(255,157,0,0.35); border-radius: 8px; background: rgba(255,157,0,0.05); }
+.audio-form-preview { flex-basis: 100%; display: flex; align-items: center; gap: 10px; }
+.audio-form-preview audio { flex: 1; height: 36px; }
 .ae-field { display: flex; flex-direction: column; gap: 4px; font-size: 0.82rem; color: var(--text-muted); min-width: 150px; flex: 1; }
 .ae-field input[type="range"] { width: 100%; }
 .ae-field input[type="number"] { width: 90px; }

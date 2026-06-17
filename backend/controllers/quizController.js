@@ -39,7 +39,9 @@ async function loadQuizWithRoundsAndWidgets(id) {
             WHEN 'multichoice' THEN 'mcq'
             WHEN 'both'        THEN 'both'
             ELSE q.answer_mode END,
-          'audio_form', q.audio_form,
+          'audio_form', CASE
+            WHEN q.audio_form = 'both' THEN COALESCE(rq.audio_form_override, 'name_the_song')
+            ELSE q.audio_form END,
           'audio_stop_seconds', q.audio_stop_seconds,
           'media_artist', mf.artist,
           'media_title', mf.title,

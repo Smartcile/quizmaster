@@ -360,6 +360,9 @@ ALTER TABLE media_files ADD COLUMN IF NOT EXISTS ftl_stop_seconds NUMERIC(10,3);
 -- when type='audio'. Gated globally by app_settings.audio_rounds_enabled.
 ALTER TABLE questions ADD COLUMN IF NOT EXISTS audio_form VARCHAR(30);
 ALTER TABLE questions ADD COLUMN IF NOT EXISTS audio_stop_seconds NUMERIC(10,3);
+-- Per-round choice for an audio question whose audio_form is 'both' (it can run
+-- as either Name the Song or Finish the Lyrics) — parallels question_format_override.
+ALTER TABLE round_questions ADD COLUMN IF NOT EXISTS audio_form_override VARCHAR(30);
 
 -- app_settings: small key/value store for global admin settings (applies to all
 -- users + surfaces, unlike the browser-local Quiz Control test settings).

@@ -11,7 +11,8 @@ const ROUND_QUESTIONS_AGG = `
     'question_format', q.question_format,
     'difficulty', q.difficulty,
     'approved', q.approved,
-    'question_format_override', rq.question_format_override
+    'question_format_override', rq.question_format_override,
+    'audio_form_override', rq.audio_form_override
   ) ORDER BY rq."order") AS questions
 `;
 
@@ -56,9 +57,10 @@ function insertRoundQuestions(client, roundId, questions) {
   return Promise.all(questions.map((q, i) => {
     const qId = typeof q === 'object' ? q.id : q;
     const override = typeof q === 'object' ? (q.question_format_override || null) : null;
+    const audioOverride = typeof q === 'object' ? (q.audio_form_override || null) : null;
     return client.query(
-      'INSERT INTO round_questions (round_id, question_id, "order", question_format_override) VALUES ($1, $2, $3, $4)',
-      [roundId, qId, i + 1, override]
+      'INSERT INTO round_questions (round_id, question_id, "order", question_format_override, audio_form_override) VALUES ($1, $2, $3, $4, $5)',
+      [roundId, qId, i + 1, override, audioOverride]
     );
   }));
 }

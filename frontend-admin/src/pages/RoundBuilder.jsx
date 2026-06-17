@@ -51,6 +51,7 @@ export default function RoundBuilder() {
     const overrides = {};
     sortedQs.forEach(q => {
       if (q.question_format_override) overrides[q.id] = q.question_format_override;
+      else if (q.audio_form_override) overrides[q.id] = q.audio_form_override;
     });
     setEditingId(r.id);
     setEditInit({
@@ -82,7 +83,12 @@ export default function RoundBuilder() {
         const override = (q?.answer_mode === 'both' && opts)
           ? (formatOverrides[id] || 'multichoice')
           : null;
-        return { id, question_format_override: override };
+        // Audio "Both" questions carry an audio-form override (NTS vs FTL),
+        // defaulting to Name the Song.
+        const audioOverride = (q?.audio_form === 'both')
+          ? (formatOverrides[id] || 'name_the_song')
+          : null;
+        return { id, question_format_override: override, audio_form_override: audioOverride };
       });
       const payload = { ...form, questions: questionsPayload };
       if (editingId) await api.put(`/rounds/${editingId}`, payload);
@@ -207,6 +213,10 @@ function RoundEditorModal({ editing, init, questions, categories, onSave, onClos
   // Only questions whose Answer Mode is "Both" are switchable in a round — the
   // host picks Text or MCQ per round. Pure MCQ / Text questions are fixed.
   const isBoth = (q) => q.answer_mode === 'both' && hasOpt(q);
+  // Audio question whose form is "both" — selectable as Name the Song or Finish
+  // the Lyrics per round, exactly like the Text/MCQ toggle.
+  const isAudioBoth = (q) => q.audio_form === 'both';
+  const effAudio = (q) => formatOverrides[q.id] || 'name_the_song';
   // Effective per-round mode used to highlight the toggle. "Both" questions
   // default to MCQ (no "both" option in the round); everything else follows its
   // own answer mode.
@@ -336,6 +346,7 @@ function RoundEditorModal({ editing, init, questions, categories, onSave, onClos
                                 <div className="dnd-item-meta">
                                   <span className={`qm-tag qm-tag-${q.type}`}>{q.type}</span>
                                   {isBoth(q) && <span className="rq-both-label" title="Answer Mode: Both">🔀 T&M</span>}
+                                  {isAudioBoth(q) && <span className="rq-both-label" title="Audio form: Both">🎵 NTS/FTL</span>}
                                   {q.category && <span className="qm-tag qm-tag-cat">{q.category}</span>}
                                 </div>
                               </div>
@@ -376,11 +387,17 @@ function RoundEditorModal({ editing, init, questions, categories, onSave, onClos
                                 <div className="dnd-item-text">
                                   {q.text}
                                   {isBoth(q) && <span className="rq-both-label" title="Answer Mode: Both — choose how it's shown for this round">🔀 T&M</span>}
+                                  {isAudioBoth(q) && <span className="rq-both-label" title="Audio form: Both — choose Name the Song or Finish the Lyrics for this round">🎵 NTS/FTL</span>}
                                 </div>
                                 {isBoth(q) ? (
                                   <div className="rq-format-toggle" onClick={e => e.stopPropagation()} title="How this 'Both' question is shown to teams in this round">
                                     <button type="button" className={`rq-toggle-btn ${effMode(q) === 'standard' ? 'active-std' : ''}`} onClick={() => toggleFormat(q.id, 'standard')}>Text</button>
                                     <button type="button" className={`rq-toggle-btn ${effMode(q) === 'multichoice' ? 'active-mcq' : ''}`} onClick={() => toggleFormat(q.id, 'multichoice')}>MCQ</button>
+                                  </div>
+                                ) : isAudioBoth(q) ? (
+                                  <div className="rq-format-toggle" onClick={e => e.stopPropagation()} title="Which audio form this 'Both' question uses for this round">
+                                    <button type="button" className={`rq-toggle-btn ${effAudio(q) === 'name_the_song' ? 'active-mcq' : ''}`} onClick={() => toggleFormat(q.id, 'name_the_song')}>NTS</button>
+                                    <button type="button" className={`rq-toggle-btn ${effAudio(q) === 'finish_the_lyrics' ? 'active-std' : ''}`} onClick={() => toggleFormat(q.id, 'finish_the_lyrics')}>FTL</button>
                                   </div>
                                 ) : (
                                   <span className="rq-format-badge rq-format-badge-standard">{q.answer_mode === 'mcq' && hasOpt(q) ? 'MCQ' : 'Text'}</span>
