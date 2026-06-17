@@ -213,7 +213,7 @@ Key tables and their purposes:
 | `MastersAndSlides.jsx` | Masters & Slides | Edit master themes (Layout tab: background/styles/placeholders) and slide content defaults (Templates tab: intro/round/mark-answers/end/scoreboard/rules/custom pages). Each master card has Edit / Duplicate / **Delete** — delete is blocked (409) by `DELETE /api/masters/:id` if any quiz references the master, naming the quizzes to reassign first. The seeded **Default Profile** (★ Default badge) is the standard for every quiz: it has **no Delete button** (and the backend refuses with 409), and editing it shows a **warning** first since changes affect all quizzes using it. |
 | `MediaLibrary.jsx` | Media | Upload and manage images/video/audio. Shows usage labels per file; prevents deletion of in-use files |
 | `QuizHistory.jsx` | History | View all finished quiz sessions: date/time, team count, expandable team scores + CSV download per session |
-| `Settings.jsx` | Settings | Collapsible settings sections (built to grow). **Question Repositories** (GitHub CSV packs) and **Quiz Control & Testing** (bot count/sizes, accuracy mix, preview layout, surfaces, quizzer-pane default, auto-clean) — the latter stored in `localStorage` via `utils/testSettings.js`. |
+| `Settings.jsx` | Settings | Collapsible settings sections (built to grow). **Question Repositories** (GitHub CSV packs), **Quiz Control & Testing** (bot count/sizes, accuracy mix, preview layout, surfaces, quizzer-pane default, auto-clean — stored in `localStorage` via `utils/testSettings.js`), and a **⚠ Danger Zone — Delete All Data** (`DangerZone`): checkboxes for questions / rounds / quizzes / sessions / media, a typed-`DELETE` confirm, then `POST /api/admin/reset`. |
 
 ---
 
@@ -438,6 +438,10 @@ QuizControl shows portal link buttons for both **lobby** and **active** states. 
 
 ### Global settings store (`app_settings`)
 A tiny key/value table for **global** admin settings (unlike the browser-local Quiz Control test settings). `GET /api/settings` → `{ key: value }` (public read so any surface can check a flag); `PUT /api/settings` upserts keys (auth). Add future global toggles here. (The `audio_rounds_enabled` key still exists for back-compat but no longer gates anything — audio round forms are always available when an audio file is the question's media.)
+
+### Bulk delete + Delete-All (data resets)
+- **Questions page bulk delete**: each question row has a select checkbox (top-right) plus a "Select all (filtered)" toggle and "🗑 Delete selected (N)" button. `POST /api/questions/bulk-delete { ids }` deletes inside a transaction — it first clears `scores` + `answers` for those question ids (those FKs don't cascade), then the questions (`round_questions` cascade).
+- **Settings → Danger Zone**: `POST /api/admin/reset` (`controllers/adminController.js`, mounted `/api/admin` behind `requireAdminForWrites`) takes flags `{ questions, rounds, quizzes, sessions, media }` and deletes in FK-safe order in a transaction. Because `answers`/`scores` reference `questions`/`rounds` **without** cascade, wiping any of questions/rounds/quizzes also drops `quiz_sessions` first (which cascades teams/answers/scores/brownie/whoami) — i.e. content deletes also clear session history. Media deletion also unlinks the files from disk (best-effort). Returns `{ deleted: { … } }` counts.
 
 ### Manual media playback (big screen only) + clicker navigation
 Question audio/video **never autoplays and only ever sounds on the slideshow** — phones stay silent (the quizzer shows a "🔊 Listen on the main screen" note for audio and a muted, control-less `<video>` for video). On the slideshow, audio/video render **without native controls**; a `QuestionMedia` component (keyed by slide index, so it unmounts/stops when you leave the slide) plays only when a `media_play` socket signal targets the current slide, and honours the `finish_the_lyrics` `audioStop`. Audio shows a non-interactive ♪/🔊 status badge.

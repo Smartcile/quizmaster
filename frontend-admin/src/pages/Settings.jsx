@@ -21,6 +21,85 @@ export default function Settings() {
       <CollapsibleSection title="Quiz Control & Testing" subtitle="Bots, embedded previews and test-run cleanup">
         <QuizControlSettings />
       </CollapsibleSection>
+
+      <CollapsibleSection title="⚠ Danger Zone — Delete All Data" subtitle="Permanently wipe questions, rounds, quizzes, sessions or media">
+        <DangerZone onError={setError} />
+      </CollapsibleSection>
+    </div>
+  );
+}
+
+// ── Danger Zone: bulk "Delete All" ────────────────────────────────────────────
+const WIPE_TARGETS = [
+  { key: 'questions', label: 'All questions (the whole question bank)' },
+  { key: 'rounds',    label: 'All rounds' },
+  { key: 'quizzes',   label: 'All quizzes' },
+  { key: 'sessions',  label: 'All sessions & history (teams, answers, scores)' },
+  { key: 'media',     label: 'All media files (images / audio / video)' },
+];
+
+function DangerZone({ onError }) {
+  const [sel, setSel] = useState({});
+  const [confirmText, setConfirmText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(null);
+
+  const chosen = WIPE_TARGETS.filter(t => sel[t.key]).map(t => t.key);
+  // Questions/rounds reference session data, so wiping them clears history too.
+  const clearsSessions = sel.questions || sel.rounds || sel.quizzes;
+  const ready = chosen.length > 0 && confirmText.trim().toUpperCase() === 'DELETE';
+
+  const toggle = (k) => { setSel(s => ({ ...s, [k]: !s[k] })); setDone(null); };
+
+  const run = async () => {
+    if (!ready) return;
+    const summary = chosen.join(', ');
+    if (!confirm(`Permanently delete: ${summary}?\n\nThis cannot be undone.`)) return;
+    setBusy(true); setDone(null);
+    try {
+      const res = await api.post('/admin/reset', sel);
+      setDone(res.deleted || {});
+      setSel({}); setConfirmText('');
+    } catch (err) {
+      onError?.(err.message.replace(/^\d+:\s*/, ''));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="danger-zone">
+      <p className="help-text" style={{ marginTop: 0 }}>
+        Select what to permanently delete, type <strong>DELETE</strong> to confirm, then press the button.
+        There is no undo — back up first if unsure.
+      </p>
+      <div className="danger-options">
+        {WIPE_TARGETS.map(t => (
+          <label key={t.key} className="qc-check">
+            <input type="checkbox" checked={!!sel[t.key]} onChange={() => toggle(t.key)} />
+            {t.label}
+          </label>
+        ))}
+      </div>
+      {clearsSessions && !sel.sessions && (
+        <p className="danger-note">Note: deleting questions, rounds or quizzes also clears all session results (they reference each other).</p>
+      )}
+      <div className="danger-confirm">
+        <input
+          type="text"
+          placeholder='Type DELETE to confirm'
+          value={confirmText}
+          onChange={(e) => setConfirmText(e.target.value)}
+        />
+        <button className="btn btn-danger" onClick={run} disabled={!ready || busy}>
+          {busy ? 'Deleting…' : '🗑 Delete selected data'}
+        </button>
+      </div>
+      {done && (
+        <p className="danger-done">
+          ✓ Deleted: {Object.entries(done).map(([k, v]) => `${v} ${k}`).join(', ') || 'nothing'}.
+        </p>
+      )}
     </div>
   );
 }

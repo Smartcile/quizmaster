@@ -154,6 +154,7 @@ export default function QuestionManager() {
   const [resolveOpen, setResolveOpen]   = useState(false);
   const [successSummary, setSuccessSummary] = useState(null);
   const [importing, setImporting]       = useState(false);
+  const [selectedIds, setSelectedIds]   = useState(() => new Set()); // bulk-delete selection
 
   useEffect(() => { loadAll(); }, []);
 
@@ -244,6 +245,29 @@ export default function QuestionManager() {
       return true;
     });
   }, [questions, search, filterCategory, filterDifficulty, filterType, filterAnswerMode, filterApproved, filterKind]);
+
+  // ── Bulk selection / delete ──────────────────────────────────────────────
+  const allFilteredSelected = filtered.length > 0 && filtered.every(q => selectedIds.has(q.id));
+  const toggleSelect = (id) => setSelectedIds(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const toggleSelectAll = () => setSelectedIds(prev => {
+    const n = new Set(prev);
+    if (filtered.every(q => n.has(q.id))) filtered.forEach(q => n.delete(q.id));
+    else filtered.forEach(q => n.add(q.id));
+    return n;
+  });
+  const bulkDelete = async () => {
+    const ids = [...selectedIds];
+    if (!ids.length) return;
+    if (!confirm(`Delete ${ids.length} selected question(s)? This also removes their session answers/scores. Cannot be undone.`)) return;
+    try {
+      await api.post('/questions/bulk-delete', { ids });
+      if (editingId && ids.includes(editingId)) newQuestion();
+      setSelectedIds(new Set());
+      loadAll();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
 
   const selectQuestion = (q) => {
     setEditingId(q.id);
@@ -487,6 +511,18 @@ export default function QuestionManager() {
             <button className="btn btn-primary btn-sm" onClick={newQuestion}>+ New</button>
           </div>
 
+          {filtered.length > 0 && (
+            <div className="qm-bulk-bar">
+              <label className="qm-bulk-all">
+                <input type="checkbox" checked={allFilteredSelected} onChange={toggleSelectAll} />
+                Select all ({filtered.length})
+              </label>
+              {selectedIds.size > 0 && (
+                <button className="btn btn-danger btn-sm" onClick={bulkDelete}>🗑 Delete selected ({selectedIds.size})</button>
+              )}
+            </div>
+          )}
+
           <div className="qm-filters">
             <input
               type="search"
@@ -531,9 +567,17 @@ export default function QuestionManager() {
             ) : filtered.map(q => (
               <div
                 key={q.id}
-                className={`qm-question-item ${editingId === q.id ? 'active' : ''}`}
+                className={`qm-question-item ${editingId === q.id ? 'active' : ''} ${selectedIds.has(q.id) ? 'selected' : ''}`}
                 onClick={() => selectQuestion(q)}
               >
+                <input
+                  type="checkbox"
+                  className="qm-select-box"
+                  checked={selectedIds.has(q.id)}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={() => toggleSelect(q.id)}
+                  title="Select for bulk delete"
+                />
                 <div className="qm-question-text">{q.text}</div>
                 <div className="qm-question-meta">
                   {q.approved && <span className="qm-approved" title="Approved">✓</span>}

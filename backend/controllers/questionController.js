@@ -330,6 +330,28 @@ async function deleteQuestion(req, res) {
   }
 }
 
+// POST /api/questions/bulk-delete { ids: [..] } — delete many at once. Clears
+// any session answers/scores referencing them first (those FKs don't cascade),
+// inside a transaction; round_questions cascade automatically.
+async function bulkDeleteQuestions(req, res) {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(Number).filter(Number.isInteger) : [];
+  if (!ids.length) return res.status(400).json({ error: 'No question ids provided' });
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM scores  WHERE question_id = ANY($1)', [ids]);
+    await client.query('DELETE FROM answers WHERE question_id = ANY($1)', [ids]);
+    const r = await client.query('DELETE FROM questions WHERE id = ANY($1) RETURNING id', [ids]);
+    await client.query('COMMIT');
+    res.json({ deleted: r.rowCount });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: error.message });
+  } finally {
+    client.release();
+  }
+}
+
 module.exports = {
   getAllQuestions,
   getCategories,
@@ -338,6 +360,7 @@ module.exports = {
   createQuestion,
   updateQuestion,
   deleteQuestion,
+  bulkDeleteQuestions,
   exportQuestionsCSV,
   importQuestions,
   cleanSpecialCharacters
