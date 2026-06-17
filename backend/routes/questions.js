@@ -8,6 +8,7 @@ const {
   createQuestion,
   updateQuestion,
   deleteQuestion,
+  bulkDeleteQuestions,
   exportQuestionsCSV,
   importQuestions,
   cleanSpecialCharacters
@@ -20,6 +21,7 @@ router.get('/export', exportQuestionsCSV);
 router.get('/:id', getQuestion);
 router.post('/import', importQuestions);
 router.post('/clean-special-chars', cleanSpecialCharacters);
+router.post('/bulk-delete', bulkDeleteQuestions);
 router.post('/', createQuestion);
 router.put('/:id', updateQuestion);
 router.delete('/:id', deleteQuestion);

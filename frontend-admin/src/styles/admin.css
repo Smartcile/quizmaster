@@ -4447,6 +4447,22 @@ input[type="checkbox"] {
 
 /* ===== Media editing tools (audio trim / image crop) ===== */
 .ae-wave { width: 100%; max-width: 620px; height: 140px; border: 1px solid var(--border); border-radius: 8px; display: block; }
+/* Danger Zone (Settings → Delete All) */
+.danger-zone { border: 1px solid rgba(255,56,104,0.4); border-radius: 8px; padding: 14px; background: rgba(255,56,104,0.05); }
+.danger-options { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }
+.danger-note { color: var(--neon-yellow, #ffe600); font-size: 0.82rem; margin: 4px 0 10px; }
+.danger-confirm { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.danger-confirm input { flex: 1; min-width: 180px; }
+.danger-done { color: var(--neon-green, #00ff9f); font-size: 0.88rem; margin-top: 10px; }
+
+/* Bulk-select bar + per-question checkbox on the Questions page */
+.qm-bulk-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 10px; margin-bottom: 6px; }
+.qm-bulk-all { display: inline-flex; align-items: center; gap: 6px; font-size: 0.82rem; color: var(--text-muted); cursor: pointer; }
+.qm-question-item { position: relative; }
+.qm-question-item.selected { box-shadow: inset 0 0 0 1px var(--neon-pink, #ff3868); }
+.qm-select-box { position: absolute; top: 8px; right: 8px; width: 16px; height: 16px; cursor: pointer; z-index: 2; }
+.qm-question-item .qm-question-text { padding-right: 24px; }
+
 /* Multi-line karaoke lyrics panel in the audio editor */
 .ae-lyrics-panel { margin-top: 10px; border: 1px solid var(--border); border-radius: 8px; background: rgba(0,240,255,0.04); padding: 8px 10px; }
 .ae-lyrics-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 12px; margin-bottom: 6px; }
