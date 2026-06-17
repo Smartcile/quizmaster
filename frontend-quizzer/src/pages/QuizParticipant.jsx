@@ -422,15 +422,11 @@ function QuestionView({ slide, answer, score, locked, onChange }) {
       {slide.mediaUrl && (
         <div className="media-container">
           {slide.questionType === 'image' && <img src={slide.mediaUrl} alt="Question" />}
-          {slide.questionType === 'video' && <video controls src={slide.mediaUrl} />}
+          {/* Sound plays on the big screen only — phones are silent. Video shows
+              muted (no controls) so teams can still see it; audio shows a note. */}
+          {slide.questionType === 'video' && <video src={slide.mediaUrl} muted playsInline />}
           {slide.questionType === 'audio' && (
-            <audio
-              controls
-              src={slide.mediaUrl}
-              onTimeUpdate={(slide.audioForm === 'finish_the_lyrics' && slide.audioStop)
-                ? (e) => { if (e.target.currentTime >= slide.audioStop) e.target.pause(); }
-                : undefined}
-            />
+            <div className="media-on-screen-note">🔊 Listen on the main screen</div>
           )}
         </div>
       )}

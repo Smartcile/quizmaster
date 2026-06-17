@@ -74,7 +74,12 @@ export default function VideoEditor({ file, onClose, onSaved }) {
 
   useEffect(() => () => { stopAtRef.current = null; }, []);
 
-  async function save() {
+  // mode: 'new' (upload a fresh file) | 'overwrite' (replace the original in place)
+  async function save(mode) {
+    if (mode === 'overwrite') {
+      if (!file.id) { setError('Cannot overwrite this file — use Save as new.'); return; }
+      if (!window.confirm('Overwrite the original file? This replaces it everywhere it is already used (existing questions / slides).')) return;
+    }
     setBusy(true); setError(null); setProgress(0);
     try {
       setStatus('Loading video engine (one-time ~25 MB)…');
@@ -100,20 +105,30 @@ export default function VideoEditor({ file, onClose, onSaved }) {
       const mime = file.mime_type || `video/${ext}`;
       const blob = new Blob([data.buffer], { type: mime });
       const base = (file.original_name || file.filename || 'video').replace(/\.[^.]+$/, '');
-      const suggested = `${base}-trimmed`;
-      const name = window.prompt('Save the trimmed video as (name shown in the Media Library):', suggested);
-      if (name === null) { setBusy(false); setStatus(''); return; } // cancelled
-      const newFile = new File([blob], `${suggested}.${ext}`, { type: mime });
       const fd = new FormData();
-      fd.append('file', newFile);
-      fd.append('display_name', name.trim() || suggested);
-      if (file.folder) fd.append('folder', file.folder);
-      setStatus('Uploading…');
-      const res = await fetch('/api/upload/media', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${localStorage.getItem('qm_admin_token')}` },
-        body: fd
-      });
+      let res;
+      if (mode === 'overwrite') {
+        fd.append('file', new File([blob], `${base}.${ext}`, { type: mime }));
+        setStatus('Uploading…');
+        res = await fetch(`/api/upload/media/${file.id}`, {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${localStorage.getItem('qm_admin_token')}` },
+          body: fd
+        });
+      } else {
+        const suggested = `${base}-trimmed`;
+        const name = window.prompt('Save the trimmed video as (name shown in the Media Library):', suggested);
+        if (name === null) { setBusy(false); setStatus(''); return; } // cancelled
+        fd.append('file', new File([blob], `${suggested}.${ext}`, { type: mime }));
+        fd.append('display_name', name.trim() || suggested);
+        if (file.folder) fd.append('folder', file.folder);
+        setStatus('Uploading…');
+        res = await fetch('/api/upload/media', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${localStorage.getItem('qm_admin_token')}` },
+          body: fd
+        });
+      }
       if (!res.ok) throw new Error(await res.text());
       const saved = await res.json().catch(() => null);
       onSaved?.(saved);
@@ -175,9 +190,14 @@ export default function VideoEditor({ file, onClose, onSaved }) {
           )}
         </div>
         <div className="modal-footer">
-          <button className="btn btn-primary" onClick={save} disabled={busy || !duration}>
-            {busy ? 'Working…' : '💾 Trim & save as new file'}
+          <button className="btn btn-primary" onClick={() => save('new')} disabled={busy || !duration}>
+            {busy ? 'Working…' : '💾 Save as new'}
           </button>
+          {file.id && (
+            <button className="btn btn-warning" onClick={() => save('overwrite')} disabled={busy || !duration} title="Replace the original file everywhere it's used">
+              ♻ Overwrite original
+            </button>
+          )}
           <button className="btn btn-secondary" onClick={onClose} disabled={busy}>Cancel</button>
         </div>
       </div>

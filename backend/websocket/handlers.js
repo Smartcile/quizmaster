@@ -76,6 +76,16 @@ function setupWebSocketHandlers(io) {
       console.log(`Session ${sessionId}: slide → ${slideIndex}`);
     });
 
+    // ── media_play ───────────────────────────────────────────────────────────
+    // Host triggers a question slide's audio/video to play on the SLIDESHOW only
+    // (it never autoplays and never plays on phones). Ephemeral — no DB. The
+    // nonce makes a replay re-trigger even on the same slide (each press differs).
+    socket.on('media_play', (data) => {
+      const { sessionId, slideIndex, nonce } = data || {};
+      const roomKey = `quiz-${sessionId}`;
+      io.to(roomKey).emit('media_play', { slideIndex, nonce, timestamp: new Date().toISOString() });
+    });
+
     // ── answer_locked ────────────────────────────────────────────────────────
     // Persists the locked round ID so rejoining clients receive it in
     // session_state.  Broadcasts to the room so quizzers disable inputs.

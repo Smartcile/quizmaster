@@ -266,6 +266,15 @@ body {
   max-width: 100%;
   max-height: 100%;
 }
+/* Audio plays only on the big screen — phones show this note instead of a player */
+.media-on-screen-note {
+  padding: 18px 16px;
+  text-align: center;
+  font-size: 1.05rem;
+  color: var(--text-secondary, #b8c0e0);
+  border: 1px dashed var(--border, #2a3357);
+  border-radius: 10px;
+}
 
 .options {
   display: flex;

@@ -21,6 +21,8 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd, isTest = fa
   const [filesOpen, setFilesOpen] = useState(false);
   const [showPreviews, setShowPreviews] = useState(false); // live-quiz embedded previews
   const [sessionCode, setSessionCode] = useState(null); // per-session join code
+  const [playedSlides, setPlayedSlides] = useState(() => new Set()); // media slides already triggered
+  const mediaNonceRef = useRef(0);
   const socket = useWebSocket();
   const slides = useMemo(() => buildSlides(quiz), [quiz]);
   const teamsCount = teams.length;
@@ -242,6 +244,40 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd, isTest = fa
   const current = slides[currentSlide];
   const next    = slides[currentSlide + 1];
 
+  // ── Manual media playback (big screen only) ──────────────────────────────
+  // The host plays a question's audio/video by sending media_play to the
+  // slideshow; it never autoplays and never sounds on phones.
+  const isMediaSlide = (s) => s?.type === 'question' && s.mediaUrl && (s.questionType === 'audio' || s.questionType === 'video');
+  const currentPlayed = playedSlides.has(currentSlide);
+
+  const playMedia = (index = currentSlide) => {
+    if (!socket) return;
+    mediaNonceRef.current += 1;
+    socket.emit('media_play', { sessionId, slideIndex: index, nonce: mediaNonceRef.current });
+    setPlayedSlides(prev => new Set(prev).add(index));
+  };
+
+  // Forward advance with PowerPoint-style "consume": the first forward press on
+  // an unplayed media slide plays it; the next press moves to the next slide.
+  const advance = () => {
+    if (isMediaSlide(current) && !playedSlides.has(currentSlide)) { playMedia(currentSlide); return; }
+    goToSlide(currentSlide + 1);
+  };
+
+  // Keyboard + USB presenter remote: arrows / PageUp-Down drive the show while a
+  // session is active (ignored while typing in a field).
+  useEffect(() => {
+    if (sessionStatus !== 'active') return;
+    const onKey = (e) => {
+      const t = e.target;
+      if (t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable)) return;
+      if (e.key === 'ArrowRight' || e.key === 'PageDown') { e.preventDefault(); advance(); }
+      else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); goToSlide(currentSlide - 1); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [sessionStatus, currentSlide, current, playedSlides, socket]);
+
   return (
     <div className={`quiz-control ${isTest ? 'quiz-control-test' : ''}`}>
       {isTest && (
@@ -388,7 +424,14 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd, isTest = fa
         <>
           <div className="slide-navigation">
             <button onClick={() => goToSlide(currentSlide - 1)} disabled={currentSlide === 0}                    className="btn btn-primary">← Previous</button>
-            <button onClick={() => goToSlide(currentSlide + 1)} disabled={currentSlide >= slides.length - 1}     className="btn btn-primary">Next →</button>
+            <button onClick={advance} disabled={currentSlide >= slides.length - 1 && !(isMediaSlide(current) && !currentPlayed)} className="btn btn-primary">
+              {isMediaSlide(current) && !currentPlayed ? '▶ Play media' : 'Next →'}
+            </button>
+            {isMediaSlide(current) && (
+              <button onClick={() => playMedia()} className="btn btn-secondary" title="Play this on the big screen (phones stay silent)">
+                {currentPlayed ? '⟳ Replay media' : '▶ Play media'}
+              </button>
+            )}
             {current?.roundId && lockedRounds.has(current.roundId) ? (
               <button onClick={unlockAnswers} className="btn btn-success">🔓 Unlock Round Answers</button>
             ) : (
