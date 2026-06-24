@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, Component } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useWebSocket } from './hooks/useWebSocket';
 import { api } from './services/api';
@@ -30,6 +30,44 @@ function qrSizeFor() {
   return Math.max(54, Math.min(132, Math.round(m * 0.13)));
 }
 
+// The slideshow advances via WebSocket with no user gesture on this tab, so
+// browsers block audio-with-sound playback until the page gets a user gesture.
+// Call this from a real click to (a) give the document sticky activation and
+// (b) resume a shared AudioContext, so subsequent slide-driven .play() is allowed.
+function primeAudioPlayback() {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (Ctx) {
+      if (!window.__quizAudioCtx) window.__quizAudioCtx = new Ctx();
+      if (window.__quizAudioCtx.state === 'suspended') window.__quizAudioCtx.resume();
+    }
+  } catch (err) {
+    console.warn('[slideshow] audio prime failed:', err?.name || err);
+  }
+}
+
+// Error boundary so one bad slide shows a fallback on that slide only, instead
+// of whiting out the whole big screen mid-quiz. Used with key={slideIndex} so it
+// remounts (and clears its error) every time the host advances the slide.
+class SlideErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { hasError: false }; }
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(error, info) {
+    console.error('[slideshow] slide render error:', error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="slide-empty">
+          <h2>⚠ This slide couldn't be displayed</h2>
+          <p>The quiz can continue — advance to the next slide.</p>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function App() {
   const [code, setCode] = useState(getInitialCode());
   const [quiz, setQuiz] = useState(null);
@@ -49,6 +87,8 @@ function App() {
   // Manual media playback: the host sends media_play (slideIndex + nonce). Media
   // never autoplays — it only plays when this matches the current slide.
   const [playToken, setPlayToken] = useState(null);
+  // One-time gesture to unlock audio autoplay for this tab (see primeAudioPlayback).
+  const [audioUnlocked, setAudioUnlocked] = useState(false);
   const socket = useWebSocket();
   const slides = useMemo(() => buildSlides(quiz), [quiz]);
 
@@ -251,7 +291,9 @@ function App() {
     return (
       <div className="slideshow-container">
         <div className="slide" style={slide?.background ? { background: slide.background } : undefined}>
-          <SlideRenderer slide={slide} slideIndex={currentSlide} playToken={playToken} sessionId={sessionId} socket={socket} scoresVisible={scoreboardVisible} />
+          <SlideErrorBoundary key={currentSlide}>
+            <SlideRenderer slide={slide} slideIndex={currentSlide} playToken={playToken} sessionId={sessionId} socket={socket} scoresVisible={scoreboardVisible} />
+          </SlideErrorBoundary>
         </div>
         <div className="slide-counter">
           {currentSlide + 1} / {slides.length}
@@ -283,6 +325,17 @@ function App() {
           </div>
           <p className="join-qr-label">Scan to join</p>
         </div>
+      )}
+      {/* One-time gesture: audio-with-sound can't play on this tab without a user
+          interaction first. The host clicks this once during setup so later
+          slide-driven music is allowed. Shown until clicked, once a quiz loads. */}
+      {code && !audioUnlocked && (
+        <button
+          className="enable-sound-btn"
+          onClick={() => { primeAudioPlayback(); setAudioUnlocked(true); }}
+        >
+          🔊 Enable sound
+        </button>
       )}
     </>
   );
@@ -343,7 +396,14 @@ function QuestionMedia({ slide, slideIndex, playToken }) {
     const el = ref.current;
     if (!el) return;
     try { el.currentTime = 0; } catch { /* not seekable yet */ }
-    el.play().then(() => setState('playing')).catch(() => {});
+    el.play()
+      .then(() => setState('playing'))
+      .catch((err) => {
+        // Most commonly NotAllowedError: the tab hasn't had a user gesture, so
+        // autoplay-with-sound is blocked. Surface it instead of failing silently.
+        console.warn('[slideshow] media play() was blocked:', err?.name || err);
+        setState('blocked');
+      });
   }, [playToken, slideIndex]);
 
   const onTimeUpdate = (e) => {
@@ -366,9 +426,14 @@ function QuestionMedia({ slide, slideIndex, playToken }) {
   // Audio: no visible player — a non-interactive status badge tells the room.
   return (
     <div className={`slide-audio-badge ${state}`}>
-      <span className="slide-audio-icon">{state === 'playing' ? '🔊' : '🎵'}</span>
+      <span className="slide-audio-icon">
+        {state === 'playing' ? '🔊' : state === 'blocked' ? '🔇' : '🎵'}
+      </span>
       <span className="slide-audio-text">
-        {state === 'playing' ? 'Now playing…' : state === 'ended' ? 'Track finished' : 'Audio ready'}
+        {state === 'playing' ? 'Now playing…'
+          : state === 'ended' ? 'Track finished'
+          : state === 'blocked' ? "Audio blocked — click “Enable sound”"
+          : 'Audio ready'}
       </span>
       <audio {...common} hidden />
     </div>
