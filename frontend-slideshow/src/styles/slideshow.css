@@ -374,6 +374,92 @@ html, body, #root {
   letter-spacing: -2px;
 }
 
+/* Answer reveal media (intermission picture rounds) */
+.slide-answer .answer-media {
+  max-width: 55%;
+  max-height: 50vh;
+  margin: 0 auto 25px;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  border: 2px solid rgba(0, 255, 159, 0.4);
+  box-shadow: 0 0 30px rgba(0, 255, 159, 0.25);
+}
+.slide-answer .answer-media img,
+.slide-answer .answer-media video {
+  display: block;
+  width: 100%;
+  max-height: 50vh;
+  object-fit: contain;
+}
+
+/* Intermission (picture-grid) round */
+.slide-intermission {
+  align-items: center;
+  justify-content: flex-start;
+  padding: 30px;
+}
+.slide-intermission .intermission-title {
+  font-size: 3rem;
+  font-weight: 800;
+  color: var(--neon-cyan);
+  text-shadow: 0 0 30px rgba(0, 240, 255, 0.4);
+  margin-bottom: 25px;
+  text-align: center;
+}
+.intermission-grid {
+  display: grid;
+  gap: 14px;
+  width: 100%;
+  max-width: 100%;
+  flex: 1;
+  min-height: 0;
+  align-content: center;
+}
+.intermission-cell {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 2px solid rgba(0, 240, 255, 0.3);
+  background: rgba(0, 240, 255, 0.05);
+  box-shadow: 0 0 16px rgba(0, 240, 255, 0.15);
+}
+.intermission-cell img,
+.intermission-cell video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.intermission-num {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2rem;
+  height: 2rem;
+  padding: 0 0.4rem;
+  background: var(--gradient-primary);
+  border-radius: 999px;
+  color: #fff;
+  font-weight: 800;
+  font-size: 1.2rem;
+  box-shadow: 0 0 14px rgba(0, 240, 255, 0.5);
+}
+.intermission-noimg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 10px;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  text-align: center;
+}
+
 .slide-widget {
   background: linear-gradient(135deg, rgba(184, 41, 255, 0.15) 0%, rgba(255, 0, 225, 0.15) 100%);
   border-radius: var(--radius-lg);

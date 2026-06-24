@@ -125,10 +125,13 @@ intro
   └─ for each item in quiz.items (rounds and widgets freely mixed):
        if kind === 'round':
          whoami_clue         ← only if the quiz has a Who Am I? (one clue per round, in order)
-         round_intro
-         question × N
-         mark_answers        ← teams review/submit before lock
-         answer × N          ← advancing here auto-locks the round
+         if round.style === 'intermission':
+           intermission      ← ONE slide: all N images in a numbered grid (no round_intro / per-question slides)
+         else:
+           round_intro
+           question × N
+         mark_answers        ← teams review/submit before lock (both styles)
+         answer × N          ← advancing here auto-locks the round (image shown on reveal for intermission)
        if kind === 'widget':
          if type === 'whoami': skipped (distributed as whoami_clue slides above)
          else: widget
@@ -182,7 +185,7 @@ Key tables and their purposes:
 |---|---|
 | `questions` | Question bank. Fields: `text`, `answer`, `type` (text/image/video/audio), `media_url`, `points`, `category`, `options` (JSONB for MCQ), `difficulty` (easy/medium/hard), `answer_mode` (text/mcq/both), `source` (local/repo/both), `is_whoami` (when true this row is a Who/What Am I? set — clues live in `options` as `[{text,points}]`, shared answer in `answer`, title in `text`; excluded from round pickers) |
 | `categories` | Managed category list. Seeded with 14 defaults; admins can add/rename/delete. Renames propagate to `questions.category`. |
-| `rounds` | Named question groups with optional `background_color` |
+| `rounds` | Named question groups with optional `background_color`. `style` (`standard`/`intermission`) selects the slide expansion; `display_title` is the on-screen heading for an intermission round (falls back to `name`); `grid_columns` is its picture-grid width. |
 | `round_questions` | Junction: ordered questions within a round. Has `question_format_override` for per-round Text/MCQ mode, and `audio_form_override` for per-round Name-the-Song/Finish-the-Lyrics choice on `audio_form='both'` questions. |
 | `quizzes` | Assembled quiz with a unique 6-char `code`, optional `master_id` FK to `slide_masters`, and `team_size_scoring BOOLEAN` (enables handicap scoring). |
 | `quiz_rounds` | Junction: rounds within a quiz. `position` column stores global interleaved order (shared namespace with `quiz_widgets.position`). Legacy `"order"` column kept for backward compat. |
@@ -386,6 +389,12 @@ The legacy "Format" field is gone from the Question editor and all search filter
 
 **Audio "Both" (same pattern):** a question with `audio_form='both'` works as either **Name the Song** or **Finish the Lyrics** — chosen per round via an **NTS / FTL toggle** (mirrors the Text/MCQ one; `isAudioBoth(q)` = `audio_form === 'both'`, badge "🎵 NTS/FTL"). The choice persists in `round_questions.audio_form_override` (the RoundBuilder reuses the `formatOverrides` map — a question is never both kinds of "Both"). `loadQuizWithRoundsAndWidgets` resolves the effective `audio_form` via `CASE WHEN q.audio_form='both' THEN COALESCE(rq.audio_form_override,'name_the_song') ELSE q.audio_form END`, so the quizzer/slideshow only ever see a concrete form (no buildSlides change). The question's `answer` holds the **lyrics** (used by FTL); NTS scores off the track's artist/title metadata, so one row serves both forms.
 
+### Intermission (picture-grid) round
+A round with `rounds.style = 'intermission'` is built and marked exactly like a standard round (normal `image` questions, the `answers`/`scores` tables, auto-save, auto-mark, `mark_answers`, locking, per-round scoreboard column) — only its **slide expansion** differs. Instead of `round_intro + question×N`, `buildSlides` emits a single **`intermission`** slide carrying the on-screen `title` (`display_title || name`), `gridColumns`, and the full `questions` array; then the shared `mark_answers` slide; then the normal one-by-one `answer×N` reveal. Slide count is `N + 2` (vs `2N + 2` standard) — the branch is identical in all three `buildSlides` copies so indexes stay in sync.
+- **Slideshow** renders the `intermission` case as a numbered image grid (`repeat(gridColumns, 1fr)`); the `answer` reveal shows the picture (gated by `slide.intermission`).
+- **Quizzer** renders the `intermission` case as N numbered thumbnail+input rows on one screen (auto-save via the same `submit_answer`/`questionId`/`roundId`); the in-round question nav is hidden. `roundQuestionsFromSlides()` lets `mark_answers` review and `AnswerReviewView` find an intermission round's questions (they live on the one slide, not per-question slides).
+- **Round Builder** has a **Round style** dropdown; choosing Intermission reveals a **display-title** field and a **grid-columns** selector (3/4/5) with a live square-layout preview. The picker also has a **sort** control (Default/A→Z/Category/Newest) to cluster a picture set together (filter media type = image + a shared category). Fields persist via `roundController` create/update and flow through `loadQuizWithRoundsAndWidgets` (`r.*`).
+
 ### Embedded previews (live + test)
 `PreviewPanes` (slideshow + quizzer iframes, stacked one-per-row) is shown in **Test Quiz** mode (`TestHarness`, with bots) and on **live** quizzes via a **👁 Show previews** toggle on the Control page. The quizzer pane toggles **Mirror ⇄ Interactive** and, in Mirror mode, has a **team dropdown** to watch any joined team's screen (auto-joins as that team via the quizzer `?team=` param).
 
@@ -394,7 +403,7 @@ A **⬇ Files** button on each Existing Quiz card (QuizBuilder) and a **⬇ Down
 - **Quizzer Answer Sheet** (PDF) — one page per round, **boxes only — the question text is never printed** (teams read questions off the screen). Numbered write-in boxes; MCQ questions get lettered tick-boxes (A/B/C…, no option text). Row height is divided across the questions so a round always fits **exactly one page**. Team name/size on page 1, a Who-Am-I guess box if present, **no answers**.
 - **Questions & Answers** (PDF) — **exactly one page per round** (text auto-shrinks to fit, never overflows), correct MCQ option highlighted, bold answer line; a final Who-Am-I answer+clues page.
 - **Marking Form** (PDF, landscape) — **one whole-quiz grid** via autoTable: `Team | <round name>… | Total` with **12 blank team rows**.
-- **Quiz Slideshow** (PPTX, `LAYOUT_WIDE`) — one slide per `buildSlides` slide (intro/round_intro/whoami_clue/question+options/mark_answers/answer reveal/widget/end), dark theme; editable in PowerPoint/Keynote/Slides.
+- **Quiz Slideshow** (PPTX, `LAYOUT_WIDE`) — one slide per `buildSlides` slide (intro/round_intro/intermission picture grid/whoami_clue/question+options/mark_answers/answer reveal/widget/end), dark theme; editable in PowerPoint/Keynote/Slides.
 
 ### Control grouped slide thumbnails
 The Control page "All Slides" strip groups slides into **per-module rows** in quiz order (Intro · Who Am I? #n · each Round · each widget · End), via `groupSlidesForControl`. Each slide is a small **`MiniSlide` preview** (icon + truncated text) instead of a bare number, with the **overall slide number in the bottom-right corner** so the host can match what's on screen vs. the quizzers. Clicking a thumb still jumps to that slide; the active one is highlighted.

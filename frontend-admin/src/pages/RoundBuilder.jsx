@@ -2,7 +2,9 @@ import { useState, useEffect, useMemo } from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { api } from '../services/api';
 
-const EMPTY = { name: '', background_color: '#0a0e1f', format: 'standard' };
+const EMPTY = { name: '', background_color: '#0a0e1f', format: 'standard', style: 'standard', display_title: '', grid_columns: 5 };
+
+const GRID_COLUMN_OPTIONS = [3, 4, 5];
 
 // Filter option lists — mirror the question editor so the round picker can be
 // narrowed by every question attribute.
@@ -58,7 +60,10 @@ export default function RoundBuilder() {
       form: {
         name: r.name || '',
         background_color: r.background_color || '#0a0e1f',
-        format: r.format || 'standard'
+        format: r.format || 'standard',
+        style: r.style || 'standard',
+        display_title: r.display_title || '',
+        grid_columns: r.grid_columns || 5
       },
       selectedQuestions: sortedQs.map(q => q.id),
       formatOverrides: overrides
@@ -139,7 +144,9 @@ export default function RoundBuilder() {
                   <div className="round-card-body" onClick={() => openEdit(r)}>
                     <h4 className="round-card-name">{r.name}</h4>
                     <div className="round-card-meta">
-                      <span className="qm-tag qm-tag-cat">{r.format}</span>
+                      {r.style === 'intermission'
+                        ? <span className="qm-tag qm-tag-cat" title={r.display_title || r.name}>🖼 Picture</span>
+                        : <span className="qm-tag qm-tag-cat">{r.format}</span>}
                       <span className="qm-points">{qCount} Q</span>
                     </div>
                   </div>
@@ -179,11 +186,13 @@ function RoundEditorModal({ editing, init, questions, categories, onSave, onClos
   const [filterType, setFilterType]             = useState('all');
   const [filterAnswerMode, setFilterAnswerMode] = useState('all');
   const [filterApproved, setFilterApproved]     = useState('all');
+  const [sortBy, setSortBy]                     = useState('default');
 
   // Same matching rules as the Questions page (search hits text OR answer) plus
-  // a filter for every question attribute.
+  // a filter for every question attribute. A sort keeps the same set clustered
+  // together every time — handy for grabbing a whole picture set in order.
   const filteredQuestions = useMemo(() => {
-    return questions.filter(q => {
+    const list = questions.filter(q => {
       if (selectedQuestions.includes(q.id)) return false;
       if (filterCategory !== 'all' && q.category !== filterCategory) return false;
       if (filterDifficulty !== 'all' && (q.difficulty || 'medium') !== filterDifficulty) return false;
@@ -197,7 +206,11 @@ function RoundEditorModal({ editing, init, questions, categories, onSave, onClos
       }
       return true;
     });
-  }, [questions, search, filterCategory, filterDifficulty, filterType, filterAnswerMode, filterApproved, selectedQuestions]);
+    if (sortBy === 'alpha')    list.sort((a, b) => (a.text || '').localeCompare(b.text || ''));
+    else if (sortBy === 'category') list.sort((a, b) => (a.category || '').localeCompare(b.category || '') || (a.text || '').localeCompare(b.text || ''));
+    else if (sortBy === 'newest')   list.sort((a, b) => (b.id || 0) - (a.id || 0));
+    return list;
+  }, [questions, search, filterCategory, filterDifficulty, filterType, filterAnswerMode, filterApproved, selectedQuestions, sortBy]);
 
   const selectedQuestionObjs = useMemo(() => {
     const byId = new Map(questions.map(q => [q.id, q]));
@@ -282,6 +295,10 @@ function RoundEditorModal({ editing, init, questions, categories, onSave, onClos
                 <option value="rapid-fire">Rapid Fire</option>
                 <option value="who-am-i">Who Am I?</option>
               </select>
+              <select value={form.style} onChange={(e) => setForm({ ...form, style: e.target.value })} title="Round style">
+                <option value="standard">Standard round</option>
+                <option value="intermission">Intermission (picture grid)</option>
+              </select>
               <input
                 type="color"
                 value={form.background_color}
@@ -289,6 +306,37 @@ function RoundEditorModal({ editing, init, questions, categories, onSave, onClos
                 title="Background color"
               />
             </div>
+
+            {form.style === 'intermission' && (
+              <div className="intermission-config">
+                <div className="intermission-config-fields">
+                  <input
+                    type="text"
+                    placeholder={`On-screen title (default: ${form.name || 'round name'})`}
+                    value={form.display_title}
+                    onChange={(e) => setForm({ ...form, display_title: e.target.value })}
+                  />
+                  <select
+                    value={form.grid_columns}
+                    onChange={(e) => setForm({ ...form, grid_columns: parseInt(e.target.value, 10) })}
+                    title="Grid columns"
+                  >
+                    {GRID_COLUMN_OPTIONS.map(n => <option key={n} value={n}>{n} columns wide</option>)}
+                  </select>
+                </div>
+                <div className="intermission-preview">
+                  <span className="intermission-preview-label">Layout preview</span>
+                  <div
+                    className="intermission-preview-grid"
+                    style={{ gridTemplateColumns: `repeat(${form.grid_columns}, 1fr)` }}
+                  >
+                    {Array.from({ length: selectedQuestions.length || 10 }).map((_, i) => (
+                      <div key={i} className="intermission-preview-cell">{i + 1}</div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
 
             <DragDropContext onDragEnd={onDragEnd}>
               <div className="dnd-split">
@@ -324,6 +372,12 @@ function RoundEditorModal({ editing, init, questions, categories, onSave, onClos
                         <option value="all">All statuses</option>
                         <option value="approved">Approved</option>
                         <option value="unapproved">Unapproved</option>
+                      </select>
+                      <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} title="Sort the question list">
+                        <option value="default">Sort: Default</option>
+                        <option value="alpha">Sort: A→Z</option>
+                        <option value="category">Sort: Category</option>
+                        <option value="newest">Sort: Newest</option>
                       </select>
                     </div>
                   </div>

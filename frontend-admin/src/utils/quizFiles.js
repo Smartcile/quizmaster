@@ -246,6 +246,26 @@ export async function downloadSlideshowPptx(quiz) {
         slide.addText('Round', { x: 0.5, y: 2.6, w: W - 1, h: 0.6, align: 'center', fontSize: 20, color: C.PURPLE });
         slide.addText(String(s.title || ''), { x: 0.5, y: 3.2, w: W - 1, h: 1.3, align: 'center', fontSize: 40, bold: true, color: C.WHITE });
         break;
+      case 'intermission': {
+        slide.addText(String(s.title || 'Picture Round'), { x: 0.5, y: 0.4, w: W - 1, h: 0.8, align: 'center', fontSize: 32, bold: true, color: C.CYAN });
+        const cols = s.gridColumns || 5;
+        const qs = (s.questions || []);
+        const gx = 0.6, gy = 1.4, gw = W - 1.2, gh = 5.2, gap = 0.12;
+        const cw = (gw - gap * (cols - 1)) / cols;
+        const rows = Math.max(1, Math.ceil(qs.length / cols));
+        const ch = (gh - gap * (rows - 1)) / rows;
+        qs.forEach((q, i) => {
+          const r = Math.floor(i / cols), c = i % cols;
+          const x = gx + c * (cw + gap), y = gy + r * (ch + gap);
+          if (q.media_url && q.type === 'image') {
+            slide.addImage({ path: q.media_url, x, y, w: cw, h: ch, sizing: { type: 'cover', w: cw, h: ch } });
+          } else {
+            slide.addShape(pptx.ShapeType.rect, { x, y, w: cw, h: ch, fill: { color: '12203A' }, line: { color: C.CYAN, width: 1 } });
+          }
+          slide.addText(String(i + 1), { x, y, w: 0.4, h: 0.3, align: 'center', fontSize: 12, bold: true, color: C.WHITE });
+        });
+        break;
+      }
       case 'whoami_clue':
         slide.addText(String(s.title || 'Who Am I?'), { x: 0.5, y: 0.5, w: W - 1, h: 0.7, align: 'center', fontSize: 26, bold: true, color: C.PURPLE });
         slide.addText(`Lock in now for ${s.points} point${s.points === 1 ? '' : 's'}`, { x: 0.5, y: 1.3, w: W - 1, h: 0.5, align: 'center', fontSize: 16, color: C.YELLOW });

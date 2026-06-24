@@ -552,6 +552,14 @@ function SlidePreview({ slide }) {
       return <div><h4>{slide.title}</h4><p>{slide.subtitle}</p></div>;
     case 'round_intro':
       return <div><h4 style={{ color: '#b829ff' }}>Round Start</h4><p style={{ fontSize: '1.3rem' }}>{slide.title}</p></div>;
+    case 'intermission':
+      return (
+        <div>
+          <p className="preview-label" style={{ color: '#b829ff' }}>🖼 Picture Round ({slide.gridColumns}-wide)</p>
+          <h4>{slide.title}</h4>
+          <p>{(slide.questions || []).length} picture{(slide.questions || []).length !== 1 ? 's' : ''} — all shown in one grid; teams answer all at once.</p>
+        </div>
+      );
     case 'question':
       return (
         <div>
@@ -610,6 +618,7 @@ function groupSlidesForControl(slides) {
         push(`whoami-${slide.clueIndex}`, `Who Am I? #${slide.clueIndex + 1}`, slide, i);
         break;
       case 'round_intro':
+      case 'intermission':
       case 'question':
       case 'mark_answers':
       case 'answer':
@@ -646,6 +655,8 @@ function MiniSlide({ slide }) {
       return <span className="mini-slide"><span className="mini-icon">🎬</span><span className="mini-text">Title</span></span>;
     case 'round_intro':
       return <span className="mini-slide"><span className="mini-icon">🎯</span><span className="mini-text">{slide.title}</span></span>;
+    case 'intermission':
+      return <span className="mini-slide"><span className="mini-icon">🖼</span><span className="mini-text">{slide.title}</span></span>;
     case 'question':
       return <span className="mini-slide"><span className="mini-kicker">Q{slide.questionNumber}</span><span className="mini-text">{slide.text}</span></span>;
     case 'mark_answers':
@@ -765,6 +776,29 @@ function TestHarness({ sessionId, quiz, slides, currentSlide, sessionStatus, soc
           socket.emit('submit_answer', {
             sessionId, teamId: bot.id, questionId: slide.questionId, roundId: slide.roundId, answer
           });
+        }
+      }
+    }
+
+    // Intermission picture round: all questions live on the one slide
+    if (slide.type === 'intermission') {
+      for (const q of (slide.questions || [])) {
+        const qid = q.id ?? q.questionId;
+        if (!qid) continue;
+        const qd = qmap.get(qid);
+        for (const bot of bots) {
+          const key = `${bot.id}:${qid}`;
+          if (answeredRef.current.has(key)) continue;
+          answeredRef.current.add(key);
+          const roll = Math.random();
+          let answer = null;
+          if (roll < bot.cfg.correct)                      answer = String(qd?.answer ?? '');
+          else if (roll < bot.cfg.correct + bot.cfg.wrong) answer = wrongAnswerText(qd);
+          if (answer != null && answer !== '') {
+            socket.emit('submit_answer', {
+              sessionId, teamId: bot.id, questionId: qid, roundId: slide.roundId, answer
+            });
+          }
         }
       }
     }

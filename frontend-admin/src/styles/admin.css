@@ -752,6 +752,58 @@ select {
 .round-modal-body .builder-form-inline select { flex: 1 1 180px; }
 .round-modal-body .dnd-split { max-height: 58vh; }
 
+/* Intermission (picture-grid) round config + live layout preview */
+.intermission-config {
+  display: flex;
+  gap: 18px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  margin: 4px 0 12px;
+  padding: 14px;
+  border: 1px solid rgba(184, 41, 255, 0.35);
+  border-radius: 10px;
+  background: rgba(184, 41, 255, 0.06);
+}
+.intermission-config-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1 1 260px;
+}
+.intermission-config-fields input,
+.intermission-config-fields select {
+  width: 100%;
+}
+.intermission-preview {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.intermission-preview-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+}
+.intermission-preview-grid {
+  display: grid;
+  gap: 4px;
+  width: 220px;
+}
+.intermission-preview-cell {
+  aspect-ratio: 1 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background: rgba(0, 240, 255, 0.12);
+  border: 1px solid rgba(0, 240, 255, 0.3);
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
 .cat-add-form {
   display: flex;
   gap: 8px;

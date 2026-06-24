@@ -199,6 +199,40 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
       );
     }
 
+    if (slide.type === 'intermission') {
+      const locked = isLockedFor(slide.roundId);
+      return (
+        <div className="intermission-answers">
+          <p className="mark-label">{slide.title}</p>
+          <h2>{locked ? 'Round Locked' : 'Picture Round'}</h2>
+          <p className="mark-hint">
+            {locked ? 'Your answers are locked in.' : 'Match each numbered picture on the big screen and type your answers.'}
+          </p>
+          <div className="intermission-input-list">
+            {(slide.questions || []).map((q) => (
+              <div key={q.questionId} className="intermission-input-row">
+                <span className="intermission-input-num">{q.questionNumber}</span>
+                {q.mediaUrl && q.questionType === 'image' && (
+                  <img className="intermission-thumb" src={q.mediaUrl} alt={`Picture ${q.questionNumber}`} />
+                )}
+                {q.mediaUrl && q.questionType === 'video' && (
+                  <video className="intermission-thumb" src={q.mediaUrl} muted />
+                )}
+                <input
+                  type="text"
+                  className="answer-input"
+                  placeholder={`Answer ${q.questionNumber}`}
+                  value={answers[q.questionId] || ''}
+                  onChange={(e) => submitAnswer(q.questionId, e.target.value)}
+                  disabled={locked}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
     if (slide.type === 'whoami_clue') {
       return (
         <WhoamiView
@@ -212,7 +246,7 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
     }
 
     if (slide.type === 'mark_answers') {
-      const roundQuestions = slides.filter(s => s.type === 'question' && s.roundId === slide.roundId);
+      const roundQuestions = roundQuestionsFromSlides(slides, slide.roundId);
       const locked = isLockedFor(slide.roundId);
 
       // Guest tapped a question to edit — show the QuestionView with a back button
@@ -281,8 +315,11 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
       const showYour = (myAns !== undefined && myAns !== '') || myScore !== undefined;
       return (
         <div className="reveal-card">
-          <p className="reveal-label">{slide.roundName} · Question {slide.questionNumber}</p>
-          <h2 className="reveal-question">{slide.text}</h2>
+          <p className="reveal-label">{slide.roundName} · {slide.intermission ? `Picture ${slide.questionNumber}` : `Question ${slide.questionNumber}`}</p>
+          {slide.intermission && slide.mediaUrl && slide.questionType === 'image' && (
+            <img className="reveal-media" src={slide.mediaUrl} alt={`Picture ${slide.questionNumber}`} />
+          )}
+          {slide.text && <h2 className="reveal-question">{slide.text}</h2>}
           {showYour && (
             <div className={`reveal-your-answer ${hueClass}`}>
               <span className="reveal-your-label">Your answer:</span>
@@ -402,6 +439,31 @@ const NTS_SEP = ' — ';
 const splitNTS = (v) => { const i = (v || '').indexOf(NTS_SEP); return i === -1 ? [v || '', ''] : [v.slice(0, i), v.slice(i + NTS_SEP.length)]; };
 const combineNTS = (a, s) => (a || s) ? `${a}${NTS_SEP}${s}` : '';
 
+// Normalise a round's questions into QuestionView-compatible slides, working for
+// both standard rounds (per-question slides) and intermission picture rounds
+// (all questions carried on the single intermission slide).
+function roundQuestionsFromSlides(slides, roundId) {
+  const inter = slides.find(s => s.type === 'intermission' && s.roundId === roundId);
+  if (inter) {
+    const qs = inter.questions || [];
+    return qs.map(q => ({
+      type: 'question',
+      roundId,
+      questionId: q.questionId,
+      questionNumber: q.questionNumber,
+      totalInRound: qs.length,
+      roundName: inter.title,
+      text: q.text,
+      questionType: q.questionType,
+      mediaUrl: q.mediaUrl,
+      options: q.options || [],
+      answerMode: 'text',
+      points: q.points
+    }));
+  }
+  return slides.filter(s => s.type === 'question' && s.roundId === roundId);
+}
+
 function QuestionView({ slide, answer, score, locked, onChange }) {
   const mode = slide.answerMode || 'text';
   const isNameTheSong = slide.audioForm === 'name_the_song';
@@ -494,6 +556,20 @@ export function AnswerReviewView({ title, slides, answers, scores }) {
   const groups = [];
   let cur = null;
   for (const s of slides) {
+    if (s.type === 'intermission') {
+      // Intermission rounds carry all their questions on one slide.
+      groups.push({
+        roundId: s.roundId,
+        roundName: s.title,
+        questions: (s.questions || []).map(q => ({
+          questionId: q.questionId,
+          questionNumber: q.questionNumber,
+          text: q.text
+        }))
+      });
+      cur = null;
+      continue;
+    }
     if (s.type !== 'question') continue;
     if (!cur || cur.roundId !== s.roundId) {
       cur = { roundId: s.roundId, roundName: s.roundName, questions: [] };

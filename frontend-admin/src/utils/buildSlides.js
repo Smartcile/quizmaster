@@ -49,34 +49,49 @@ export function buildSlides(quiz) {
       roundIndex++;
 
       const round = item;
-      slides.push({
-        type: 'round_intro',
-        roundId: round.id,
-        title: round.name,
-        background: round.background_color
-      });
-
       const questions = (round.questions || []).filter(q => q && q.id);
 
-      questions.forEach((q, i) => {
+      if (round.style === 'intermission') {
+        // Picture-grid round: a single grid slide (all images, numbered) replaces
+        // the round_intro + per-question slides. Mark-answers + the one-by-one
+        // reveal below are shared with standard rounds, so marking/locking/
+        // scoreboard logic (all keyed off questionId/roundId) is unchanged.
         slides.push({
-          type: 'question',
+          type: 'intermission',
           roundId: round.id,
-          questionId: q.id,
-          questionNumber: i + 1,
-          totalInRound: questions.length,
+          title: round.display_title || round.name,
           roundName: round.name,
-          text: q.text,
-          questionType: q.type,
-          mediaUrl: q.media_url,
-          options: q.options || [],
-          points: q.points,
-          audioForm: q.audio_form || null,
-          audioStop: q.audio_stop_seconds != null ? Number(q.audio_stop_seconds) : null,
-          mediaArtist: q.media_artist || null,
-          mediaTitle: q.media_title || null
+          gridColumns: round.grid_columns || 5,
+          questions
         });
-      });
+      } else {
+        slides.push({
+          type: 'round_intro',
+          roundId: round.id,
+          title: round.name,
+          background: round.background_color
+        });
+
+        questions.forEach((q, i) => {
+          slides.push({
+            type: 'question',
+            roundId: round.id,
+            questionId: q.id,
+            questionNumber: i + 1,
+            totalInRound: questions.length,
+            roundName: round.name,
+            text: q.text,
+            questionType: q.type,
+            mediaUrl: q.media_url,
+            options: q.options || [],
+            points: q.points,
+            audioForm: q.audio_form || null,
+            audioStop: q.audio_stop_seconds != null ? Number(q.audio_stop_seconds) : null,
+            mediaArtist: q.media_artist || null,
+            mediaTitle: q.media_title || null
+          });
+        });
+      }
 
       // Mark-answers slide — sits between the round's last question and its
       // first answer reveal. Quizzers can still submit until the admin advances
@@ -96,10 +111,13 @@ export function buildSlides(quiz) {
           roundId: round.id,
           questionId: q.id,
           questionNumber: i + 1,
-          roundName: round.name,
+          roundName: round.style === 'intermission' ? (round.display_title || round.name) : round.name,
           text: q.text,
           answer: q.answer,
           points: q.points,
+          mediaUrl: q.media_url,
+          questionType: q.type,
+          intermission: round.style === 'intermission',
           audioForm: q.audio_form || null,
           mediaArtist: q.media_artist || null,
           mediaTitle: q.media_title || null
@@ -146,6 +164,7 @@ export function slideShortLabel(slide) {
   if (!slide) return '';
   switch (slide.type) {
     case 'intro': return 'Title';
+    case 'intermission': return `Picture Round: ${slide.title}`;
     case 'round_intro': return `Round: ${slide.title}`;
     case 'question': return `Q${slide.questionNumber} — ${slide.roundName}`;
     case 'mark_answers': return `Mark Answers — ${slide.roundName}`;
