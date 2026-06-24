@@ -299,7 +299,27 @@ html, body, #root {
 .slide-audio-badge .slide-audio-icon { font-size: 2.2rem; }
 .slide-audio-badge.playing { color: var(--neon-cyan, #00f0ff); }
 .slide-audio-badge.playing .slide-audio-icon { animation: ae-pulse 1s ease-in-out infinite; }
+.slide-audio-badge.blocked { color: var(--neon-pink, #ff38a6); }
 @keyframes ae-pulse { 0%,100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.18); opacity: 0.7; } }
+
+/* One-time "Enable sound" gesture button (top-right — clear of the bottom QR
+   and the bottom-left slide counter) */
+.enable-sound-btn {
+  position: fixed;
+  right: 1.2rem;
+  top: 1.2rem;
+  z-index: 200;
+  padding: 0.7rem 1.2rem;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #07091a;
+  background: var(--neon-cyan, #00f0ff);
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+  box-shadow: 0 4px 18px rgba(0, 240, 255, 0.45);
+}
+.enable-sound-btn:hover { filter: brightness(1.08); }
 
 .slide-options {
   display: grid;
