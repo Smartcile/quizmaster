@@ -239,6 +239,15 @@ CREATE INDEX IF NOT EXISTS idx_questions_format   ON questions(question_format);
 -- Stores the mode chosen for this specific round; does not modify the source question.
 ALTER TABLE round_questions ADD COLUMN IF NOT EXISTS question_format_override VARCHAR(20);
 
+-- Round style: 'standard' (default) or 'intermission' (picture-grid round).
+-- An intermission round shows all its images in one numbered grid on the big
+-- screen with all answer inputs on one quizzer slide. display_title is the
+-- on-screen heading (falls back to the round name); grid_columns is the grid
+-- width used by the slideshow layout.
+ALTER TABLE rounds ADD COLUMN IF NOT EXISTS style VARCHAR(20) DEFAULT 'standard';
+ALTER TABLE rounds ADD COLUMN IF NOT EXISTS display_title TEXT;
+ALTER TABLE rounds ADD COLUMN IF NOT EXISTS grid_columns INT DEFAULT 5;
+
 -- ============================================================
 -- Categories — promoted from a derived list to a managed table
 -- ============================================================

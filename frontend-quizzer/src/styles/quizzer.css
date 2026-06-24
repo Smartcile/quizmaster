@@ -604,6 +604,59 @@ body {
   box-shadow: 0 0 40px rgba(0, 255, 159, 0.15);
   text-align: center;
 }
+.reveal-media {
+  display: block;
+  max-width: 100%;
+  max-height: 40vh;
+  margin: 0 auto 18px;
+  border-radius: var(--radius-sm);
+  object-fit: contain;
+}
+
+/* Intermission (picture-grid) round — all answer inputs on one quizzer slide */
+.intermission-answers .mark-label {
+  color: var(--neon-cyan);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  font-size: 0.85rem;
+  margin-bottom: 6px;
+}
+.intermission-input-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+}
+.intermission-input-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.intermission-input-num {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--gradient-primary, var(--neon-cyan));
+  color: #fff;
+  font-weight: 800;
+  font-size: 0.9rem;
+}
+.intermission-thumb {
+  flex-shrink: 0;
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+.intermission-input-row .answer-input {
+  flex: 1;
+  margin: 0;
+}
 .reveal-label {
   color: var(--neon-cyan);
   font-size: 0.85rem;

@@ -67,14 +67,17 @@ function insertRoundQuestions(client, roundId, questions) {
 
 async function createRound(req, res) {
   try {
-    const { name, background_color, background_image_url, format, questions } = req.body;
+    const { name, background_color, background_image_url, format, questions,
+            style, display_title, grid_columns } = req.body;
     const client = await db.getClient();
     try {
       await client.query('BEGIN');
 
       const roundResult = await client.query(
-        'INSERT INTO rounds (name, background_color, background_image_url, format) VALUES ($1, $2, $3, $4) RETURNING *',
-        [name, background_color, background_image_url, format]
+        `INSERT INTO rounds (name, background_color, background_image_url, format, style, display_title, grid_columns)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+        [name, background_color, background_image_url, format,
+         style || 'standard', display_title || null, grid_columns || 5]
       );
       const roundId = roundResult.rows[0].id;
 
@@ -95,14 +98,18 @@ async function createRound(req, res) {
 async function updateRound(req, res) {
   try {
     const { id } = req.params;
-    const { name, background_color, background_image_url, format, questions } = req.body;
+    const { name, background_color, background_image_url, format, questions,
+            style, display_title, grid_columns } = req.body;
     const client = await db.getClient();
     try {
       await client.query('BEGIN');
 
       const result = await client.query(
-        'UPDATE rounds SET name = $1, background_color = $2, background_image_url = $3, format = $4 WHERE id = $5 RETURNING *',
-        [name, background_color, background_image_url, format, id]
+        `UPDATE rounds SET name = $1, background_color = $2, background_image_url = $3, format = $4,
+                           style = $5, display_title = $6, grid_columns = $7
+         WHERE id = $8 RETURNING *`,
+        [name, background_color, background_image_url, format,
+         style || 'standard', display_title || null, grid_columns || 5, id]
       );
 
       if (result.rows.length === 0) {

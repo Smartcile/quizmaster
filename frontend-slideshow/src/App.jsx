@@ -395,6 +395,26 @@ function SlideRenderer({ slide, slideIndex, playToken, sessionId, socket, scores
         </div>
       );
 
+    case 'intermission':
+      return (
+        <div className="slide-intermission">
+          <h1 className="intermission-title">{slide.title}</h1>
+          <div
+            className="intermission-grid"
+            style={{ gridTemplateColumns: `repeat(${slide.gridColumns || 5}, 1fr)` }}
+          >
+            {(slide.questions || []).map((q, i) => (
+              <div key={q.id ?? i} className="intermission-cell">
+                <span className="intermission-num">{i + 1}</span>
+                {q.media_url && q.type === 'image' && <img src={q.media_url} alt={`Picture ${i + 1}`} />}
+                {q.media_url && q.type === 'video' && <video src={q.media_url} />}
+                {!q.media_url && <div className="intermission-noimg">{q.text || `#${i + 1}`}</div>}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+
     case 'question':
       return (
         <div className="slide-question">
@@ -472,8 +492,14 @@ function SlideRenderer({ slide, slideIndex, playToken, sessionId, socket, scores
         : slide.answer;
       return (
         <div className="slide-answer">
-          <p className="answer-label">{slide.roundName} · Q{slide.questionNumber}</p>
-          <h3 className="answer-question">{slide.text}</h3>
+          <p className="answer-label">{slide.roundName} · {slide.intermission ? `Picture ${slide.questionNumber}` : `Q${slide.questionNumber}`}</p>
+          {slide.intermission && slide.mediaUrl && (
+            <div className="answer-media">
+              {slide.questionType === 'image' && <img src={slide.mediaUrl} alt="Answer" />}
+              {slide.questionType === 'video' && <video controls src={slide.mediaUrl} />}
+            </div>
+          )}
+          {slide.text && <h3 className="answer-question">{slide.text}</h3>}
           <p className="answer-text">{revealText}</p>
         </div>
       );
