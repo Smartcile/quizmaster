@@ -723,6 +723,18 @@ body {
   font-weight: 800;
   text-shadow: 0 0 20px rgba(0, 255, 159, 0.5);
 }
+/* Lyrics shown alongside an audio answer reveal (no audio on phones) */
+.reveal-lyrics {
+  margin: 4px 0 20px;
+  padding: 12px 14px;
+  white-space: pre-wrap;
+  font-size: 1rem;
+  line-height: 1.5;
+  color: var(--text-secondary, #b8c0e0);
+  background: rgba(7, 9, 26, 0.5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
 .reveal-score {
   display: inline-block;
   padding: 10px 20px;

@@ -43,6 +43,8 @@ async function loadQuizWithRoundsAndWidgets(id) {
             WHEN q.audio_form = 'both' THEN COALESCE(rq.audio_form_override, 'name_the_song')
             ELSE q.audio_form END,
           'audio_stop_seconds', q.audio_stop_seconds,
+          'lyrics', q.lyrics,
+          'answer_reveal_seconds', q.answer_reveal_seconds,
           'media_artist', mf.artist,
           'media_title', mf.title,
           'order', rq."order"

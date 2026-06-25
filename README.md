@@ -331,6 +331,8 @@ question,answer,type,points,media_url,category,difficulty,answer_mode
 | `question_format` | no (defaults `standard`) | `standard` / `multichoice` / `both` |
 | `approved` | no (defaults `false`) | `true` / `false` |
 | `options` | no | MCQ options, pipe-separated: `Paris|London|Rome` |
+| `lyrics` | no (audio only) | Lyric text shown on the slideshow answer reveal; the answer words are highlighted in place |
+| `answer_reveal_seconds` | no (audio only) | "The drop" — seconds into the replayed track where the answer is revealed in sync. Blank reveals immediately |
 
 Column order is flexible — the importer maps by header name. The same file produced by **Download CSV** can be re-imported. On import, questions whose text already exists are flagged so you can overwrite, ignore, or keep a copy; everything else imports automatically.
 

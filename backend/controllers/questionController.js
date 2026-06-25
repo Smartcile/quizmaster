@@ -1,7 +1,7 @@
 const db = require('../config/database');
 const { cleanText, cleanOptions } = require('../utils/cleanText');
 
-const QUESTION_FIELDS = 'text, answer, type, media_url, points, tags, category, options, difficulty, answer_mode, approved, question_format, audio_form, audio_stop_seconds';
+const QUESTION_FIELDS = 'text, answer, type, media_url, points, tags, category, options, difficulty, answer_mode, approved, question_format, audio_form, audio_stop_seconds, lyrics, answer_reveal_seconds';
 
 // A question that carries MCQ options must never be a plain 'text' question —
 // the options would be hidden from the quizzer. Such a question is promoted to
@@ -122,12 +122,16 @@ async function createQuestion(req, res) {
     const audioForm = (type === 'audio' && req.body.audio_form) ? req.body.audio_form : null;
     const audioStop = (type === 'audio' && req.body.audio_stop_seconds != null && req.body.audio_stop_seconds !== '')
       ? Number(req.body.audio_stop_seconds) : null;
+    // Synced lyric + answer reveal — only meaningful for audio questions.
+    const lyrics = (type === 'audio' && req.body.lyrics) ? cleanText(req.body.lyrics) : null;
+    const revealSecs = (type === 'audio' && req.body.answer_reveal_seconds != null && req.body.answer_reveal_seconds !== '')
+      ? Number(req.body.answer_reveal_seconds) : null;
     const result = await db.query(
-      `INSERT INTO questions (text, answer, type, media_url, points, tags, category, options, difficulty, answer_mode, approved, question_format, is_whoami, audio_form, audio_stop_seconds)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING *`,
+      `INSERT INTO questions (text, answer, type, media_url, points, tags, category, options, difficulty, answer_mode, approved, question_format, is_whoami, audio_form, audio_stop_seconds, lyrics, answer_reveal_seconds)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING *`,
       [cText, cAnswer, type || 'text', media_url, points, tags, category,
        JSON.stringify(cOptions), difficulty || 'medium', am,
-       approved ?? false, qf, isWhoami, audioForm, audioStop]
+       approved ?? false, qf, isWhoami, audioForm, audioStop, lyrics, revealSecs]
     );
     res.status(201).json(result.rows[0]);
   } catch (error) {
@@ -145,14 +149,18 @@ async function updateQuestion(req, res) {
     const audioForm = (type === 'audio' && req.body.audio_form) ? req.body.audio_form : null;
     const audioStop = (type === 'audio' && req.body.audio_stop_seconds != null && req.body.audio_stop_seconds !== '')
       ? Number(req.body.audio_stop_seconds) : null;
+    const lyrics = (type === 'audio' && req.body.lyrics) ? cleanText(req.body.lyrics) : null;
+    const revealSecs = (type === 'audio' && req.body.answer_reveal_seconds != null && req.body.answer_reveal_seconds !== '')
+      ? Number(req.body.answer_reveal_seconds) : null;
     const result = await db.query(
       `UPDATE questions SET text=$1, answer=$2, type=$3, media_url=$4, points=$5,
        tags=$6, category=$7, options=$8, difficulty=$9, answer_mode=$10,
-       approved=$11, question_format=$12, is_whoami=$13, audio_form=$14, audio_stop_seconds=$15
-       WHERE id=$16 RETURNING *`,
+       approved=$11, question_format=$12, is_whoami=$13, audio_form=$14, audio_stop_seconds=$15,
+       lyrics=$16, answer_reveal_seconds=$17
+       WHERE id=$18 RETURNING *`,
       [cText, cAnswer, type || 'text', media_url, points, tags, category,
        JSON.stringify(cOptions), difficulty || 'medium', am,
-       approved ?? false, qf, isWhoami, audioForm, audioStop,
+       approved ?? false, qf, isWhoami, audioForm, audioStop, lyrics, revealSecs,
        req.params.id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Question not found' });
@@ -170,7 +178,8 @@ async function exportQuestionsCSV(req, res) {
   try {
     const result = await db.query(
       `SELECT text, answer, type, points, media_url, category, difficulty,
-              answer_mode, question_format, approved, options
+              answer_mode, question_format, approved, options,
+              lyrics, answer_reveal_seconds
        FROM questions
        ORDER BY category NULLS LAST, created_at`
     );
@@ -178,7 +187,7 @@ async function exportQuestionsCSV(req, res) {
     const headers = [
       'question', 'answer', 'type', 'points', 'media_url',
       'category', 'difficulty', 'answer_mode', 'question_format',
-      'approved', 'options'
+      'approved', 'options', 'lyrics', 'answer_reveal_seconds'
     ];
     const escape = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const lines = [headers.join(',')];
@@ -188,7 +197,8 @@ async function exportQuestionsCSV(req, res) {
         row.category, row.difficulty, row.answer_mode, row.question_format,
         row.approved ? 'true' : 'false',
         // Options is a JSONB array — serialise to a single CSV cell as "a|b|c"
-        Array.isArray(row.options) ? row.options.join('|') : ''
+        Array.isArray(row.options) ? row.options.join('|') : '',
+        row.lyrics, row.answer_reveal_seconds
       ].map(escape).join(','));
     }
     const csv = lines.join('\r\n');
@@ -236,7 +246,10 @@ async function importQuestions(req, res) {
       question_format: mode.question_format,
       audio_form: (q.type === 'audio' && q.audio_form) ? q.audio_form : null,
       audio_stop_seconds: (q.type === 'audio' && q.audio_stop_seconds != null && q.audio_stop_seconds !== '')
-        ? Number(q.audio_stop_seconds) : null
+        ? Number(q.audio_stop_seconds) : null,
+      lyrics: (q.type === 'audio' && q.lyrics) ? cleanText(q.lyrics) : null,
+      answer_reveal_seconds: (q.type === 'audio' && q.answer_reveal_seconds != null && q.answer_reveal_seconds !== '')
+        ? Number(q.answer_reveal_seconds) : null
     };
   };
 
@@ -254,11 +267,12 @@ async function importQuestions(req, res) {
         await client.query(
           `UPDATE questions SET text=$1, answer=$2, type=$3, media_url=$4, points=$5,
              tags=$6, category=$7, options=$8, difficulty=$9, answer_mode=$10,
-             approved=$11, question_format=$12, audio_form=$13, audio_stop_seconds=$14
-           WHERE id=$15`,
+             approved=$11, question_format=$12, audio_form=$13, audio_stop_seconds=$14,
+             lyrics=$15, answer_reveal_seconds=$16
+           WHERE id=$17`,
           [f.text, f.answer, f.type, f.media_url, f.points, f.tags, f.category,
            f.options, f.difficulty, f.answer_mode, f.approved, f.question_format,
-           f.audio_form, f.audio_stop_seconds, item.existingId]
+           f.audio_form, f.audio_stop_seconds, f.lyrics, f.answer_reveal_seconds, item.existingId]
         );
         summary.overwritten.push(f.text);
         continue;
@@ -269,10 +283,10 @@ async function importQuestions(req, res) {
       const text = action === 'copy' ? `${f.text} (COPY)` : f.text;
       await client.query(
         `INSERT INTO questions (${QUESTION_FIELDS})
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
         [text, f.answer, f.type, f.media_url, f.points, f.tags, f.category,
          f.options, f.difficulty, f.answer_mode, f.approved, f.question_format,
-         f.audio_form, f.audio_stop_seconds]
+         f.audio_form, f.audio_stop_seconds, f.lyrics, f.answer_reveal_seconds]
       );
       (action === 'copy' ? summary.copied : summary.added).push(text);
     }

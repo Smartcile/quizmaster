@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { api } from '../services/api';
 import MediaPicker from '../components/MediaPicker';
 import AudioEditor from '../components/AudioEditor';
@@ -54,6 +54,8 @@ const EMPTY_FORM = {
   is_whoami: false,
   audio_form: '',
   audio_stop_seconds: '',
+  lyrics: '',
+  answer_reveal_seconds: '',
   clues: defaultClues()
 };
 
@@ -151,9 +153,100 @@ function csvToQuestions(text) {
       answer_mode: cell(cells, 'answer_mode') || 'text',
       question_format: cell(cells, 'question_format') || 'standard',
       approved: cell(cells, 'approved').toLowerCase() === 'true',
-      options: opts ? opts.split('|').map(o => o.trim()).filter(Boolean) : []
+      options: opts ? opts.split('|').map(o => o.trim()).filter(Boolean) : [],
+      // Synced lyric + answer reveal (audio questions). Empty cells become null
+      // so the backend leaves them unset.
+      lyrics: cell(cells, 'lyrics') || null,
+      answer_reveal_seconds: cell(cells, 'answer_reveal_seconds') || null
     };
   }).filter(q => q.text);
+}
+
+// Render lyrics with the answer word(s) highlighted in place. Falls back to the
+// answer alone when there are no lyrics. (The slideshow has its own copy of this
+// logic — this one drives the editor's live demo.)
+function highlightAnswerInLyrics(lyrics, answer) {
+  const text = (lyrics && lyrics.trim()) ? lyrics : (answer || '');
+  const ans = (answer || '').trim();
+  if (!ans || !text.toLowerCase().includes(ans.toLowerCase())) return <span>{text}</span>;
+  const parts = [];
+  const lower = text.toLowerCase(), lowerAns = ans.toLowerCase();
+  let from = 0, idx, k = 0;
+  while ((idx = lower.indexOf(lowerAns, from)) !== -1) {
+    if (idx > from) parts.push(<span key={k++}>{text.slice(from, idx)}</span>);
+    parts.push(<mark key={k++} className="lyric-answer">{text.slice(idx, idx + ans.length)}</mark>);
+    from = idx + ans.length;
+  }
+  if (from < text.length) parts.push(<span key={k++}>{text.slice(from)}</span>);
+  return <>{parts}</>;
+}
+
+// Editor for the synced lyric + answer reveal (audio questions). Lets the author
+// set the reveal point from the player's current time and preview the timed
+// reveal exactly as the slideshow will show it.
+function LyricRevealEditor({ mediaUrl, lyrics, answer, revealSeconds, onLyricsChange, onRevealChange }) {
+  const audioRef = useRef(null);
+  const [previewing, setPreviewing] = useState(false);
+  const [revealed, setRevealed] = useState(false);
+
+  const captureCurrent = () => {
+    const el = audioRef.current;
+    if (el) onRevealChange(String(Math.round(el.currentTime * 10) / 10));
+  };
+
+  // Preview: play from the start; reveal when currentTime reaches the drop.
+  const previewReveal = () => {
+    const el = audioRef.current;
+    if (!el) return;
+    setRevealed(false);
+    setPreviewing(true);
+    try { el.currentTime = 0; } catch { /* not seekable yet */ }
+    el.play().catch((e) => console.warn('[editor] preview play blocked:', e?.name || e));
+  };
+
+  const onTimeUpdate = () => {
+    const el = audioRef.current;
+    if (!el || !previewing || revealed) return;
+    const drop = parseFloat(revealSeconds);
+    if (!Number.isFinite(drop) || el.currentTime >= drop) setRevealed(true);
+  };
+
+  return (
+    <div className="form-row lyric-reveal-block">
+      <label className="form-label" style={{ flexBasis: '100%' }}>Lyrics (shown on reveal)
+        <textarea
+          rows={3}
+          value={lyrics || ''}
+          onChange={(e) => onLyricsChange(e.target.value)}
+          placeholder="Lyric lines shown on the reveal slide. The answer words are highlighted in place; leave blank to just show the answer."
+        />
+      </label>
+      <label className="form-label">Reveal point (seconds)
+        <input
+          type="number" min="0" step="0.1"
+          value={revealSeconds ?? ''}
+          onChange={(e) => onRevealChange(e.target.value)}
+          placeholder="the drop, e.g. 42.0"
+        />
+      </label>
+      {mediaUrl && (
+        <div className="lyric-reveal-preview">
+          <audio ref={audioRef} controls src={mediaUrl} onTimeUpdate={onTimeUpdate} onEnded={() => setPreviewing(false)} />
+          <button type="button" className="btn btn-secondary btn-sm" onClick={captureCurrent}>⤓ Set reveal point to current time</button>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={previewReveal}>▶ Preview reveal</button>
+        </div>
+      )}
+      {(lyrics || answer) && (
+        <div className={`lyric-reveal-demo ${revealed ? 'revealed' : 'hidden-answer'}`} style={{ flexBasis: '100%' }}>
+          {highlightAnswerInLyrics(lyrics, answer)}
+        </div>
+      )}
+      <p className="help-text" style={{ flexBasis: '100%' }}>
+        On the slideshow answer slide the song replays from the start and the answer appears in sync at the reveal point.
+        Leave the reveal point blank to show it immediately.
+      </p>
+    </div>
+  );
 }
 
 export default function QuestionManager() {
@@ -311,6 +404,8 @@ export default function QuestionManager() {
       is_whoami: isWhoami,
       audio_form: q.audio_form || '',
       audio_stop_seconds: q.audio_stop_seconds ?? '',
+      lyrics: q.lyrics || '',
+      answer_reveal_seconds: q.answer_reveal_seconds ?? '',
       clues: isWhoami && Array.isArray(q.options) && q.options.length
         ? q.options.map(c => ({ text: c?.text || '', points: c?.points ?? 1 }))
         : defaultClues()
@@ -749,6 +844,19 @@ export default function QuestionManager() {
                     </p>
                   </div>
                 )}
+
+                {/* Synced lyric + answer reveal — render-only enhancement of the
+                    slideshow answer slide. Shown for any audio question. */}
+                {form.type === 'audio' && (
+                  <LyricRevealEditor
+                    mediaUrl={form.media_url}
+                    lyrics={form.lyrics}
+                    answer={form.answer}
+                    revealSeconds={form.answer_reveal_seconds}
+                    onLyricsChange={(v) => setForm(prev => ({ ...prev, lyrics: v }))}
+                    onRevealChange={(v) => setForm(prev => ({ ...prev, answer_reveal_seconds: v }))}
+                  />
+                )}
               </>
             )}
 
@@ -923,7 +1031,7 @@ export default function QuestionManager() {
               <button onClick={() => setCsvOpen(false)} className="btn-close">×</button>
             </div>
             <div className="modal-body">
-              <p className="help-text">Columns: question, answer, type, points, media_url, category, difficulty, answer_mode, question_format, approved, options (pipe-separated). Column order is flexible.</p>
+              <p className="help-text">Columns: question, answer, type, points, media_url, category, difficulty, answer_mode, question_format, approved, options (pipe-separated), lyrics, answer_reveal_seconds (audio only). Column order is flexible.</p>
               <p className="help-text">New questions import automatically. Any that already exist (same question text) are flagged so you can overwrite, ignore, or keep a copy.</p>
               <input type="file" accept=".csv" onChange={(e) => setCsvFile(e.target.files[0])} />
               {csvFile && <p className="help-text">📁 {csvFile.name}</p>}

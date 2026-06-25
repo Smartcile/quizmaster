@@ -14,6 +14,18 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
   const slides = useMemo(() => buildSlides(quiz), [quiz]);
   const slide = slides[currentSlide];
 
+  // Lyrics by question id for the audio answer reveal (phones don't play audio,
+  // so we just show the text). buildSlides is untouched — resolve from the quiz.
+  const questionsById = useMemo(() => {
+    const map = new Map();
+    for (const item of (quiz?.items || quiz?.rounds || [])) {
+      for (const q of (item?.questions || [])) {
+        if (q && q.id != null) map.set(q.id, q);
+      }
+    }
+    return map;
+  }, [quiz]);
+
   // All question slides in the current round (for in-round navigation)
   const questionsInCurrentRound = useMemo(() => {
     if (!slide?.roundId) return [];
@@ -330,6 +342,9 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
             <span className="reveal-correct-label">Correct:</span>
             <span className="reveal-correct-text">{slide.answer}</span>
           </div>
+          {slide.questionType === 'audio' && questionsById.get(slide.questionId)?.lyrics && (
+            <div className="reveal-lyrics">{questionsById.get(slide.questionId).lyrics}</div>
+          )}
           {myScore !== undefined && (
             <div className={`reveal-score ${myScore === 1 ? 'full' : myScore === 0.5 ? 'half' : 'zero'}`}>
               {myScore} pt{myScore !== 1 ? 's' : ''}

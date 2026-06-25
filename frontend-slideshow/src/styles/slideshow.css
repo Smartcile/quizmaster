@@ -394,6 +394,41 @@ html, body, #root {
   letter-spacing: -2px;
 }
 
+/* Synced lyric + answer reveal (audio answer slide) */
+.slide-answer-audio { padding: clamp(12px, 4%, 60px); }
+.slide-answer-audio .lyric-reveal {
+  font-size: clamp(1.4rem, 3.4vmin, 3rem);
+  line-height: 1.5;
+  font-weight: 600;
+  color: var(--text-primary, #eef);
+  white-space: pre-wrap;
+  max-width: 90%;
+  margin: 0 auto;
+}
+/* The answer word(s), highlighted in place */
+.slide-answer-audio .lyric-answer {
+  color: var(--neon-green);
+  background: transparent;
+  font-weight: 900;
+  padding: 0 0.15em;
+  border-radius: 6px;
+  text-shadow: 0 0 24px var(--neon-green), 0 0 48px rgba(0, 255, 159, 0.4);
+  transition: color 0.25s ease, background 0.25s ease;
+}
+/* Hidden until the drop: redact the answer as a glowing bar */
+.slide-answer-audio .hidden-answer .lyric-answer {
+  color: transparent;
+  text-shadow: none;
+  background: var(--neon-purple, #b829ff);
+  box-shadow: 0 0 24px rgba(184, 41, 255, 0.6);
+}
+.slide-answer-audio .lyric-reveal-hint {
+  margin-top: clamp(16px, 3vmin, 40px);
+  font-size: 1.1rem;
+  color: var(--text-muted);
+  letter-spacing: 1px;
+}
+
 /* Answer reveal media (intermission picture rounds) */
 .slide-answer .answer-media {
   max-width: 55%;
