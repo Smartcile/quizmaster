@@ -87,6 +87,18 @@ function applyAudioForm(prev, v, f) {
   return next;
 }
 
+// A track's stored lyrics may be LRC (synced) — "[00:12.34]line" — or plain
+// text. Strip any [..] timestamp/metadata tags so the lyrics box holds clean
+// plain text for the reveal slide (timing comes from answer_reveal_seconds).
+function lyricsToPlain(raw) {
+  if (!raw) return '';
+  return String(raw)
+    .split(/\r?\n/)
+    .map(line => line.replace(/\[[^\]]*\]/g, '').trim())
+    .filter(line => line.length > 0)
+    .join('\n');
+}
+
 // Duplicate-detection key: accent/punctuation/quote/dash-insensitive so that
 // "Café — São!" and "Cafe - Sao" are treated as the same question (stops the
 // import making copies when special characters differ).
@@ -307,6 +319,11 @@ export default function QuestionManager() {
       let next = { ...prev, media_url: f.url, type: mimeToType(f.mime_type) };
       if (setFinishLyrics) next.audio_form = 'finish_the_lyrics';
       if (next.type === 'audio' && next.audio_form) next = applyAudioForm(next, next.audio_form, f);
+      // Pull the track's stored lyrics into the reveal lyrics box (only when it's
+      // empty, so a hand-edited value is never clobbered).
+      if (next.type === 'audio' && f.lyrics && !String(prev.lyrics || '').trim()) {
+        next.lyrics = lyricsToPlain(f.lyrics);
+      }
       return next;
     });
   };
@@ -323,6 +340,9 @@ export default function QuestionManager() {
         next.audio_form = 'finish_the_lyrics';
         next.answer = extra.answer;
         if (extra.stopSeconds != null) next.audio_stop_seconds = extra.stopSeconds;
+      }
+      if (data.lyrics && !String(prev.lyrics || '').trim()) {
+        next.lyrics = lyricsToPlain(data.lyrics);
       }
       return next;
     });
