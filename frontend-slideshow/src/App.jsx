@@ -91,6 +91,18 @@ function App() {
   const [audioUnlocked, setAudioUnlocked] = useState(false);
   const socket = useWebSocket();
   const slides = useMemo(() => buildSlides(quiz), [quiz]);
+  // Look up extra question data (lyrics, answer_reveal_seconds) by id for the
+  // synced audio answer reveal. buildSlides is NOT touched — the answer slide
+  // already carries questionId, so we resolve these render-only fields here.
+  const questionsById = useMemo(() => {
+    const map = new Map();
+    for (const item of (quiz?.items || quiz?.rounds || [])) {
+      for (const q of (item?.questions || [])) {
+        if (q && q.id != null) map.set(q.id, q);
+      }
+    }
+    return map;
+  }, [quiz]);
 
   // Keep the QR sized to the current surface (window or preview iframe)
   useEffect(() => {
@@ -292,7 +304,7 @@ function App() {
       <div className="slideshow-container">
         <div className="slide" style={slide?.background ? { background: slide.background } : undefined}>
           <SlideErrorBoundary key={currentSlide}>
-            <SlideRenderer slide={slide} slideIndex={currentSlide} playToken={playToken} sessionId={sessionId} socket={socket} scoresVisible={scoreboardVisible} />
+            <SlideRenderer slide={slide} slideIndex={currentSlide} playToken={playToken} sessionId={sessionId} socket={socket} scoresVisible={scoreboardVisible} questionsById={questionsById} />
           </SlideErrorBoundary>
         </div>
         <div className="slide-counter">
@@ -440,7 +452,94 @@ function QuestionMedia({ slide, slideIndex, playToken }) {
   );
 }
 
-function SlideRenderer({ slide, slideIndex, playToken, sessionId, socket, scoresVisible = true }) {
+// Render lyrics with the answer word(s) highlighted in place. Falls back to the
+// answer alone when there are no lyrics. (Editor has its own copy of this.)
+function highlightAnswerInLyrics(lyrics, answer) {
+  const text = (lyrics && lyrics.trim()) ? lyrics : (answer || '');
+  const ans = (answer || '').trim();
+  if (!ans || !text.toLowerCase().includes(ans.toLowerCase())) return <span>{text}</span>;
+  const parts = [];
+  const lower = text.toLowerCase(), lowerAns = ans.toLowerCase();
+  let from = 0, idx, k = 0;
+  while ((idx = lower.indexOf(lowerAns, from)) !== -1) {
+    if (idx > from) parts.push(<span key={k++}>{text.slice(from, idx)}</span>);
+    parts.push(<mark key={k++} className="lyric-answer">{text.slice(idx, idx + ans.length)}</mark>);
+    from = idx + ans.length;
+  }
+  if (from < text.length) parts.push(<span key={k++}>{text.slice(from)}</span>);
+  return <>{parts}</>;
+}
+
+// Slideshow answer reveal for AUDIO questions: replay the whole track from the
+// start and reveal the answer in sync with "the drop" (answer_reveal_seconds).
+// Resilient: a wall-clock fallback timer reveals the answer even if audio is
+// blocked or fails to load, so the screen never sticks with it hidden. Mounted
+// with key={slideIndex} so re-entering the slide replays cleanly from the start.
+function AudioAnswerReveal({ label, mediaUrl, lyrics, answerText, revealSeconds }) {
+  const audioRef = useRef(null);
+  const drop = Number(revealSeconds);
+  const hasDrop = Number.isFinite(drop) && drop > 0;
+  const [revealed, setRevealed] = useState(!hasDrop); // no drop → reveal immediately
+  const [audioState, setAudioState] = useState('idle'); // idle | playing | blocked | ended
+
+  useEffect(() => {
+    const el = audioRef.current;
+    if (!el) return;
+
+    // ── DEFAULT: replay full, reveal at the drop ────────────────────────────
+    // Relies on the slideshow's one-time "Enable sound" unlock gesture.
+    try { el.currentTime = 0; } catch { /* not seekable yet */ }
+    el.play()
+      .then(() => setAudioState('playing'))
+      .catch((err) => {
+        console.warn('[slideshow] answer-reveal play() blocked:', err?.name || err);
+        setAudioState('blocked');
+      });
+
+    // ── ALTERNATIVE (commented): play the ENDING only — seek to the drop and
+    //    reveal as playback starts. To use, replace the play() block above with:
+    //    try { el.currentTime = hasDrop ? drop : 0; } catch {}
+    //    el.play().then(() => { setAudioState('playing'); setRevealed(true); })
+    //             .catch((err) => { setAudioState('blocked'); setRevealed(true); });
+
+    // Fallback: reveal regardless of audio, a touch after the expected drop, so
+    // the answer never sticks hidden if audio is blocked or timeupdate stalls.
+    let fallbackId;
+    if (hasDrop) {
+      const ms = Math.min(60000, drop * 1000 + 2500);
+      fallbackId = setTimeout(() => setRevealed(true), ms);
+    }
+    return () => { if (fallbackId) clearTimeout(fallbackId); };
+  }, []);
+
+  const onTimeUpdate = (e) => {
+    if (hasDrop && !revealed && e.target.currentTime >= drop) setRevealed(true);
+  };
+
+  return (
+    <div className="slide-answer slide-answer-audio">
+      <p className="answer-label">{label}</p>
+      <div className={`lyric-reveal ${revealed ? 'revealed' : 'hidden-answer'}`}>
+        {highlightAnswerInLyrics(lyrics, answerText)}
+      </div>
+      {!revealed && (
+        <p className="lyric-reveal-hint">
+          {audioState === 'blocked' ? '🔇 Audio blocked — click “Enable sound”' : '🎵 Listen for the drop…'}
+        </p>
+      )}
+      <audio
+        ref={audioRef}
+        src={mediaUrl}
+        hidden
+        onTimeUpdate={onTimeUpdate}
+        onPlaying={() => setAudioState('playing')}
+        onEnded={() => { setAudioState('ended'); setRevealed(true); }}
+      />
+    </div>
+  );
+}
+
+function SlideRenderer({ slide, slideIndex, playToken, sessionId, socket, scoresVisible = true, questionsById }) {
   if (!slide) return <div className="slide-empty"><h2>End of quiz</h2></div>;
 
   switch (slide.type) {
@@ -555,6 +654,24 @@ function SlideRenderer({ slide, slideIndex, playToken, sessionId, socket, scores
       const revealText = slide.audioForm === 'name_the_song'
         ? [slide.mediaArtist, slide.mediaTitle].filter(Boolean).join(' — ') || slide.answer
         : slide.answer;
+
+      // Audio answer: replay the whole song and reveal the answer in sync with
+      // "the drop". Render-only — lyrics/answer_reveal_seconds come from the
+      // quiz question (looked up by id), not from buildSlides.
+      if (slide.questionType === 'audio' && slide.mediaUrl) {
+        const q = questionsById?.get?.(slide.questionId);
+        return (
+          <AudioAnswerReveal
+            key={slideIndex}
+            label={`${slide.roundName} · Q${slide.questionNumber}`}
+            mediaUrl={slide.mediaUrl}
+            lyrics={q?.lyrics || ''}
+            answerText={revealText}
+            revealSeconds={q?.answer_reveal_seconds}
+          />
+        );
+      }
+
       return (
         <div className="slide-answer">
           <p className="answer-label">{slide.roundName} · {slide.intermission ? `Picture ${slide.questionNumber}` : `Q${slide.questionNumber}`}</p>

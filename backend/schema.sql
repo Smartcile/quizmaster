@@ -369,6 +369,13 @@ ALTER TABLE media_files ADD COLUMN IF NOT EXISTS ftl_stop_seconds NUMERIC(10,3);
 -- when type='audio'. Gated globally by app_settings.audio_rounds_enabled.
 ALTER TABLE questions ADD COLUMN IF NOT EXISTS audio_form VARCHAR(30);
 ALTER TABLE questions ADD COLUMN IF NOT EXISTS audio_stop_seconds NUMERIC(10,3);
+-- Synced lyric + answer reveal (render-only, slideshow answer slide). lyrics is
+-- the text shown on the reveal slide (answer highlighted in place; falls back to
+-- showing the answer if blank). answer_reveal_seconds is "the drop" — the point
+-- in the replayed audio where the answer is un-hidden in sync; unset reveals
+-- immediately on slide mount.
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS lyrics TEXT;
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS answer_reveal_seconds NUMERIC;
 -- Per-round choice for an audio question whose audio_form is 'both' (it can run
 -- as either Name the Song or Finish the Lyrics) — parallels question_format_override.
 ALTER TABLE round_questions ADD COLUMN IF NOT EXISTS audio_form_override VARCHAR(30);
