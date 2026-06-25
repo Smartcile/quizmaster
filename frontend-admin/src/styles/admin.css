@@ -4090,26 +4090,6 @@ input[type="checkbox"] {
   vertical-align: middle;
 }
 .sb-doubled { color: var(--neon-yellow, #ffe600); font-weight: 700; }
-
-/* Double Up widget — round checklist in the widget editor */
-.doubleup-checklist {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 8px;
-  max-height: 220px;
-  overflow-y: auto;
-}
-.doubleup-check {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-}
-.doubleup-check input { width: auto; }
 .sb-table thead .sb-col-total { color: var(--neon-green); }
 .sb-row-leader td {
   background: linear-gradient(135deg, rgba(255, 230, 0, 0.12), rgba(255, 157, 0, 0.05));

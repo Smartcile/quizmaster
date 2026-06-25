@@ -10,6 +10,8 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
   const [viewingQuestionId, setViewingQuestionId] = useState(null); // null = follow admin
   const [whoamiGuess,      setWhoamiGuess]       = useState('');
   const [whoamiLock,       setWhoamiLock]        = useState(null);   // null = not locked yet
+  const [doubleChoice,     setDoubleChoice]      = useState(null);   // this team's chosen ×2 round id
+  const [doubleError,      setDoubleError]       = useState(null);
 
   const slides = useMemo(() => buildSlides(quiz), [quiz]);
   const slide = slides[currentSlide];
@@ -25,13 +27,12 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
     }
     return map;
   }, [quiz]);
-  // Round id → name, for the Double Up announcement slide.
-  const roundsById = useMemo(() => {
-    const map = new Map();
-    for (const item of (quiz?.items || quiz?.rounds || [])) {
-      if ((item?.kind === 'round' || item?.questions) && item.id != null) map.set(item.id, item.name);
-    }
-    return map;
+  // Rounds a team may pick for their Double Up joker — every scoring round in
+  // the quiz except intermission (picture) rounds. Keyed by rounds.id.
+  const pickableRounds = useMemo(() => {
+    return (quiz?.items || quiz?.rounds || [])
+      .filter(item => (item?.kind === 'round' || item?.questions) && item.id != null && item.style !== 'intermission')
+      .map(item => ({ id: item.id, name: item.name }));
   }, [quiz]);
 
   // All question slides in the current round (for in-round navigation)
@@ -108,6 +109,18 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
     })();
   }, [team?.id, sessionId]);
 
+  // Restore this team's Double Up choice on (re)join
+  useEffect(() => {
+    if (!team?.id || !sessionId) return;
+    (async () => {
+      try {
+        const res = await api.get(`/doubleup/session/${sessionId}`);
+        const mine = (res?.choices || []).find(c => Number(c.team_id) === Number(team.id));
+        if (mine) setDoubleChoice(Number(mine.round_id));
+      } catch {}
+    })();
+  }, [team?.id, sessionId]);
+
   // WebSocket events
   useEffect(() => {
     if (!socket) return;
@@ -145,17 +158,22 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
         }));
       }
     };
+    const onDoubleUp = (data) => {
+      if (Number(data.teamId) === Number(team?.id)) setDoubleChoice(Number(data.roundId));
+    };
     socket.on('session_state',   onSessionState);
     socket.on('answer_locked',   onLocked);
     socket.on('answer_unlocked', onUnlocked);
     socket.on('answer_marked',   onMarked);
     socket.on('whoami_locked',   onWhoamiLocked);
     socket.on('whoami_marked',   onWhoamiMarked);
+    socket.on('doubleup_chosen', onDoubleUp);
     return () => {
       socket.off('session_state',   onSessionState);
       socket.off('answer_locked',   onLocked);
       socket.off('answer_unlocked', onUnlocked);
       socket.off('answer_marked',   onMarked);
+      socket.off('doubleup_chosen', onDoubleUp);
       socket.off('whoami_locked',   onWhoamiLocked);
       socket.off('whoami_marked',   onWhoamiMarked);
     };
@@ -176,6 +194,21 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
         pointsAwarded: res.points_awarded
       });
     } catch {}
+  };
+
+  // Pick (or change) this team's Double Up round. The server rejects locked
+  // rounds and freezes the pick once the chosen round is locked.
+  const chooseDoubleUp = async (roundId) => {
+    if (!team || roundId === doubleChoice) return;
+    setDoubleError(null);
+    const prev = doubleChoice;
+    setDoubleChoice(roundId); // optimistic
+    try {
+      await api.post('/doubleup/choose', { sessionId, teamId: team.id, roundId });
+    } catch (err) {
+      setDoubleChoice(prev); // revert on rejection (e.g. round already locked)
+      setDoubleError(err?.message || 'Could not set your double — that round may be locked.');
+    }
   };
 
   const submitAnswer = async (questionId, value) => {
@@ -387,15 +420,40 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
         );
       }
       if (slide.widgetType === 'doubleup') {
-        const names = (Array.isArray(slide.data?.doubled_round_ids) ? slide.data.doubled_round_ids : [])
-          .map(id => roundsById.get(id))
-          .filter(Boolean);
+        // Each team picks ONE round to score ×2. Changeable until the chosen
+        // round's answers are locked (then it's frozen).
+        const frozen = doubleChoice != null && lockedRounds.has(doubleChoice);
         return (
           <div className="quizzer-doubleup">
             <h2>{slide.data?.title || '⚡ Double Points'}</h2>
-            {names.length > 0 && (
-              <p>{names.join(' · ')} {names.length === 1 ? 'is' : 'are'} worth <strong>double</strong>!</p>
-            )}
+            <p className="dup-sub">
+              {frozen
+                ? 'Your double is locked in 🔒'
+                : 'Pick ONE round to score double. You can change it until that round is locked.'}
+            </p>
+            <div className="dup-list">
+              {pickableRounds.length === 0 ? (
+                <p className="dup-empty">No rounds available to double.</p>
+              ) : pickableRounds.map(r => {
+                const isChosen = Number(doubleChoice) === Number(r.id);
+                const isLocked = lockedRounds.has(r.id);
+                const disabled = frozen || (isLocked && !isChosen);
+                return (
+                  <button
+                    key={r.id}
+                    type="button"
+                    className={`dup-round ${isChosen ? 'chosen' : ''} ${isLocked ? 'locked' : ''}`}
+                    onClick={() => chooseDoubleUp(r.id)}
+                    disabled={disabled}
+                  >
+                    <span className="dup-round-name">{r.name}</span>
+                    {isChosen ? <span className="dup-badge">×2 ✓</span>
+                      : isLocked ? <span className="dup-locktag">locked</span> : null}
+                  </button>
+                );
+              })}
+            </div>
+            {doubleError && <p className="dup-error">{doubleError}</p>}
           </div>
         );
       }

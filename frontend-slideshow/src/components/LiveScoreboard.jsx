@@ -6,8 +6,9 @@ import { api } from '../services/api';
 // Starting (handicap) and Bonus columns, sorted by total descending.
 //
 // Backend shape (GET /api/teams/session/:id/scoreboard):
-//   { teamSizeScoring, hasBrownie, rounds:[{id,name,format}], teams:[{...}],
-//     doubledRoundIds:[id,…] }
+//   { teamSizeScoring, hasBrownie, rounds:[{id,name,format}], teams:[{...}] }
+// Double Up is per-team: each team row carries its own `doubled_round_id` (the
+// round that team chose to score ×2), so the ×2 marker sits on that team's cell.
 //
 // NOTE: This component is duplicated byte-for-byte in all three frontends
 // (frontend-slideshow / frontend-admin / frontend-quizzer). Change one, change
@@ -33,12 +34,14 @@ export default function LiveScoreboard({ sessionId, socket, title = 'Leaderboard
     socket.on('answer_unlocked', onChange);
     socket.on('answer_locked',   onChange);
     socket.on('whoami_marked',   onChange);
+    socket.on('doubleup_chosen', onChange);
     return () => {
       socket.off('answer_marked',   onChange);
       socket.off('team_joined',     onChange);
       socket.off('answer_unlocked', onChange);
       socket.off('answer_locked',   onChange);
       socket.off('whoami_marked',   onChange);
+      socket.off('doubleup_chosen', onChange);
     };
     // eslint-disable-next-line
   }, [socket, sessionId]);
@@ -62,7 +65,6 @@ export function ScoreboardTable({ data, loaded = true, title = 'Leaderboard', au
   const showStarting = !!data?.teamSizeScoring;
   const showBonus    = !!data?.hasBrownie;
   const showWhoami   = !!data?.hasWhoami;
-  const doubledIds   = new Set((data?.doubledRoundIds || []).map(Number));
 
   // Number of shrinkable columns drives the responsive font-size / padding (via
   // the --cols CSS var): more columns → a tighter board so it keeps fitting.
@@ -113,9 +115,7 @@ export function ScoreboardTable({ data, loaded = true, title = 'Leaderboard', au
                   <th className="sb-col-team">Team</th>
                   {showStarting && <th className="sb-col-num">Starting</th>}
                   {rounds.map(r => (
-                    <th key={r.id} className="sb-col-num" title={r.name}>
-                      {r.name}{doubledIds.has(Number(r.id)) && <span className="sb-x2">×2</span>}
-                    </th>
+                    <th key={r.id} className="sb-col-num" title={r.name}>{r.name}</th>
                   ))}
                   {showWhoami && <th className="sb-col-num">Who Am I?</th>}
                   {showBonus && <th className="sb-col-num">Bonus</th>}
@@ -128,11 +128,14 @@ export function ScoreboardTable({ data, loaded = true, title = 'Leaderboard', au
                     <td className="sb-col-rank">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}</td>
                     <td className="sb-col-team" title={t.name}>{t.name}</td>
                     {showStarting && <td className="sb-col-num">{fmtSigned(t.size_points)}</td>}
-                    {rounds.map(r => (
-                      <td key={r.id} className={`sb-col-num ${doubledIds.has(Number(r.id)) ? 'sb-doubled' : ''}`}>
-                        {fmt(t.round_scores?.[r.id] || 0)}
-                      </td>
-                    ))}
+                    {rounds.map(r => {
+                      const isDoubled = Number(t.doubled_round_id) === Number(r.id);
+                      return (
+                        <td key={r.id} className={`sb-col-num ${isDoubled ? 'sb-doubled' : ''}`}>
+                          {fmt(t.round_scores?.[r.id] || 0)}{isDoubled && <span className="sb-x2">×2</span>}
+                        </td>
+                      );
+                    })}
                     {showWhoami && <td className="sb-col-num">{fmt(t.whoami_points || 0)}</td>}
                     {showBonus && <td className="sb-col-num">{fmtSigned(t.brownie_total)}</td>}
                     <td className="sb-col-num sb-col-total">{fmt(t.total)}</td>

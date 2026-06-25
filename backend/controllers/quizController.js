@@ -1,7 +1,7 @@
 const db = require('../config/database');
 const { generateQuizCode } = require('../utils/codeGenerator');
 const { getIo } = require('../sockets');
-const { loadDoubledRoundIds } = require('../utils/doubleUp');
+const { loadDoubleChoicesForSession } = require('../utils/doubleUp');
 
 async function getAllQuizzes(req, res) {
   try {
@@ -657,27 +657,23 @@ async function getSessionResults(req, res) {
     `, [sessionId]);
     const teams = teamsResult.rows;
 
-    // Double Up Round(s): a doubled round's points count ×2. We add one extra
-    // copy of the points earned in doubled rounds to score_total (raw scores
-    // untouched), then re-sort. Same logic as getSessionScoreboard so History
-    // and the live board agree.
-    const sessRes = await db.query('SELECT quiz_id FROM quiz_sessions WHERE id = $1', [sessionId]);
-    const quizId = sessRes.rows[0]?.quiz_id;
-    const doubledIds = quizId ? await loadDoubledRoundIds(db, quizId) : new Set();
-    if (doubledIds.size && teams.length) {
+    // Double Up: each team's own joker round counts ×2. We add one extra copy of
+    // the points the team earned in *their* chosen round to score_total (raw
+    // scores untouched), then re-sort. Per-team — same logic as
+    // getSessionScoreboard so History and the live board agree.
+    const doubleChoices = await loadDoubleChoicesForSession(db, sessionId);
+    if (doubleChoices.size && teams.length) {
       const bonusRes = await db.query(`
-        SELECT t.id AS team_id, COALESCE(SUM(s.points_awarded), 0)::float AS bonus
-        FROM teams t
-        JOIN quiz_sessions qs ON qs.id = t.quiz_session_id
-        JOIN quiz_rounds qr ON qr.quiz_id = qs.quiz_id AND qr.round_id = ANY($2)
-        JOIN round_questions rq ON rq.round_id = qr.round_id
-        JOIN scores s ON s.team_id = t.id AND s.question_id = rq.question_id
-        WHERE t.quiz_session_id = $1
-        GROUP BY t.id
-      `, [sessionId, [...doubledIds]]);
-      const bonusByTeam = new Map(bonusRes.rows.map(r => [r.team_id, Number(r.bonus)]));
+        SELECT dc.team_id, COALESCE(SUM(s.points_awarded), 0)::float AS bonus
+        FROM double_up_choices dc
+        JOIN round_questions rq ON rq.round_id = dc.round_id
+        JOIN scores s ON s.team_id = dc.team_id AND s.question_id = rq.question_id
+        WHERE dc.session_id = $1
+        GROUP BY dc.team_id
+      `, [sessionId]);
+      const bonusByTeam = new Map(bonusRes.rows.map(r => [Number(r.team_id), Number(r.bonus)]));
       for (const t of teams) {
-        t.score_total = (Number(t.score_total) || 0) + (bonusByTeam.get(t.id) || 0);
+        t.score_total = (Number(t.score_total) || 0) + (bonusByTeam.get(Number(t.id)) || 0);
       }
       const total = (t) => (Number(t.score_total) || 0) + (Number(t.brownie_total) || 0)
         + (Number(t.whoami_points) || 0) + (Number(t.size_points) || 0);
