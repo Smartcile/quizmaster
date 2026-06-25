@@ -25,6 +25,14 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
     }
     return map;
   }, [quiz]);
+  // Round id → name, for the Double Up announcement slide.
+  const roundsById = useMemo(() => {
+    const map = new Map();
+    for (const item of (quiz?.items || quiz?.rounds || [])) {
+      if ((item?.kind === 'round' || item?.questions) && item.id != null) map.set(item.id, item.name);
+    }
+    return map;
+  }, [quiz]);
 
   // All question slides in the current round (for in-round navigation)
   const questionsInCurrentRound = useMemo(() => {
@@ -374,6 +382,19 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
             <LiveScoreboard sessionId={sessionId} socket={socket} title={slide.data?.title || 'Leaderboard'} />
             {showViewAnswers && (
               <button className="sb-view-answers" onClick={onViewAnswers}>📝 View my answers</button>
+            )}
+          </div>
+        );
+      }
+      if (slide.widgetType === 'doubleup') {
+        const names = (Array.isArray(slide.data?.doubled_round_ids) ? slide.data.doubled_round_ids : [])
+          .map(id => roundsById.get(id))
+          .filter(Boolean);
+        return (
+          <div className="quizzer-doubleup">
+            <h2>{slide.data?.title || '⚡ Double Points'}</h2>
+            {names.length > 0 && (
+              <p>{names.join(' · ')} {names.length === 1 ? 'is' : 'are'} worth <strong>double</strong>!</p>
             )}
           </div>
         );

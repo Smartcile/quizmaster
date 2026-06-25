@@ -1151,30 +1151,64 @@ body {
 }
 .sb-msg { color: var(--text-muted); font-size: 1rem; }
 .sb-table-wrap { width: 100%; overflow-x: auto; }
+.sb-scale { width: 100%; }
+/* Auto-fit: fixed layout + --cols-driven font/padding so the board tightens as
+   rounds grow; the overlay keeps the horizontal-scroll fallback above. */
 .sb-table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
-  font-size: 0.92rem;
+  --cols: 4;
+  font-size: clamp(0.6rem, calc(1.3rem - var(--cols) * 0.06rem), 0.92rem);
 }
 .sb-table th,
 .sb-table td {
-  padding: 8px 9px;
+  padding: clamp(3px, calc(9px - var(--cols) * 0.3px), 8px)
+           clamp(2px, calc(9px - var(--cols) * 0.4px), 9px);
   text-align: center;
   border-bottom: 1px solid var(--border);
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .sb-table thead th {
   color: var(--neon-cyan);
-  font-size: 0.72rem;
+  font-size: 0.8em;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   font-weight: 700;
   border-bottom: 2px solid rgba(0, 240, 255, 0.3);
 }
-.sb-col-rank { width: 34px; }
-.sb-col-team { text-align: left; font-weight: 600; color: var(--text-primary); }
+.sb-col-rank { width: 2.4em; }
+.sb-col-team { width: 7em; text-align: left; font-weight: 600; color: var(--text-primary); }
 .sb-col-num  { font-variant-numeric: tabular-nums; color: var(--text-primary); }
 .sb-col-total { font-weight: 800; color: var(--neon-green); }
+.sb-x2 {
+  display: inline-block;
+  margin-left: 0.25em;
+  padding: 0 0.3em;
+  font-size: 0.85em;
+  font-weight: 800;
+  color: #07091a;
+  background: var(--neon-yellow, #ffe600);
+  border-radius: 4px;
+  vertical-align: middle;
+}
+.sb-doubled { color: var(--neon-yellow, #ffe600); font-weight: 700; }
+
+/* Double Up Round announcement (quizzer) */
+.quizzer-doubleup {
+  text-align: center;
+  padding: 28px 18px;
+}
+.quizzer-doubleup h2 {
+  font-size: 2rem;
+  color: var(--neon-yellow, #ffe600);
+  text-shadow: 0 0 20px rgba(255, 230, 0, 0.5);
+  margin: 0 0 12px;
+}
+.quizzer-doubleup p { font-size: 1.1rem; color: var(--text-primary); }
+.quizzer-doubleup strong { color: var(--neon-yellow, #ffe600); }
 .sb-table thead .sb-col-total { color: var(--neon-green); }
 .sb-row-leader td {
   background: linear-gradient(135deg, rgba(255, 230, 0, 0.16), rgba(255, 157, 0, 0.06));

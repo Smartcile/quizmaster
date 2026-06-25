@@ -4047,29 +4047,69 @@ input[type="checkbox"] {
 .sb-title { color: var(--text-primary); font-size: 1.2rem; margin: 0; }
 .sb-msg { color: var(--text-dim); font-style: italic; }
 .sb-table-wrap { width: 100%; overflow-x: auto; }
+.sb-scale { width: 100%; }
+/* Auto-fit: fixed layout + --cols-driven font/padding so the board tightens as
+   rounds grow (the inline admin panel still keeps the scroll fallback above). */
 .sb-table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
-  font-size: 0.9rem;
+  --cols: 4;
+  font-size: clamp(0.62rem, calc(1.3rem - var(--cols) * 0.06rem), 0.9rem);
 }
 .sb-table th,
 .sb-table td {
-  padding: 8px 12px;
+  padding: clamp(3px, calc(9px - var(--cols) * 0.3px), 8px)
+           clamp(3px, calc(12px - var(--cols) * 0.5px), 12px);
   text-align: center;
   border-bottom: 1px solid var(--border);
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .sb-table thead th {
   color: var(--neon-cyan);
-  font-size: 0.72rem;
+  font-size: 0.8em;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   border-bottom: 2px solid var(--border-glow);
 }
-.sb-col-rank { width: 44px; }
-.sb-col-team { text-align: left; font-weight: 600; color: var(--text-primary); }
+.sb-col-rank { width: 2.6em; }
+.sb-col-team { width: 8em; text-align: left; font-weight: 600; color: var(--text-primary); }
 .sb-col-num  { font-variant-numeric: tabular-nums; color: var(--text-primary); }
 .sb-col-total { font-weight: 800; color: var(--neon-green); }
+.sb-x2 {
+  display: inline-block;
+  margin-left: 0.3em;
+  padding: 0 0.35em;
+  font-size: 0.85em;
+  font-weight: 800;
+  color: #07091a;
+  background: var(--neon-yellow, #ffe600);
+  border-radius: 4px;
+  vertical-align: middle;
+}
+.sb-doubled { color: var(--neon-yellow, #ffe600); font-weight: 700; }
+
+/* Double Up widget — round checklist in the widget editor */
+.doubleup-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.doubleup-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.doubleup-check input { width: auto; }
 .sb-table thead .sb-col-total { color: var(--neon-green); }
 .sb-row-leader td {
   background: linear-gradient(135deg, rgba(255, 230, 0, 0.12), rgba(255, 157, 0, 0.05));
