@@ -1196,19 +1196,59 @@ body {
 }
 .sb-doubled { color: var(--neon-yellow, #ffe600); font-weight: 700; }
 
-/* Double Up Round announcement (quizzer) */
+/* Double Up — per-team round picker (quizzer) */
 .quizzer-doubleup {
   text-align: center;
-  padding: 28px 18px;
+  padding: 24px 16px;
 }
 .quizzer-doubleup h2 {
   font-size: 2rem;
   color: var(--neon-yellow, #ffe600);
   text-shadow: 0 0 20px rgba(255, 230, 0, 0.5);
-  margin: 0 0 12px;
+  margin: 0 0 8px;
 }
-.quizzer-doubleup p { font-size: 1.1rem; color: var(--text-primary); }
-.quizzer-doubleup strong { color: var(--neon-yellow, #ffe600); }
+.quizzer-doubleup .dup-sub { font-size: 1rem; color: var(--text-muted); margin-bottom: 18px; }
+.dup-list { display: flex; flex-direction: column; gap: 10px; }
+.dup-round {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 16px 18px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  background: rgba(7, 9, 26, 0.5);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.dup-round:not(:disabled):hover { border-color: var(--neon-yellow, #ffe600); }
+.dup-round.chosen {
+  border-color: var(--neon-yellow, #ffe600);
+  background: rgba(255, 230, 0, 0.12);
+  box-shadow: 0 0 18px rgba(255, 230, 0, 0.35);
+}
+.dup-round:disabled { opacity: 0.45; cursor: not-allowed; }
+.dup-badge {
+  flex-shrink: 0;
+  padding: 2px 10px;
+  font-weight: 800;
+  color: #07091a;
+  background: var(--neon-yellow, #ffe600);
+  border-radius: 999px;
+}
+.dup-locktag {
+  flex-shrink: 0;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+}
+.dup-empty { color: var(--text-muted); }
+.dup-error { margin-top: 14px; color: var(--neon-pink, #ff38a6); font-size: 0.95rem; }
 .sb-table thead .sb-col-total { color: var(--neon-green); }
 .sb-row-leader td {
   background: linear-gradient(135deg, rgba(255, 230, 0, 0.16), rgba(255, 157, 0, 0.06));

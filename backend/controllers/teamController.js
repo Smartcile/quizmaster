@@ -1,5 +1,5 @@
 const db = require('../config/database');
-const { loadDoubledRoundIds } = require('../utils/doubleUp');
+const { loadDoubleChoicesForSession } = require('../utils/doubleUp');
 
 // Find-or-create: if a team with the same name (case-insensitive, trimmed)
 // already exists in this session, return that team so the guest can rejoin
@@ -196,22 +196,21 @@ async function getSessionScoreboard(req, res) {
       [quiz_id]
     );
 
-    // 6) Double Up Round(s): a doubled round's points count ×2. Applied here at
-    //    aggregation time — raw `scores` rows are untouched (instantly reversible).
-    const doubledIds = await loadDoubledRoundIds(db, quiz_id);
+    // 6) Double Up: each team's own chosen round (the "joker") scores ×2. Applied
+    //    here at aggregation time — raw `scores` rows are untouched. Per-team, not
+    //    global: every team may double a different round.
+    const doubleChoices = await loadDoubleChoicesForSession(db, sessionId);
 
     const teams = teamsRes.rows.map(t => {
       const round_scores = byTeam.get(t.id) || {};
-      // Apply the ×2 multiplier to doubled rounds before totalling.
-      for (const r of rounds) {
-        if (doubledIds.has(Number(r.id)) && round_scores[r.id]) {
-          round_scores[r.id] = round_scores[r.id] * 2;
-        }
+      const doubled_round_id = doubleChoices.get(Number(t.id)) ?? null;
+      if (doubled_round_id != null && round_scores[doubled_round_id]) {
+        round_scores[doubled_round_id] = round_scores[doubled_round_id] * 2;
       }
       const round_total = rounds.reduce((sum, r) => sum + (round_scores[r.id] || 0), 0);
       const whoami_points = whoamiByTeam.get(t.id) || 0;
       const total = round_total + t.size_points + t.brownie_total + whoami_points;
-      return { ...t, round_scores, round_total, whoami_points, total };
+      return { ...t, round_scores, round_total, whoami_points, total, doubled_round_id };
     });
 
     teams.sort((a, b) => (b.total - a.total) || a.name.localeCompare(b.name));
@@ -220,7 +219,6 @@ async function getSessionScoreboard(req, res) {
       teamSizeScoring: !!team_size_scoring,
       hasBrownie: teams.some(t => t.brownie_total !== 0),
       hasWhoami: hasWhoami.rows.length > 0,
-      doubledRoundIds: [...doubledIds],
       rounds,
       teams
     });

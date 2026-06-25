@@ -459,3 +459,20 @@ CREATE TABLE IF NOT EXISTS whoami_guesses (
   UNIQUE (team_id)
 );
 CREATE INDEX IF NOT EXISTS idx_whoami_guesses_team_id ON whoami_guesses(team_id);
+
+-- double_up_choices: per-team "joker" — each team picks ONE round to score ×2.
+-- This is per-team, NOT global to the quiz: each team chooses on the quizzer's
+-- Double Points page. The pick is changeable until the chosen round's answers
+-- are locked by the host (enforced in the choose endpoint against the session's
+-- locked_round_ids). The ×2 is applied at scoreboard-aggregation time — raw
+-- `scores` rows are never altered — so it's instantly reversible. One row/team.
+CREATE TABLE IF NOT EXISTS double_up_choices (
+  id         SERIAL PRIMARY KEY,
+  team_id    INT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+  session_id INT NOT NULL REFERENCES quiz_sessions(id) ON DELETE CASCADE,
+  round_id   INT NOT NULL REFERENCES rounds(id) ON DELETE CASCADE,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE (team_id)
+);
+CREATE INDEX IF NOT EXISTS idx_double_up_choices_session ON double_up_choices(session_id);

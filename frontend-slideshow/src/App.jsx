@@ -103,14 +103,6 @@ function App() {
     }
     return map;
   }, [quiz]);
-  // Round id → name, for the Double Up announcement slide (data carries only ids).
-  const roundsById = useMemo(() => {
-    const map = new Map();
-    for (const item of (quiz?.items || quiz?.rounds || [])) {
-      if ((item?.kind === 'round' || item?.questions) && item.id != null) map.set(item.id, item.name);
-    }
-    return map;
-  }, [quiz]);
 
   // Keep the QR sized to the current surface (window or preview iframe)
   useEffect(() => {
@@ -312,7 +304,7 @@ function App() {
       <div className="slideshow-container">
         <div className="slide" style={slide?.background ? { background: slide.background } : undefined}>
           <SlideErrorBoundary key={currentSlide}>
-            <SlideRenderer slide={slide} slideIndex={currentSlide} playToken={playToken} sessionId={sessionId} socket={socket} scoresVisible={scoreboardVisible} questionsById={questionsById} roundsById={roundsById} />
+            <SlideRenderer slide={slide} slideIndex={currentSlide} playToken={playToken} sessionId={sessionId} socket={socket} scoresVisible={scoreboardVisible} questionsById={questionsById} />
           </SlideErrorBoundary>
         </div>
         <div className="slide-counter">
@@ -547,7 +539,7 @@ function AudioAnswerReveal({ label, mediaUrl, lyrics, answerText, revealSeconds 
   );
 }
 
-function SlideRenderer({ slide, slideIndex, playToken, sessionId, socket, scoresVisible = true, questionsById, roundsById }) {
+function SlideRenderer({ slide, slideIndex, playToken, sessionId, socket, scoresVisible = true, questionsById }) {
   if (!slide) return <div className="slide-empty"><h2>End of quiz</h2></div>;
 
   switch (slide.type) {
@@ -696,7 +688,7 @@ function SlideRenderer({ slide, slideIndex, playToken, sessionId, socket, scores
     }
 
     case 'widget':
-      return <WidgetSlide slide={slide} sessionId={sessionId} socket={socket} scoresVisible={scoresVisible} roundsById={roundsById} />;
+      return <WidgetSlide slide={slide} sessionId={sessionId} socket={socket} scoresVisible={scoresVisible} />;
 
     case 'end':
       return (
@@ -717,7 +709,7 @@ function SlideRenderer({ slide, slideIndex, playToken, sessionId, socket, scores
   }
 }
 
-function WidgetSlide({ slide, sessionId, socket, scoresVisible = true, roundsById }) {
+function WidgetSlide({ slide, sessionId, socket, scoresVisible = true }) {
   // The Answer Review page is per-device (teams review on their phones), so the
   // big screen shows the scoreboard (scores) for it, same as a scoreboard slide.
   if (slide.widgetType === 'scoreboard' || slide.widgetType === 'review') {
@@ -729,17 +721,12 @@ function WidgetSlide({ slide, sessionId, socket, scoresVisible = true, roundsByI
     background: data.bg_image ? `url(${data.bg_image}) center/cover` : (data.bg_color || undefined)
   };
 
-  // Double Up Round announcement: "⚡ Double Points" + the doubled round name(s).
+  // Double Up announcement: teams choose their own ×2 round on their phones.
   if (slide.widgetType === 'doubleup') {
-    const names = (Array.isArray(data.doubled_round_ids) ? data.doubled_round_ids : [])
-      .map(id => roundsById?.get?.(id))
-      .filter(Boolean);
     return (
       <div className="slide-widget slide-doubleup" style={style}>
         <h1 className="doubleup-title">{data.title || '⚡ Double Points'}</h1>
-        {names.length > 0 && (
-          <p className="doubleup-rounds">{names.join(' · ')} {names.length === 1 ? 'is' : 'are'} worth <strong>double</strong>!</p>
-        )}
+        <p className="doubleup-rounds">Each team — pick the round you want to <strong>double</strong> on your phone!</p>
       </div>
     );
   }

@@ -1,28 +1,19 @@
-// "Double Up Round" doubling is applied at scoreboard-aggregation time, never
-// stored into the `scores` table — raw marks stay 0 / 0.5 / 1, the ×2 is applied
-// when totals are computed. This keeps marking clean and doubling instantly
-// reversible (untick → back to normal).
+// "Double Up Round" is a per-team joker: each team picks ONE round (on the
+// quizzer's Double Points page) to score ×2. It is NOT global to the quiz.
+// Doubling is applied at scoreboard-aggregation time, never stored into the
+// `scores` table — raw marks stay 0 / 0.5 / 1 — so it's instantly reversible.
 //
-// The chosen round IDs live in a quiz_widgets row of type 'doubleup', in its
-// `data` JSONB as { doubled_round_ids: [12, 15] }. A quiz may hold several such
-// widgets; we take the union. Used by BOTH getSessionScoreboard (teamController)
-// and getSessionResults (quizController) so they stay in sync.
-async function loadDoubledRoundIds(db, quizId) {
+// Choices live in the double_up_choices table (one row per team). Used by BOTH
+// getSessionScoreboard (teamController) and getSessionResults (quizController)
+// so they stay in sync.
+async function loadDoubleChoicesForSession(db, sessionId) {
   const res = await db.query(
-    `SELECT data FROM quiz_widgets WHERE quiz_id = $1 AND type = 'doubleup'`,
-    [quizId]
+    `SELECT team_id, round_id FROM double_up_choices WHERE session_id = $1`,
+    [sessionId]
   );
-  const ids = new Set();
-  for (const row of res.rows) {
-    let d = row.data;
-    if (typeof d === 'string') { try { d = JSON.parse(d); } catch { d = {}; } }
-    const arr = Array.isArray(d?.doubled_round_ids) ? d.doubled_round_ids : [];
-    for (const id of arr) {
-      const n = Number(id);
-      if (Number.isInteger(n)) ids.add(n);
-    }
-  }
-  return ids;
+  const map = new Map(); // teamId → roundId
+  for (const r of res.rows) map.set(Number(r.team_id), Number(r.round_id));
+  return map;
 }
 
-module.exports = { loadDoubledRoundIds };
+module.exports = { loadDoubleChoicesForSession };
