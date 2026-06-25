@@ -535,6 +535,25 @@ html, body, #root {
   max-width: 900px;
   line-height: 1.6;
 }
+
+/* Double Up Round announcement */
+.slide-doubleup {
+  background: linear-gradient(135deg, rgba(255, 230, 0, 0.18) 0%, rgba(255, 157, 0, 0.12) 100%);
+  flex-direction: column;
+  gap: 1.5rem;
+}
+.slide-doubleup .doubleup-title {
+  font-size: 5rem;
+  font-weight: 900;
+  color: var(--neon-yellow, #ffe600);
+  text-shadow: 0 0 40px rgba(255, 230, 0, 0.6);
+  margin: 0;
+}
+.slide-doubleup .doubleup-rounds {
+  font-size: 2.2rem;
+  color: var(--text-primary);
+}
+.slide-doubleup .doubleup-rounds strong { color: var(--neon-yellow, #ffe600); }
 .slide-widget .widget-image {
   margin-bottom: 30px;
 }
@@ -944,29 +963,53 @@ html, body, #root {
   text-shadow: 0 0 24px var(--neon-green);
 }
 
+/* Auto-fit: fixed layout so columns share the available width instead of
+   growing past it; --cols (set from the component = flexible column count)
+   drives the font-size + padding so more rounds → a tighter, still-fitting
+   board. The .sb-scale wrapper takes an optional transform from the component
+   as a last-resort uniform shrink on the (non-scrolling) slideshow. */
+.sb-scale { width: 100%; }
 .sb-table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
-  font-size: 1.5rem;
+  --cols: 4;
+  font-size: clamp(0.8rem, calc(2.3rem - var(--cols) * 0.14rem), 1.5rem);
 }
 .sb-table th,
 .sb-table td {
-  padding: 14px 18px;
+  padding: clamp(4px, calc(16px - var(--cols) * 0.7px), 14px)
+           clamp(3px, calc(18px - var(--cols) * 1px), 18px);
   text-align: center;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .sb-table thead th {
   color: var(--neon-cyan);
-  font-size: 1.1rem;
+  font-size: 0.95em;
   text-transform: uppercase;
   letter-spacing: 1px;
   font-weight: 700;
   border-bottom: 2px solid rgba(0, 240, 255, 0.3);
-  white-space: nowrap;
 }
-.sb-col-rank { width: 70px; }
-.sb-col-team { text-align: left; font-weight: 600; color: var(--text-primary); }
+.sb-col-rank { width: 3em; }
+.sb-col-team { width: 9em; text-align: left; font-weight: 600; color: var(--text-primary); }
 .sb-col-num  { font-variant-numeric: tabular-nums; color: var(--text-primary); }
+/* ×2 marker on a doubled round's header + its score cells */
+.sb-x2 {
+  display: inline-block;
+  margin-left: 0.3em;
+  padding: 0 0.35em;
+  font-size: 0.8em;
+  font-weight: 800;
+  color: #07091a;
+  background: var(--neon-yellow, #ffe600);
+  border-radius: 4px;
+  vertical-align: middle;
+}
+.sb-doubled { color: var(--neon-yellow, #ffe600); font-weight: 700; }
 .sb-col-total {
   font-weight: 800;
   color: var(--neon-green, #00ff9f);

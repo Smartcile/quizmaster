@@ -24,7 +24,8 @@ const WIDGET_TYPES = [
   { value: 'scoreboard', label: 'Scoreboard', icon: '🏆' },
   { value: 'rules',      label: 'Rules Slide', icon: '📋' },
   { value: 'custom',     label: 'Custom Page', icon: '🧩' },
-  { value: 'review',     label: 'Answer Review', icon: '📝' }
+  { value: 'review',     label: 'Answer Review', icon: '📝' },
+  { value: 'doubleup',   label: 'Double Up Round', icon: '⚡' }
 ];
 
 const DEFAULT_WIDGET_DATA = {
@@ -33,7 +34,10 @@ const DEFAULT_WIDGET_DATA = {
   custom:     { title: 'Custom Slide', body: '', image_url: '', bg_color: '#0a0e1f', bg_image: '' },
   // Answer Review: an end-of-quiz page where each team sees their own answers AND
   // the score awarded for each. Rendered specially on the quizzer.
-  review:     { title: 'Your Answers & Scores', body: 'Review your answers and scores on your device.', bg_color: '#0a0e1f' }
+  review:     { title: 'Your Answers & Scores', body: 'Review your answers and scores on your device.', bg_color: '#0a0e1f' },
+  // Double Up Round: the ticked rounds score ×2 (applied at scoreboard time).
+  // doubled_round_ids holds rounds.id values; renders a "⚡ Double Points" slide.
+  doubleup:   { title: '⚡ Double Points', doubled_round_ids: [], bg_color: '#1a0e2f' }
 };
 
 // ── Tile content (icon + label + meta) ────────────────────────────────────────
@@ -197,6 +201,18 @@ export default function QuizBuilder() {
         // "Round 1", "Round 1 ×2", etc. — count shown only when repeated in a round
         rounds: [...v.rounds.entries()].map(([name, count]) => count > 1 ? `${name} ×${count}` : name)
       }));
+  }, [orderItems, allRounds]);
+
+  // Rounds in this quiz that can be doubled (the Double Up widget checklist).
+  // Intermission rounds are excluded (they have no per-question scoreboard column
+  // in the usual sense). Keyed by rounds.id — the same key the scoreboard uses.
+  const doubleUpRounds = useMemo(() => {
+    const byId = new Map(allRounds.map(r => [r.id, r]));
+    return orderItems
+      .filter(i => i.kind === 'round')
+      .map(i => byId.get(i.roundId))
+      .filter(r => r && r.style !== 'intermission')
+      .map(r => ({ id: r.id, name: r.name }));
   }, [orderItems, allRounds]);
 
   // ── New quiz handlers ──────────────────────────────────────────────────────
@@ -566,6 +582,7 @@ export default function QuizBuilder() {
       {editingWidget && (
         <WidgetEditor
           widget={editingWidget}
+          rounds={doubleUpRounds}
           onSave={(data) => { updateWidgetData(editingWidget.uid, data); setEditingWidget(null); }}
           onClose={() => setEditingWidget(null)}
         />
@@ -672,10 +689,17 @@ function QuizCard({ quiz, isEditing, onEdit, onDelete, onFiles }) {
 }
 
 // ── Widget editor modal ────────────────────────────────────────────────────────
-function WidgetEditor({ widget, onSave, onClose }) {
+function WidgetEditor({ widget, rounds = [], onSave, onClose }) {
   const [data, setData] = useState(widget.data || {});
   const [mediaOpen, setMediaOpen] = useState(false);
   const set = (k, v) => setData(d => ({ ...d, [k]: v }));
+
+  // Double Up: toggle a round id in/out of data.doubled_round_ids.
+  const doubledIds = Array.isArray(data.doubled_round_ids) ? data.doubled_round_ids : [];
+  const toggleDoubled = (id) => {
+    const has = doubledIds.includes(id);
+    set('doubled_round_ids', has ? doubledIds.filter(x => x !== id) : [...doubledIds, id]);
+  };
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -725,6 +749,30 @@ function WidgetEditor({ widget, onSave, onClose }) {
             </label>
           )}
 
+          {widget.type === 'doubleup' && (
+            <div className="form-label" style={{ marginTop: 8 }}>
+              <span>Rounds to score ×2</span>
+              {rounds.length === 0 ? (
+                <p className="widget-preview-hint" style={{ marginTop: 6 }}>
+                  Add rounds to the quiz first — they'll appear here to tick. (Intermission rounds can't be doubled.)
+                </p>
+              ) : (
+                <div className="doubleup-checklist">
+                  {rounds.map(r => (
+                    <label key={r.id} className="doubleup-check">
+                      <input
+                        type="checkbox"
+                        checked={doubledIds.includes(r.id)}
+                        onChange={() => toggleDoubled(r.id)}
+                      />
+                      <span>{r.name}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="form-row">
             <label className="form-label">Background color
               <input
@@ -743,7 +791,7 @@ function WidgetEditor({ widget, onSave, onClose }) {
             </label>
           </div>
 
-          <WidgetPreview type={widget.type} data={data} />
+          <WidgetPreview type={widget.type} data={data} rounds={rounds} />
         </div>
         <div className="modal-footer">
           <button onClick={onClose}           className="btn btn-secondary">Cancel</button>
@@ -760,12 +808,15 @@ function WidgetEditor({ widget, onSave, onClose }) {
   );
 }
 
-function WidgetPreview({ type, data }) {
+function WidgetPreview({ type, data, rounds = [] }) {
   const style = {
     background: data.bg_image
       ? `url(${data.bg_image}) center/cover`
       : (data.bg_color || '#0a0e1f')
   };
+  const doubledNames = (Array.isArray(data.doubled_round_ids) ? data.doubled_round_ids : [])
+    .map(id => rounds.find(r => r.id === id)?.name)
+    .filter(Boolean);
   return (
     <div className="widget-preview" style={style}>
       <p className="widget-preview-label">Preview</p>
@@ -773,6 +824,11 @@ function WidgetPreview({ type, data }) {
       {data.body     && <p style={{ whiteSpace: 'pre-line' }}>{data.body}</p>}
       {data.image_url && <img src={data.image_url} alt="" style={{ maxWidth: '100%', maxHeight: 120, borderRadius: 8 }} />}
       {type === 'scoreboard' && <p className="widget-preview-hint">Live scoreboard appears here during the quiz</p>}
+      {type === 'doubleup' && (
+        doubledNames.length
+          ? <p>Doubling: <strong>{doubledNames.join(', ')}</strong></p>
+          : <p className="widget-preview-hint">Tick the round(s) to score ×2</p>
+      )}
     </div>
   );
 }

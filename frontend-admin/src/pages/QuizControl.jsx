@@ -643,6 +643,7 @@ function labelForWidget(type) {
     case 'rules':      return 'Rules';
     case 'review':     return 'Answer Review';
     case 'custom':     return 'Custom';
+    case 'doubleup':   return 'Double Up';
     default:           return type || 'Widget';
   }
 }
@@ -668,7 +669,7 @@ function MiniSlide({ slide }) {
     case 'whoami_clue':
       return <span className="mini-slide"><span className="mini-icon">🕵</span><span className="mini-text">Clue {slide.clueIndex + 1}</span></span>;
     case 'widget':
-      return <span className="mini-slide"><span className="mini-icon">{slide.widgetType === 'scoreboard' ? '🏆' : slide.widgetType === 'review' ? '📝' : slide.widgetType === 'rules' ? '📋' : '🧩'}</span><span className="mini-text">{slide.data?.title || slide.widgetType}</span></span>;
+      return <span className="mini-slide"><span className="mini-icon">{slide.widgetType === 'scoreboard' ? '🏆' : slide.widgetType === 'review' ? '📝' : slide.widgetType === 'rules' ? '📋' : slide.widgetType === 'doubleup' ? '⚡' : '🧩'}</span><span className="mini-text">{slide.data?.title || slide.widgetType}</span></span>;
     case 'end':
       return <span className="mini-slide"><span className="mini-icon">🏁</span><span className="mini-text">End</span></span>;
     default:
