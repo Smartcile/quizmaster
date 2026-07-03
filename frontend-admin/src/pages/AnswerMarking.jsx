@@ -351,7 +351,12 @@ export default function AnswerMarking({ sessionId, quiz }) {
               <div key={q.id} className="marking-question">
                 <div className="marking-q-header">
                   <span className="marking-q-num">Q{q.order}</span>
-                  <span className="marking-q-text">{q.text}</span>
+                  {q.type === 'image' && q.media_url && (
+                    <img className="marking-q-thumb" src={q.media_url} alt={`Picture ${q.order}`} />
+                  )}
+                  <span className="marking-q-text">
+                    {q.text || (q.type === 'image' ? `(picture ${q.order})` : '(no question text)')}
+                  </span>
                   <span className="marking-q-answer">✓ {q.answer}</span>
                   <span className="marking-q-pts">{q.points}pt</span>
                 </div>
