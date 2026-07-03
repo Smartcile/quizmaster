@@ -570,11 +570,11 @@ function SlideRenderer({ slide, slideIndex, playToken, sessionId, socket, scores
             style={{ gridTemplateColumns: `repeat(${slide.gridColumns || 5}, 1fr)` }}
           >
             {(slide.questions || []).map((q, i) => (
-              <div key={q.id ?? i} className="intermission-cell">
+              <div key={q.questionId ?? i} className="intermission-cell">
                 <span className="intermission-num">{i + 1}</span>
-                {q.media_url && q.type === 'image' && <img src={q.media_url} alt={`Picture ${i + 1}`} />}
-                {q.media_url && q.type === 'video' && <video src={q.media_url} />}
-                {!q.media_url && <div className="intermission-noimg">{q.text || `#${i + 1}`}</div>}
+                {q.mediaUrl && q.questionType === 'image' && <img src={q.mediaUrl} alt={`Picture ${i + 1}`} />}
+                {q.mediaUrl && q.questionType === 'video' && <video src={q.mediaUrl} />}
+                {!q.mediaUrl && <div className="intermission-noimg">{q.text || `#${i + 1}`}</div>}
               </div>
             ))}
           </div>
@@ -598,7 +598,10 @@ function SlideRenderer({ slide, slideIndex, playToken, sessionId, socket, scores
               )}
             </div>
           )}
-          {slide.questionType === 'mcq' && slide.options && slide.options.length > 0 && (
+          {/* MCQ options are keyed off answerMode (mcq/both), matching the
+              quizzer — questionType is the MEDIA type (text/image/video/audio)
+              and is never 'mcq'. */}
+          {(slide.answerMode === 'mcq' || slide.answerMode === 'both') && slide.options && slide.options.length > 0 && (
             <div className="slide-options">
               {slide.options.map((opt, i) => (
                 <div key={i} className="option">

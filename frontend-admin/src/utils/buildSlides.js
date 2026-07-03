@@ -1,9 +1,10 @@
 function safeParse(s) { try { return JSON.parse(s); } catch { return {}; } }
 
 // Build a flat slide list from a quiz.
-// MUST stay in sync with frontend-slideshow and frontend-quizzer copies.
-// Index-based sync: WebSocket sends only a slide index; all three apps must
-// independently produce the exact same slide array from the same quiz object.
+// MUST stay byte-for-byte identical across frontend-admin, frontend-slideshow
+// and frontend-quizzer. Index-based sync: WebSocket sends only a slide index;
+// all three apps must independently produce the exact same slide array from
+// the same quiz object.
 //
 // Rounds and widgets can be freely interleaved. The quiz API returns
 // quiz.items — a unified ordered array of { kind:'round'|'widget', ...fields }.
@@ -62,7 +63,16 @@ export function buildSlides(quiz) {
           title: round.display_title || round.name,
           roundName: round.name,
           gridColumns: round.grid_columns || 5,
-          questions
+          questions: questions.map((q, i) => ({
+            questionId: q.id,
+            questionNumber: i + 1,
+            text: q.text,
+            questionType: q.type,
+            mediaUrl: q.media_url,
+            answer: q.answer,
+            options: q.options || [],
+            points: q.points
+          }))
         });
       } else {
         slides.push({
@@ -82,6 +92,7 @@ export function buildSlides(quiz) {
             roundName: round.name,
             text: q.text,
             questionType: q.type,
+            answerMode: q.answer_mode || (q.type === 'mcq' ? 'mcq' : 'text'),
             mediaUrl: q.media_url,
             options: q.options || [],
             points: q.points,
