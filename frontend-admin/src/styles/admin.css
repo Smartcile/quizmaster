@@ -4762,3 +4762,26 @@ input[type="checkbox"] {
   font-size: .85rem;
 }
 .add-team-error { font-size: .75rem; color: var(--neon-pink, #ff4d7e); }
+
+/* ── Printable quiz join-QR modal ─────────────────────────────────────────── */
+.quiz-qr-body { text-align: center; }
+.quiz-qr-code {
+  display: inline-block;
+  background: #fff;
+  padding: 12px;
+  border-radius: 12px;
+  margin: .5rem auto;
+}
+.quiz-qr-code-text {
+  font-size: 1.8rem;
+  font-weight: 800;
+  letter-spacing: .35em;
+  margin: .6rem 0 .2rem;
+  color: var(--neon-cyan, #00f0ff);
+}
+.quiz-qr-url {
+  font-size: .9rem;
+  color: var(--text-secondary);
+  word-break: break-all;
+  margin: 0 0 .6rem;
+}

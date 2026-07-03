@@ -59,7 +59,7 @@ function getUrlContext() {
 }
 
 function App() {
-  const [phase, setPhase] = useState('join'); // join | waiting | playing | finished
+  const [phase, setPhase] = useState('join'); // join | prelobby | waiting | playing | finished
   const [quiz, setQuiz] = useState(null);
   const [sessionId, setSessionId] = useState(null);
   const [sessionStatus, setSessionStatus] = useState('lobby');
@@ -72,6 +72,9 @@ function App() {
   const [ctx] = useState(getUrlContext);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [backNote, setBackNote] = useState(false);
+  // A valid code scanned BEFORE the host started a session — hold the team's
+  // details and auto-join the moment the lobby opens.
+  const [pendingJoin, setPendingJoin] = useState(null); // { code, teamName, teamSize }
   const autoJoinedRef = useRef(false);
   const socket = useWebSocket();
 
@@ -202,7 +205,14 @@ function App() {
         if (!resolved || !resolved.quiz) { setError(`Code "${code}" not found.`); return; }
         quizData = resolved.quiz;
         session  = resolved.session;
-        if (!session) { setError('No active session for this quiz yet. Ask the quiz master to start it.'); return; }
+        if (!session) {
+          // Valid quiz, no session yet (e.g. printed QR scanned early) — wait
+          // in a friendly holding state and join automatically when it opens.
+          setQuiz(quizData);
+          setPendingJoin({ code, teamName, teamSize });
+          setPhase('prelobby');
+          return true;
+        }
       }
 
       // Register/rejoin the team for THIS session. Find-or-create matches on a
@@ -240,10 +250,34 @@ function App() {
       if (teamData.rejoined) {
         console.info(`Reconnected to existing team "${teamData.name}"`);
       }
+      return true;
     } catch (err) {
       setError(err.message || 'Failed to join quiz');
+      return false;
     }
   };
+
+  // ── Pre-lobby: poll until the host starts the session, then auto-join ─────
+  useEffect(() => {
+    if (phase !== 'prelobby' || !pendingJoin) return;
+    let busy = false;
+    const timer = setInterval(async () => {
+      if (busy) return;
+      busy = true;
+      try {
+        const resolved = await api.get(`/quizzes/resolve/${pendingJoin.code}`).catch(() => null);
+        if (resolved?.session && resolved.session.status !== 'finished') {
+          clearInterval(timer);
+          const ok = await handleJoin(pendingJoin.code, pendingJoin.teamName, pendingJoin.teamSize);
+          setPendingJoin(null);
+          if (!ok) setPhase('join');
+        }
+      } finally {
+        busy = false;
+      }
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [phase, pendingJoin]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Auto-join as a bot team (test "mirror" pane) ──────────────────────────
   useEffect(() => {
@@ -320,6 +354,27 @@ function App() {
   const renderView = () => {
     if (phase === 'join') {
       return <JoinQuiz onJoin={handleJoin} error={error} />;
+    }
+
+    if (phase === 'prelobby') {
+      return (
+        <div className="waiting-screen">
+          <div className="waiting-card">
+            <h1>🎯 {quiz?.name || 'Quiz found'}</h1>
+            <p className="waiting-team">Team: <strong>{pendingJoin?.teamName}</strong></p>
+            <div className="waiting-spinner" />
+            <p className="waiting-status">
+              Waiting for the quiz to start — you'll join automatically when the lobby opens.
+            </p>
+            <button
+              className="prelobby-cancel"
+              onClick={() => { setPendingJoin(null); setPhase('join'); }}
+            >
+              ← Back
+            </button>
+          </div>
+        </div>
+      );
     }
 
     if (phase === 'waiting') {
