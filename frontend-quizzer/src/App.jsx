@@ -168,11 +168,24 @@ function App() {
       else if (data.status === 'finished') setPhase('finished');
     };
 
+    // The host removed OUR team — leave the session cleanly instead of letting
+    // every later submit fail against a deleted team row.
+    const onTeamRemoved = (data) => {
+      if (data?.teamId !== team?.id) return;
+      sessionStorage.removeItem('quizTeam');
+      setTeam(null);
+      setSessionId(null);
+      setQuiz(null);
+      setPhase('join');
+      setError('Your team was removed by the quiz master.');
+    };
+
     socket.on('connect',                rejoin);
     socket.on('session_state',          onSessionState);
     socket.on('slide_changed',          onSlide);
     socket.on('session_status_changed', onStatus);
     socket.on('scoreboard_visibility_changed', onScoreboardVis);
+    socket.on('team_removed',           onTeamRemoved);
 
     // If socket is already connected when the effect runs, join immediately
     if (socket.connected) rejoin();
@@ -183,6 +196,7 @@ function App() {
       socket.off('slide_changed',          onSlide);
       socket.off('session_status_changed', onStatus);
       socket.off('scoreboard_visibility_changed', onScoreboardVis);
+      socket.off('team_removed',           onTeamRemoved);
     };
   }, [socket, sessionId, team]);
 

@@ -6,14 +6,18 @@ const {
   getTeamScores,
   getTeamAnswers,
   getTeamById,
-  getSessionScoreboard
+  getSessionScoreboard,
+  createTeamAdmin,
+  deleteTeam
 } = require('../controllers/teamController');
 
 router.post('/join', joinQuiz);
+router.post('/', createTeamAdmin);
 router.get('/session/:sessionId', getTeamsBySession);
 router.get('/session/:sessionId/scoreboard', getSessionScoreboard);
 router.get('/:teamId/scores', getTeamScores);
 router.get('/:teamId/answers', getTeamAnswers);
 router.get('/:teamId', getTeamById);
+router.delete('/:teamId', deleteTeam);
 
 module.exports = router;

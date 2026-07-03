@@ -117,6 +117,7 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd, isTest = fa
     socket.on('slide_changed',          onSlide);
     socket.on('session_status_changed', onStatus);
     socket.on('team_joined',            onTeamJoin);
+    socket.on('team_removed',           onTeamJoin);
     socket.on('answer_locked',          onLocked);
     socket.on('answer_unlocked',        onUnlocked);
     socket.on('scoreboard_visibility_changed', onScoreboardVis);
@@ -130,6 +131,7 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd, isTest = fa
       socket.off('slide_changed',          onSlide);
       socket.off('session_status_changed', onStatus);
       socket.off('team_joined',            onTeamJoin);
+      socket.off('team_removed',           onTeamJoin);
       socket.off('answer_locked',          onLocked);
       socket.off('answer_unlocked',        onUnlocked);
       socket.off('scoreboard_visibility_changed', onScoreboardVis);
@@ -137,6 +139,22 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd, isTest = fa
   }, [sessionId, socket]);
 
   const reloadTeams = () => api.get(`/teams/session/${sessionId}`).then(setTeams).catch(() => {});
+
+  // ── Admin team management (works without any quizzer device) ─────────────
+  const addTeam = async (name, size) => {
+    await api.post('/teams', { sessionId, name, size });
+    reloadTeams();
+  };
+
+  const removeTeam = async (team) => {
+    if (!confirm(`Remove team "${team.name}"? Their answers, scores and bonus points will be deleted.`)) return;
+    try {
+      await api.delete(`/teams/${team.id}`);
+      reloadTeams();
+    } catch (err) {
+      alert('Failed to remove team: ' + err.message);
+    }
+  };
 
   // ── Toggle scoreboard visibility on a surface (persists + broadcasts) ──────
   const toggleScoreboard = async (surface) => {
@@ -514,10 +532,20 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd, isTest = fa
                         joined {new Date(t.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     )}
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-danger lobby-team-remove"
+                      onClick={() => removeTeam(t)}
+                      title="Remove this team (deletes their answers and scores)"
+                    >
+                      ✕
+                    </button>
                   </li>
                 ))}
               </ul>
             )}
+
+            <AddTeamForm onAdd={addTeam} />
           </div>
         </div>
       )}
@@ -542,6 +570,56 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd, isTest = fa
         <DownloadFilesModal quiz={quiz} onClose={() => setFilesOpen(false)} />
       )}
     </div>
+  );
+}
+
+// Inline "add a team by hand" form — for guests scored on paper or without a
+// phone. The backend find-or-creates by name, so this can never duplicate a
+// team that already joined itself.
+export function AddTeamForm({ onAdd }) {
+  const [name, setName] = useState('');
+  const [size, setSize] = useState(4);
+  const [busy, setBusy] = useState(false);
+  const [err,  setErr]  = useState(null);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!name.trim() || busy) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      await onAdd(name.trim(), parseInt(size, 10) || null);
+      setName('');
+    } catch (error) {
+      setErr(error.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form className="add-team-form" onSubmit={submit}>
+      <input
+        type="text"
+        placeholder="Add a team by hand…"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        disabled={busy}
+      />
+      <input
+        type="number"
+        min="1"
+        max="10"
+        value={size}
+        onChange={(e) => setSize(e.target.value)}
+        title="Team size"
+        disabled={busy}
+      />
+      <button type="submit" className="btn btn-sm btn-success" disabled={!name.trim() || busy}>
+        ＋ Add team
+      </button>
+      {err && <span className="add-team-error">{err}</span>}
+    </form>
   );
 }
 

@@ -217,6 +217,7 @@ function App() {
     socket.on('slide_changed',          onSlide);
     socket.on('session_status_changed', onStatus);
     socket.on('team_joined',            onTeamJoin);
+    socket.on('team_removed',           onTeamJoin);
     socket.on('scoreboard_visibility_changed', onScoreboardVis);
     socket.on('media_play',             onMediaPlay);
 
@@ -232,6 +233,7 @@ function App() {
       socket.off('slide_changed',          onSlide);
       socket.off('session_status_changed', onStatus);
       socket.off('team_joined',            onTeamJoin);
+      socket.off('team_removed',           onTeamJoin);
       socket.off('scoreboard_visibility_changed', onScoreboardVis);
       socket.off('media_play',             onMediaPlay);
     };
