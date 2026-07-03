@@ -323,11 +323,19 @@ function App() {
   ).replace(/\/+$/, '');
   const qrCode = sessionCode || quiz?.code;
   const quizzerJoinUrl = qrCode ? `${quizzerBase}/${qrCode}` : null;
-  // Show the join QR only in the lobby and on the first (intro) slide — not
-  // throughout the whole show.
-  const showJoinQr = quizzerJoinUrl && (
-    sessionStatus === 'lobby' || (sessionStatus === 'active' && currentSlide === 0)
-  );
+  // Show the join QR persistently on EVERY slide while the show is in the
+  // lobby or active — late arrivals can join at any point. Still hidden on the
+  // finished screen, and on a scoreboard/review slide while scores are shown
+  // (the fixed corner QR would sit on top of the table).
+  const currentSlideObj = slides[currentSlide];
+  const onScoreboardSlide =
+    sessionStatus === 'active' &&
+    currentSlideObj?.type === 'widget' &&
+    (currentSlideObj.widgetType === 'scoreboard' || currentSlideObj.widgetType === 'review') &&
+    scoreboardVisible;
+  const showJoinQr = quizzerJoinUrl &&
+    (sessionStatus === 'lobby' || sessionStatus === 'active') &&
+    !onScoreboardSlide;
 
   return (
     <>

@@ -4809,3 +4809,26 @@ input[type="checkbox"] {
   border: 1px solid rgba(255,255,255,.15);
   flex-shrink: 0;
 }
+
+/* ── Join QR on the Control page header ───────────────────────────────────── */
+.control-header-right {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.control-qr {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .25rem;
+}
+.control-qr svg {
+  background: #fff;
+  padding: 5px;
+  border-radius: 8px;
+}
+.control-qr-label {
+  font-size: .68rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}

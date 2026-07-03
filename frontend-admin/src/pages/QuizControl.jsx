@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
+import { QRCodeSVG } from 'qrcode.react';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { buildSlides, slideShortLabel } from '../utils/buildSlides';
 import { api } from '../services/api';
@@ -314,8 +315,16 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd, isTest = fa
             Teams joined: <strong>{teamsCount}</strong>
           </p>
         </div>
-        <div className={`session-status status-${sessionStatus}`}>
-          {sessionStatus.toUpperCase()}
+        <div className="control-header-right">
+          {(sessionStatus === 'lobby' || sessionStatus === 'active') && (
+            <div className="control-qr" title={quizzerJoinUrl}>
+              <QRCodeSVG value={quizzerJoinUrl} size={84} bgColor="#ffffff" fgColor="#07091a" level="M" />
+              <span className="control-qr-label">Scan to join · {joinCode}</span>
+            </div>
+          )}
+          <div className={`session-status status-${sessionStatus}`}>
+            {sessionStatus.toUpperCase()}
+          </div>
         </div>
       </div>
 
