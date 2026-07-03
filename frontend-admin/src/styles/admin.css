@@ -4799,3 +4799,13 @@ input[type="checkbox"] {
 .qm-mode-text { background: rgba(0, 240, 255, 0.15); color: var(--neon-cyan); }
 .qm-mode-mcq  { background: rgba(184, 41, 255, 0.18); color: var(--neon-purple, #b829ff); }
 .qm-mode-both { background: rgba(255, 230, 0, 0.18); color: var(--neon-yellow); }
+
+/* ── Picture-question thumbnail in the marking header ─────────────────────── */
+.marking-q-thumb {
+  height: 36px;
+  width: 48px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid rgba(255,255,255,.15);
+  flex-shrink: 0;
+}

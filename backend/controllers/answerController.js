@@ -250,7 +250,7 @@ async function getSessionAnswers(req, res) {
 
     const roundIds = roundsResult.rows.map(r => r.id);
     const questionsResult = roundIds.length ? await db.query(`
-      SELECT q.id, q.text, q.answer, q.points, rq.round_id, rq."order"
+      SELECT q.id, q.text, q.answer, q.points, q.type, q.media_url, rq.round_id, rq."order"
       FROM round_questions rq
       JOIN questions q ON rq.question_id = q.id
       WHERE rq.round_id = ANY($1::int[])
