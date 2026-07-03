@@ -56,7 +56,7 @@ function App() {
       case 'quizzes':
         return <QuizBuilder />;
       case 'marking':
-        return <AnswerMarking sessionId={activeQuiz?.sessionId} />;
+        return <AnswerMarking sessionId={activeQuiz?.sessionId} quiz={activeQuiz?.quiz} />;
       case 'control':
         return <QuizControl sessionId={activeQuiz?.sessionId} quiz={activeQuiz?.quiz} isTest={activeQuiz?.isTest} onSessionEnd={handleSessionEnd} />;
       case 'masters-slides':

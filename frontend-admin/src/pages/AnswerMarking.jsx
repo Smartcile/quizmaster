@@ -1,13 +1,31 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '../services/api';
 import { useWebSocket } from '../hooks/useWebSocket';
+import { buildSlides } from '../utils/buildSlides';
 
-export default function AnswerMarking({ sessionId }) {
+export default function AnswerMarking({ sessionId, quiz }) {
   const [data,       setData]      = useState(null);
   const [whoami,     setWhoami]    = useState(null);   // { whoami:{title,answer,clues}, guesses:[] }
   const [loading,    setLoading]   = useState(false);
   const [csvRoundId, setCsvRound]  = useState('all');
+  // Live show position + lock state, used to auto-collapse finished rounds.
+  const [currentSlideIdx, setCurrentSlideIdx] = useState(0);
+  const [lockedRounds,    setLockedRounds]    = useState(new Set());
+  // Manual expand/collapse overrides — a user click always wins over auto state.
+  const [collapseOverride, setCollapseOverride] = useState({});
   const socket = useWebSocket();
+
+  const slides = useMemo(() => buildSlides(quiz), [quiz]);
+
+  // Index of each round's LAST answer-reveal slide. Once the host has advanced
+  // beyond it (and the round is locked), the round's marking section folds away.
+  const lastAnswerIndexByRound = useMemo(() => {
+    const m = new Map();
+    slides.forEach((s, i) => {
+      if (s.type === 'answer' && s.roundId != null) m.set(s.roundId, i);
+    });
+    return m;
+  }, [slides]);
 
   const loadData = useCallback(async () => {
     if (!sessionId) return;
@@ -27,6 +45,56 @@ export default function AnswerMarking({ sessionId }) {
   }, [sessionId]);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  // ── Live show position + lock state ────────────────────────────────────────
+  // Join the session room from this page too (the shared socket may not have
+  // joined yet if Control wasn't opened) — the server replies with
+  // session_state, which carries slideIndex + lockedRoundIds.
+  useEffect(() => {
+    if (!socket || !sessionId) return;
+    const rejoin = () => socket.emit('join_quiz', { sessionId, role: 'admin' });
+    const onSessionState = (d) => {
+      if (typeof d.slideIndex === 'number') setCurrentSlideIdx(d.slideIndex);
+      if (Array.isArray(d.lockedRoundIds)) setLockedRounds(new Set(d.lockedRoundIds));
+    };
+    const onSlide = (d) => {
+      if (typeof d.slideIndex === 'number') setCurrentSlideIdx(d.slideIndex);
+    };
+    const onLocked   = (d) => setLockedRounds(prev => new Set([...prev, d.roundId]));
+    const onUnlocked = (d) => setLockedRounds(prev => {
+      const next = new Set(prev);
+      next.delete(d.roundId);
+      return next;
+    });
+
+    socket.on('connect',         rejoin);
+    socket.on('session_state',   onSessionState);
+    socket.on('slide_changed',   onSlide);
+    socket.on('answer_locked',   onLocked);
+    socket.on('answer_unlocked', onUnlocked);
+    if (socket.connected) rejoin();
+
+    return () => {
+      socket.off('connect',         rejoin);
+      socket.off('session_state',   onSessionState);
+      socket.off('slide_changed',   onSlide);
+      socket.off('answer_locked',   onLocked);
+      socket.off('answer_unlocked', onUnlocked);
+    };
+  }, [socket, sessionId]);
+
+  // A round auto-collapses once it's locked AND the show has moved past its
+  // last answer-reveal slide. A manual click on the header always overrides.
+  const isAutoCollapsed = useCallback((roundId) => {
+    const last = lastAnswerIndexByRound.get(roundId);
+    return lockedRounds.has(roundId) && last != null && currentSlideIdx > last;
+  }, [lastAnswerIndexByRound, lockedRounds, currentSlideIdx]);
+
+  const isCollapsed = (roundId) =>
+    collapseOverride[roundId] !== undefined ? collapseOverride[roundId] : isAutoCollapsed(roundId);
+
+  const toggleRound = (roundId) =>
+    setCollapseOverride(prev => ({ ...prev, [roundId]: !isCollapsed(roundId) }));
 
   // Apply a single mark to local state immediately — no full reload required.
   // points === null means the score was removed (deselected).
@@ -230,23 +298,32 @@ export default function AnswerMarking({ sessionId }) {
 
       {rounds.map((round, idx) => {
         const rqs = questions.filter(q => q.round_id === round.id);
+        const collapsed = isCollapsed(round.id);
+        const locked    = lockedRounds.has(round.id);
         return (
-          <div key={round.id} className="marking-round">
+          <div key={round.id} className={`marking-round ${collapsed ? 'marking-round-collapsed' : ''}`}>
 
             {/* "Marking Your Answers" divider between rounds */}
-            {idx > 0 && (
+            {idx > 0 && !collapsed && (
               <div className="marking-divider">
                 <span>✦ Marking Your Answers ✦</span>
               </div>
             )}
 
-            <h3 className="marking-round-title">
+            <h3
+              className="marking-round-title marking-round-toggle"
+              onClick={() => toggleRound(round.id)}
+              title={collapsed ? 'Expand this round' : 'Collapse this round'}
+            >
+              <span className="marking-chevron">{collapsed ? '▸' : '▾'}</span>
               <span className="round-badge">{idx + 1}</span>
               {round.name}
+              {round.style === 'intermission' && <span className="qm-tag qm-tag-cat">🖼 Picture</span>}
               <span className="round-q-count">{rqs.length} question{rqs.length !== 1 ? 's' : ''}</span>
+              {locked && <span className="marking-locked-badge">🔒 locked</span>}
             </h3>
 
-            {rqs.map(q => (
+            {!collapsed && rqs.map(q => (
               <div key={q.id} className="marking-question">
                 <div className="marking-q-header">
                   <span className="marking-q-num">Q{q.order}</span>

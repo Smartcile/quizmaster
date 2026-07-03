@@ -4711,3 +4711,24 @@ input[type="checkbox"] {
   color: var(--text-primary);
   font-size: .85rem;
 }
+
+/* ── Collapsible marking round sections ───────────────────────────────────── */
+.marking-round-toggle { cursor: pointer; user-select: none; }
+.marking-round-toggle:hover { color: var(--neon-cyan, #00f0ff); }
+.marking-chevron {
+  width: 1em;
+  font-size: .8rem;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+.marking-round-collapsed { opacity: .65; }
+.marking-locked-badge {
+  margin-left: auto;
+  font-size: .7rem;
+  font-weight: 600;
+  color: var(--neon-yellow, #ffd447);
+  border: 1px solid rgba(255, 212, 71, .35);
+  border-radius: 999px;
+  padding: .1rem .5rem;
+  flex-shrink: 0;
+}
