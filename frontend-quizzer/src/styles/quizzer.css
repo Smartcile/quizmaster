@@ -1254,3 +1254,24 @@ body {
   background: linear-gradient(135deg, rgba(255, 230, 0, 0.16), rgba(255, 157, 0, 0.06));
 }
 .sb-row-leader .sb-col-team { color: var(--neon-yellow); }
+
+/* ── "You're still in the quiz" note (back-button guard) ──────────────────── */
+.back-note {
+  position: fixed;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(10, 14, 31, .95);
+  border: 1px solid var(--neon-cyan, #00f0ff);
+  color: var(--text-primary, #fff);
+  padding: .5rem .9rem;
+  border-radius: 999px;
+  font-size: .85rem;
+  z-index: 1000;
+  pointer-events: none;
+  animation: backNoteIn .2s ease-out;
+}
+@keyframes backNoteIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(8px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}

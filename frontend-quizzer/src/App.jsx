@@ -36,8 +36,47 @@ function App() {
   const [scoreboardVisible, setScoreboardVisible] = useState(true);
   const [ctx] = useState(getUrlContext);
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [backNote, setBackNote] = useState(false);
   const autoJoinedRef = useRef(false);
   const socket = useWebSocket();
+
+  // ── Back-button hardening (Android especially) ────────────────────────────
+  // Browsers can't disable Back and popup-blockers rule out forcing a new tab,
+  // so instead: once in the quiz we replace the join-form history entry and
+  // push a sentinel entry. Pressing Back pops the sentinel — the popstate
+  // handler immediately pushes it again, so the guest stays in the app (a
+  // brief note confirms nothing was lost). Team identity survives a real
+  // refresh/navigation anyway via the stored rejoin info.
+  const inQuiz = phase !== 'join';
+  useEffect(() => {
+    if (!inQuiz) return;
+    window.history.replaceState({ qmQuiz: true }, '');
+    window.history.pushState({ qmQuiz: true }, '');
+    let noteTimer;
+    const onPop = () => {
+      window.history.pushState({ qmQuiz: true }, '');
+      setBackNote(true);
+      clearTimeout(noteTimer);
+      noteTimer = setTimeout(() => setBackNote(false), 2500);
+    };
+    window.addEventListener('popstate', onPop);
+    return () => {
+      clearTimeout(noteTimer);
+      window.removeEventListener('popstate', onPop);
+    };
+  }, [inQuiz]);
+
+  // Confirm before closing/reloading the tab while the quiz is live.
+  const guardUnload = phase === 'playing' && !!team;
+  useEffect(() => {
+    if (!guardUnload) return;
+    const onBeforeUnload = (e) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [guardUnload]);
 
   // Does this quiz have an Answer Review widget configured to show on the scoreboard?
   const reviewOnScoreboard = useMemo(() => {
@@ -241,6 +280,10 @@ function App() {
   return (
     <>
       {renderView()}
+
+      {backNote && (
+        <div className="back-note">👍 You're still in the quiz</div>
+      )}
 
       {reviewOpen && team && (
         <div className="modal-overlay" onClick={() => setReviewOpen(false)}>
