@@ -18,6 +18,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { api } from '../services/api';
 import DownloadFilesModal from '../components/DownloadFilesModal';
 import MediaPicker from '../components/MediaPicker';
+import QuizQrModal from '../components/QuizQrModal';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const WIDGET_TYPES = [
@@ -131,6 +132,7 @@ export default function QuizBuilder() {
   const [whoamiId, setWhoamiId]     = useState(null);  // attached set id, or null
   const [whoamiPickerOpen, setWhoamiPickerOpen] = useState(false);
   const [filesQuizId, setFilesQuizId] = useState(null);  // quiz whose Download Files modal is open
+  const [qrQuiz, setQrQuiz]           = useState(null);  // quiz whose printable join-QR modal is open
 
   const sensors = useSensors(
     useSensor(PointerSensor,  { activationConstraint: { distance: 5 } }),
@@ -562,6 +564,7 @@ export default function QuizBuilder() {
               onEdit={() => handleEdit(q.id)}
               onDelete={() => handleDelete(q.id, q.name)}
               onFiles={() => setFilesQuizId(q.id)}
+              onQr={() => setQrQuiz(q)}
             />
           ))}
         </div>
@@ -589,6 +592,11 @@ export default function QuizBuilder() {
       {/* ── Download Quiz Files ── */}
       {filesQuizId && (
         <DownloadFilesModal quizId={filesQuizId} onClose={() => setFilesQuizId(null)} />
+      )}
+
+      {/* ── Printable join QR (static quiz-code deep link) ── */}
+      {qrQuiz && (
+        <QuizQrModal quiz={qrQuiz} onClose={() => setQrQuiz(null)} />
       )}
     </div>
   );
@@ -639,7 +647,7 @@ function WhoamiPicker({ list, selectedId, onPick, onClose }) {
 }
 
 // ── QuizCard ──────────────────────────────────────────────────────────────────
-function QuizCard({ quiz, isEditing, onEdit, onDelete, onFiles }) {
+function QuizCard({ quiz, isEditing, onEdit, onDelete, onFiles, onQr }) {
   return (
     <div className={`quiz-card ${isEditing ? 'quiz-card-editing' : ''}`}>
       <div className="quiz-card-info" onClick={onEdit}>
@@ -662,6 +670,14 @@ function QuizCard({ quiz, isEditing, onEdit, onDelete, onFiles }) {
           title="Download offline quiz files (PDFs + slideshow)"
         >
           ⬇ Files
+        </button>
+        <button
+          type="button"
+          className="btn btn-sm btn-secondary"
+          onClick={onQr}
+          title="Show / print the join QR for this quiz (works before a session is started)"
+        >
+          🖨 QR
         </button>
         <button
           type="button"
