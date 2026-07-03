@@ -4785,3 +4785,17 @@ input[type="checkbox"] {
   word-break: break-all;
   margin: 0 0 .6rem;
 }
+
+/* ── Answer-mode badges (Round Builder question picker) ───────────────────── */
+.qm-mode-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.qm-mode-text { background: rgba(0, 240, 255, 0.15); color: var(--neon-cyan); }
+.qm-mode-mcq  { background: rgba(184, 41, 255, 0.18); color: var(--neon-purple, #b829ff); }
+.qm-mode-both { background: rgba(255, 230, 0, 0.18); color: var(--neon-yellow); }
