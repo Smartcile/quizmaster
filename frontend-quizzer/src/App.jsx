@@ -5,6 +5,41 @@ import QuizParticipant, { AnswerReviewView } from './pages/QuizParticipant';
 import { buildSlides } from './utils/buildSlides';
 import { api } from './services/api';
 
+// ── Persistent device identity ────────────────────────────────────────────────
+// A browser can't read a MAC address and IPs collide on shared wifi, so rejoin
+// is keyed on a client-generated UUID kept in localStorage (survives tabs,
+// sessions and the back button). Sent with every join; the backend stores it
+// on the team so this device can silently reconnect to it later.
+const DEVICE_KEY = 'qm_device_id';
+function getDeviceId() {
+  let id = null;
+  try { id = localStorage.getItem(DEVICE_KEY); } catch { /* storage blocked */ }
+  if (!id) {
+    id = (window.crypto?.randomUUID)
+      ? window.crypto.randomUUID()
+      : `qm-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    try { localStorage.setItem(DEVICE_KEY, id); } catch { /* storage blocked */ }
+  }
+  return id;
+}
+
+// Stored join identity — localStorage (not sessionStorage) so back/refresh and
+// new tabs land the guest straight back in their session. Reads the legacy
+// sessionStorage value as a migration fallback.
+const TEAM_STORE_KEY = 'quizTeam';
+function readTeamStore() {
+  const raw = localStorage.getItem(TEAM_STORE_KEY) || sessionStorage.getItem(TEAM_STORE_KEY);
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { clearTeamStore(); return null; }
+}
+function saveTeamStore(obj) {
+  try { localStorage.setItem(TEAM_STORE_KEY, JSON.stringify(obj)); } catch { /* storage blocked */ }
+}
+function clearTeamStore() {
+  localStorage.removeItem(TEAM_STORE_KEY);
+  sessionStorage.removeItem(TEAM_STORE_KEY);
+}
+
 // Read deep-link context from the URL once. Supports test-mode params:
 //   ?session=<id>  → target a specific session (bypass active-session lookup)
 //   ?team=<name>&size=<n>&autojoin=1 → auto-join as that team (bot mirror pane)
@@ -85,39 +120,68 @@ function App() {
       && i.data && typeof i.data !== 'string' && i.data.showOnScoreboard);
   }, [quiz]);
 
-  // ── Restore team identity from sessionStorage after page refresh ──────────
+  // Enter a session as an identified team (shared by join, restore and the
+  // silent device pickup).
+  const enterSession = (teamData, quizData, session) => {
+    setTeam(teamData);
+    setQuiz(quizData);
+    setSessionId(session.id);
+    setSessionStatus(session.status || 'lobby');
+    setCurrentSlide(session.current_slide_index || 0);
+    if (session.status === 'active')        setPhase('playing');
+    else if (session.status === 'finished') setPhase('finished');
+    else                                    setPhase('waiting');
+  };
+
+  // ── Restore team identity after refresh/back — then silent device pickup ──
   useEffect(() => {
     if (ctx.autoTeam) return; // test mirror pane auto-joins below; don't restore
-    const stored = sessionStorage.getItem('quizTeam');
-    if (!stored) return;
-    let parsed;
-    try { parsed = JSON.parse(stored); } catch { sessionStorage.removeItem('quizTeam'); return; }
-    // `code` is the session code (preferred) — falls back to the legacy quizCode key
-    const { teamId, code, quizCode } = parsed || {};
-    const joinCode = code || quizCode;
-    if (!teamId || !joinCode) return;
-
     (async () => {
-      try {
-        const [teamData, resolved] = await Promise.all([
-          api.get(`/teams/${teamId}`),
-          api.get(`/quizzes/resolve/${joinCode}`)
-        ]);
-        const quizData = resolved.quiz;
-        const session = resolved.session;
-        if (!quizData || !session) throw new Error('stale');
-        setTeam(teamData);
-        setQuiz(quizData);
-        setSessionId(session.id);
-        setSessionStatus(session.status || 'lobby');
-        setCurrentSlide(session.current_slide_index || 0);
-        if (session.status === 'active')        setPhase('playing');
-        else if (session.status === 'finished') setPhase('finished');
-        else                                    setPhase('waiting');
-      } catch {
-        // Stored session is stale — clear it and stay on join screen
-        sessionStorage.removeItem('quizTeam');
+      // 1) Stored identity from a previous join (localStorage — survives the
+      //    back button, refreshes and new tabs)
+      const parsed = readTeamStore();
+      const joinCode = parsed?.code || parsed?.quizCode;
+      if (parsed?.teamId && joinCode) {
+        try {
+          const [teamData, resolved] = await Promise.all([
+            api.get(`/teams/${parsed.teamId}`),
+            api.get(`/quizzes/resolve/${joinCode}`)
+          ]);
+          const quizData = resolved.quiz;
+          const session = resolved.session;
+          if (!quizData || !session) throw new Error('stale');
+          const codes = [session.code, quizData.code]
+            .filter(Boolean).map(c => String(c).toUpperCase());
+          // If the URL deep-links to a DIFFERENT quiz, don't hijack it with the
+          // stored session — fall through to device pickup / the join form.
+          const differentQuiz = ctx.code && !codes.includes(ctx.code);
+          if (!differentQuiz) {
+            // Only drop back into a finished session when the URL explicitly
+            // points at it (review lookup) — not silently days later.
+            if (session.status === 'finished' && !ctx.code) throw new Error('stale');
+            enterSession(teamData, quizData, session);
+            return;
+          }
+        } catch {
+          clearTeamStore(); // stored session is stale
+        }
       }
+
+      // 2) Silent device pickup: the URL carries a code (QR / deep link) and
+      //    this device already has a team in that session — reconnect straight
+      //    to it. No form, and never a duplicate team.
+      if (!ctx.code || ctx.forcedSessionId) return;
+      try {
+        const resolved = await api.get(`/quizzes/resolve/${ctx.code}`);
+        const session = resolved?.session;
+        if (!resolved?.quiz || !session || session.status === 'finished') return;
+        const teamData = await api.get(
+          `/teams/session/${session.id}/device/${encodeURIComponent(getDeviceId())}`
+        );
+        if (!teamData?.id) return;
+        enterSession(teamData, resolved.quiz, session);
+        saveTeamStore({ teamId: teamData.id, code: session.code || ctx.code });
+      } catch { /* no team for this device yet — stay on the join form */ }
     })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -141,23 +205,37 @@ function App() {
         if (!session) { setError('No active session for this quiz yet. Ask the quiz master to start it.'); return; }
       }
 
-      // Register/rejoin the team for THIS session (find-or-create by name; a
-      // finished session returns the existing team for read-only review or 404).
-      const teamData = await api.post('/teams/join', {
+      // Register/rejoin the team for THIS session. Find-or-create matches on a
+      // fuzzy-normalised name and this device's persistent id, so a returning
+      // guest always reconnects to their existing team — never a duplicate.
+      const deviceId = getDeviceId();
+      let teamData = await api.post('/teams/join', {
         sessionId: session.id,
         name: teamName,
-        size: teamSize
+        size: teamSize,
+        deviceId
       });
 
-      setQuiz(quizData);
-      setSessionId(session.id);
-      setSessionStatus(session.status || 'lobby');
-      setCurrentSlide(session.current_slide_index || 0);
-      setTeam(teamData);
-      setPhase(session.status === 'active' ? 'playing' : session.status === 'finished' ? 'finished' : 'waiting');
+      // Close-but-not-exact name (or this device already has a team here):
+      // the server won't guess — confirm with the guest. YES reconnects to the
+      // EXISTING team; NO creates a genuinely new one.
+      if (teamData?.needsConfirm && teamData.suggestion) {
+        const yes = window.confirm(
+          `Is this your team?\n\n"${teamData.suggestion.name}"\n\nOK = yes, reconnect us · Cancel = no, we're a new team`
+        );
+        teamData = await api.post('/teams/join', {
+          sessionId: session.id,
+          name: teamName,
+          size: teamSize,
+          deviceId,
+          ...(yes ? { confirmTeamId: teamData.suggestion.id } : { forceNew: true })
+        });
+      }
 
-      // Persist the SESSION code so a refresh rejoins this exact session
-      sessionStorage.setItem('quizTeam', JSON.stringify({ teamId: teamData.id, code: session.code || code }));
+      enterSession(teamData, quizData, session);
+
+      // Persist the SESSION code so a refresh/back/new tab rejoins this exact session
+      saveTeamStore({ teamId: teamData.id, code: session.code || code });
 
       if (teamData.rejoined) {
         console.info(`Reconnected to existing team "${teamData.name}"`);
@@ -211,7 +289,7 @@ function App() {
     // every later submit fail against a deleted team row.
     const onTeamRemoved = (data) => {
       if (data?.teamId !== team?.id) return;
-      sessionStorage.removeItem('quizTeam');
+      clearTeamStore();
       setTeam(null);
       setSessionId(null);
       setQuiz(null);

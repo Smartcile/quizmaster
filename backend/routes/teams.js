@@ -7,6 +7,7 @@ const {
   getTeamAnswers,
   getTeamById,
   getSessionScoreboard,
+  getTeamByDevice,
   createTeamAdmin,
   deleteTeam
 } = require('../controllers/teamController');
@@ -15,6 +16,7 @@ router.post('/join', joinQuiz);
 router.post('/', createTeamAdmin);
 router.get('/session/:sessionId', getTeamsBySession);
 router.get('/session/:sessionId/scoreboard', getSessionScoreboard);
+router.get('/session/:sessionId/device/:deviceId', getTeamByDevice);
 router.get('/:teamId/scores', getTeamScores);
 router.get('/:teamId/answers', getTeamAnswers);
 router.get('/:teamId', getTeamById);

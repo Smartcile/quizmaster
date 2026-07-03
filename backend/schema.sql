@@ -460,6 +460,18 @@ CREATE TABLE IF NOT EXISTS whoami_guesses (
 );
 CREATE INDEX IF NOT EXISTS idx_whoami_guesses_team_id ON whoami_guesses(team_id);
 
+-- ============================================================
+-- Foolproof rejoin (additive)
+-- ============================================================
+-- device_id: persistent client-generated ID (a UUID kept in the quizzer's
+-- localStorage) sent with every join. Lets a guest silently reconnect to their
+-- existing team after the back button / a new tab / a different browser session
+-- — a browser cannot read a MAC address and IPs collide on shared wifi, so a
+-- client-generated ID is the reliable option. Never used to merge teams; only
+-- to re-attach a device to the one team it already belongs to.
+ALTER TABLE teams ADD COLUMN IF NOT EXISTS device_id VARCHAR(64);
+CREATE INDEX IF NOT EXISTS idx_teams_device ON teams(quiz_session_id, device_id);
+
 -- double_up_choices: per-team "joker" — each team picks ONE round to score ×2.
 -- This is per-team, NOT global to the quiz: each team chooses on the quizzer's
 -- Double Points page. The pick is changeable until the chosen round's answers
