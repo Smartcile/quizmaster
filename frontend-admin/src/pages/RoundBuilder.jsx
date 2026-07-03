@@ -399,6 +399,7 @@ function RoundEditorModal({ editing, init, questions, categories, onSave, onClos
                                 <div className="dnd-item-text">{q.text}</div>
                                 <div className="dnd-item-meta">
                                   <span className={`qm-tag qm-tag-${q.type}`}>{q.type}</span>
+                                  <ModeBadge q={q} />
                                   {isBoth(q) && <span className="rq-both-label" title="Answer Mode: Both">🔀 T&M</span>}
                                   {isAudioBoth(q) && <span className="rq-both-label" title="Audio form: Both">🎵 NTS/FTL</span>}
                                   {q.category && <span className="qm-tag qm-tag-cat">{q.category}</span>}
@@ -484,4 +485,21 @@ function RoundEditorModal({ editing, init, questions, categories, onSave, onClos
 function FormatBadge({ value }) {
   const labels = { standard: 'STD', multichoice: 'MCQ', both: 'BOTH' };
   return <span className={`qm-tag qm-tag-fmt-${value || 'standard'}`}>{labels[value] || 'STD'}</span>;
+}
+
+// Answer-mode badge for the Available Questions picker: TEXT (free text only),
+// MCQ (multichoice only) or BOTH. Styled like the difficulty/source badges.
+function ModeBadge({ q }) {
+  const mode = q.answer_mode === 'both' ? 'both' : q.answer_mode === 'mcq' ? 'mcq' : 'text';
+  const labels = { text: 'TEXT', mcq: 'MCQ', both: 'BOTH' };
+  const titles = {
+    text: 'Free-text answer',
+    mcq:  'Multiple choice',
+    both: 'Both — pick Text or MCQ per round'
+  };
+  return (
+    <span className={`qm-mode-badge qm-mode-${mode}`} title={titles[mode]}>
+      {labels[mode]}
+    </span>
+  );
 }
