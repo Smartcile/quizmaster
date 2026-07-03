@@ -1,7 +1,14 @@
 function safeParse(s) { try { return JSON.parse(s); } catch { return {}; } }
 
-// MUST stay in sync with frontend-admin/src/utils/buildSlides.js
-// Rounds and widgets can be freely interleaved via quiz.items.
+// Build a flat slide list from a quiz.
+// MUST stay byte-for-byte identical across frontend-admin, frontend-slideshow
+// and frontend-quizzer. Index-based sync: WebSocket sends only a slide index;
+// all three apps must independently produce the exact same slide array from
+// the same quiz object.
+//
+// Rounds and widgets can be freely interleaved. The quiz API returns
+// quiz.items — a unified ordered array of { kind:'round'|'widget', ...fields }.
+// Older quiz objects that pre-date the items field fall back to rounds-first.
 export function buildSlides(quiz) {
   if (!quiz) return [];
   const slides = [];
@@ -19,13 +26,15 @@ export function buildSlides(quiz) {
   ];
 
   // A quiz may carry one "Who Am I?" — a widget with a shared answer + a list of
-  // clues. One clue is revealed before each round (round i → clue i); the answer
-  // is revealed on the end slide. Skip rendering it as a normal widget slide.
+  // clues. Its position in `items` is irrelevant: one clue is revealed before
+  // each round (round i → clue i), and the answer is revealed on the end slide.
+  // We detect it here and skip rendering it as a normal widget slide.
   const whoami = parseWhoami(items);
   let roundIndex = 0;
 
   items.forEach(item => {
     if (item.kind === 'round') {
+      // Reveal this round's Who-Am-I clue just before the round intro
       if (whoami && roundIndex < whoami.clues.length) {
         const clue = whoami.clues[roundIndex] || {};
         slides.push({
@@ -46,15 +55,24 @@ export function buildSlides(quiz) {
       if (round.style === 'intermission') {
         // Picture-grid round: a single grid slide (all images, numbered) replaces
         // the round_intro + per-question slides. Mark-answers + the one-by-one
-        // reveal below are shared with standard rounds, so slide indexes stay in
-        // sync with the admin + quizzer copies.
+        // reveal below are shared with standard rounds, so marking/locking/
+        // scoreboard logic (all keyed off questionId/roundId) is unchanged.
         slides.push({
           type: 'intermission',
           roundId: round.id,
           title: round.display_title || round.name,
           roundName: round.name,
           gridColumns: round.grid_columns || 5,
-          questions
+          questions: questions.map((q, i) => ({
+            questionId: q.id,
+            questionNumber: i + 1,
+            text: q.text,
+            questionType: q.type,
+            mediaUrl: q.media_url,
+            answer: q.answer,
+            options: q.options || [],
+            points: q.points
+          }))
         });
       } else {
         slides.push({
@@ -74,6 +92,7 @@ export function buildSlides(quiz) {
             roundName: round.name,
             text: q.text,
             questionType: q.type,
+            answerMode: q.answer_mode || (q.type === 'mcq' ? 'mcq' : 'text'),
             mediaUrl: q.media_url,
             options: q.options || [],
             points: q.points,
@@ -85,6 +104,9 @@ export function buildSlides(quiz) {
         });
       }
 
+      // Mark-answers slide — sits between the round's last question and its
+      // first answer reveal. Quizzers can still submit until the admin advances
+      // past it (which auto-locks the round).
       if (questions.length > 0) {
         slides.push({
           type: 'mark_answers',
@@ -114,7 +136,8 @@ export function buildSlides(quiz) {
       });
 
     } else if (item.kind === 'widget') {
-      if (item.type === 'whoami') return; // distributed as clue slides above
+      // The Who-Am-I widget is distributed as clue slides above — never a slide of its own
+      if (item.type === 'whoami') return;
       const w = item;
       slides.push({
         type: 'widget',
@@ -135,7 +158,8 @@ export function buildSlides(quiz) {
 }
 
 // Extract the single Who-Am-I config from a quiz's items (or null).
-// MUST behave identically across all three frontend copies.
+// Shape: { title, answer, clues: [{ text, points }] }. MUST behave identically
+// in all three frontend copies so slide indexes stay aligned.
 function parseWhoami(items) {
   const item = (items || []).find(i => i.kind === 'widget' && i.type === 'whoami');
   if (!item) return null;
@@ -145,4 +169,20 @@ function parseWhoami(items) {
     answer: d.answer || '',
     clues:  Array.isArray(d.clues) ? d.clues : []
   };
+}
+
+export function slideShortLabel(slide) {
+  if (!slide) return '';
+  switch (slide.type) {
+    case 'intro': return 'Title';
+    case 'intermission': return `Picture Round: ${slide.title}`;
+    case 'round_intro': return `Round: ${slide.title}`;
+    case 'question': return `Q${slide.questionNumber} — ${slide.roundName}`;
+    case 'mark_answers': return `Mark Answers — ${slide.roundName}`;
+    case 'answer': return `Answer Q${slide.questionNumber} — ${slide.roundName}`;
+    case 'whoami_clue': return `Who Am I? — Clue ${slide.clueIndex + 1}`;
+    case 'widget': return `Widget: ${slide.widgetType}`;
+    case 'end': return 'End';
+    default: return slide.type;
+  }
 }

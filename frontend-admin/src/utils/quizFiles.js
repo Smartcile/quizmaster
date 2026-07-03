@@ -257,8 +257,8 @@ export async function downloadSlideshowPptx(quiz) {
         qs.forEach((q, i) => {
           const r = Math.floor(i / cols), c = i % cols;
           const x = gx + c * (cw + gap), y = gy + r * (ch + gap);
-          if (q.media_url && q.type === 'image') {
-            slide.addImage({ path: q.media_url, x, y, w: cw, h: ch, sizing: { type: 'cover', w: cw, h: ch } });
+          if (q.mediaUrl && q.questionType === 'image') {
+            slide.addImage({ path: q.mediaUrl, x, y, w: cw, h: ch, sizing: { type: 'cover', w: cw, h: ch } });
           } else {
             slide.addShape(pptx.ShapeType.rect, { x, y, w: cw, h: ch, fill: { color: '12203A' }, line: { color: C.CYAN, width: 1 } });
           }
