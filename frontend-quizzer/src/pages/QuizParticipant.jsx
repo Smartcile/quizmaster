@@ -141,6 +141,8 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
       });
     };
     const onMarked = (data) => {
+      // questionId null = manual/bonus points broadcast — no per-question score
+      if (data.questionId == null) return;
       if (data.teamId === team?.id) {
         setScores(prev => ({ ...prev, [data.questionId]: parseFloat(data.points) }));
       }

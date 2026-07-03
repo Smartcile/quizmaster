@@ -237,12 +237,15 @@ async function getSessionAnswers(req, res) {
         )
     `, [sessionId]);
 
+    // Every round of the quiz, whatever its style/format (standard, intermission
+    // picture grid, rapid-fire, …) — the marking UI must never skip one. Ordered
+    // by the interleaved position so sections follow the on-screen quiz order.
     const roundsResult = await db.query(`
-      SELECT r.id, r.name, qr."order"
+      SELECT r.id, r.name, r.style, r.format, r.display_title, qr."order"
       FROM quiz_rounds qr
       JOIN rounds r ON qr.round_id = r.id
       WHERE qr.quiz_id = $1
-      ORDER BY qr."order"
+      ORDER BY COALESCE(qr.position, qr."order")
     `, [quizId]);
 
     const roundIds = roundsResult.rows.map(r => r.id);
@@ -260,19 +263,21 @@ async function getSessionAnswers(req, res) {
     );
     const teamIds = teamsResult.rows.map(t => t.id);
 
-    const [answersResult, scoresResult] = teamIds.length
+    const [answersResult, scoresResult, brownieResult] = teamIds.length
       ? await Promise.all([
           db.query('SELECT team_id, question_id, answer_text FROM answers WHERE team_id = ANY($1::int[])', [teamIds]),
-          db.query('SELECT team_id, question_id, points_awarded FROM scores WHERE team_id = ANY($1::int[])', [teamIds])
+          db.query('SELECT team_id, question_id, points_awarded FROM scores WHERE team_id = ANY($1::int[])', [teamIds]),
+          db.query('SELECT team_id, COALESCE(SUM(points), 0)::float AS total FROM brownie_points WHERE team_id = ANY($1::int[]) GROUP BY team_id', [teamIds])
         ])
-      : [{ rows: [] }, { rows: [] }];
+      : [{ rows: [] }, { rows: [] }, { rows: [] }];
 
     res.json({
       rounds:    roundsResult.rows,
       questions: questionsResult.rows,
       teams:     teamsResult.rows,
       answers:   answersResult.rows,
-      scores:    scoresResult.rows
+      scores:    scoresResult.rows,
+      brownie:   brownieResult.rows
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -327,14 +332,39 @@ async function exportAnswersCSV(req, res) {
   }
 }
 
+// Award (or subtract — negative points allowed) manual bonus points to a team.
+// These land in brownie_points and show in the scoreboard's Bonus column. When
+// a sessionId is supplied, answer_marked is broadcast (questionId: null) so
+// live scoreboards refresh and the marking page updates its Bonus totals.
 async function awardBrowniePoints(req, res) {
   try {
-    const { teamId, label, points } = req.body;
+    const { teamId, label, points, sessionId } = req.body;
+    const pts = parseInt(points, 10);
+    if (!teamId || !Number.isFinite(pts) || pts === 0) {
+      return res.status(400).json({ error: 'teamId and a non-zero integer points value are required' });
+    }
     const result = await db.query(
       'INSERT INTO brownie_points (team_id, label, points) VALUES ($1, $2, $3) RETURNING *',
-      [teamId, label, points]
+      [teamId, label, pts]
     );
-    res.status(201).json(result.rows[0]);
+    const totalRes = await db.query(
+      'SELECT COALESCE(SUM(points), 0)::float AS total FROM brownie_points WHERE team_id = $1',
+      [teamId]
+    );
+    const teamTotal = Number(totalRes.rows[0].total);
+
+    const io = getIo();
+    if (io && sessionId) {
+      io.to(`quiz-${sessionId}`).emit('answer_marked', {
+        teamId:       parseInt(teamId),
+        questionId:   null,
+        points:       null,
+        brownieTotal: teamTotal,
+        timestamp:    new Date().toISOString()
+      });
+    }
+
+    res.status(201).json({ ...result.rows[0], team_total: teamTotal });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

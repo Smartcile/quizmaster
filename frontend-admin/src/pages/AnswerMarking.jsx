@@ -47,14 +47,30 @@ export default function AnswerMarking({ sessionId }) {
     });
   }, []);
 
+  // Update a team's manual/bonus (brownie) total in local state.
+  const applyBrownieLocal = useCallback((teamId, total) => {
+    setData(prev => {
+      if (!prev) return prev;
+      const brownie = Array.isArray(prev.brownie) ? [...prev.brownie] : [];
+      const idx = brownie.findIndex(b => b.team_id === teamId);
+      if (idx >= 0) brownie[idx] = { ...brownie[idx], total };
+      else          brownie.push({ team_id: teamId, total });
+      return { ...prev, brownie };
+    });
+  }, []);
+
   // Apply broadcasted marks immediately too (avoids full network reload).
   useEffect(() => {
     if (!socket) return;
     const onMarked = (m) => {
-      if (m && m.teamId != null && m.questionId != null) {
-        const pts = m.points === null || m.points === undefined ? null : parseFloat(m.points);
-        applyMarkLocal(parseInt(m.teamId), parseInt(m.questionId), pts);
+      if (!m || m.teamId == null) return;
+      // questionId null = a manual/bonus points broadcast, not a question mark
+      if (m.questionId == null) {
+        if (m.brownieTotal !== undefined) applyBrownieLocal(parseInt(m.teamId), parseFloat(m.brownieTotal));
+        return;
       }
+      const pts = m.points === null || m.points === undefined ? null : parseFloat(m.points);
+      applyMarkLocal(parseInt(m.teamId), parseInt(m.questionId), pts);
     };
     const onSubmitted = () => loadData();  // refresh answer text when a team submits
     const onWhoamiMarked = (m) => {
@@ -80,7 +96,7 @@ export default function AnswerMarking({ sessionId }) {
       socket.off('whoami_locked',    onSubmitted);
       socket.off('whoami_marked',    onWhoamiMarked);
     };
-  }, [socket, applyMarkLocal, loadData]);
+  }, [socket, applyMarkLocal, applyBrownieLocal, loadData]);
 
   const mark = async (teamId, questionId, points) => {
     // Optimistic update — admin sees the score change the instant they click.
@@ -112,6 +128,19 @@ export default function AnswerMarking({ sessionId }) {
     }
   };
 
+  // Add or subtract manual points for a team (whole numbers; negatives allowed).
+  const awardManual = async (teamId, points) => {
+    try {
+      const resp = await api.post('/answers/brownie-points', {
+        teamId, points, label: 'Manual points', sessionId
+      });
+      if (resp && resp.team_total !== undefined) applyBrownieLocal(teamId, parseFloat(resp.team_total));
+    } catch (err) {
+      console.error('Manual points failed:', err);
+      loadData();
+    }
+  };
+
   const downloadCSV = () => {
     const p = new URLSearchParams({ sessionId });
     if (csvRoundId !== 'all') p.set('roundId', csvRoundId);
@@ -137,7 +166,12 @@ export default function AnswerMarking({ sessionId }) {
     );
   }
 
-  const { rounds = [], questions = [], teams = [], answers = [], scores = [] } = data || {};
+  const { rounds = [], questions = [], teams = [], answers = [], scores = [], brownie = [] } = data || {};
+
+  const brownieTotal = (teamId) => {
+    const b = brownie.find(x => x.team_id === teamId);
+    return b != null ? Number(b.total) : 0;
+  };
 
   const getAnswer = (teamId, qId) =>
     answers.find(a => a.team_id === teamId && a.question_id === qId)?.answer_text ?? '';
@@ -170,6 +204,28 @@ export default function AnswerMarking({ sessionId }) {
 
       {teams.length === 0 && (
         <p className="marking-empty">No teams have joined this session yet.</p>
+      )}
+
+      {/* ── Manual / bonus points — add or subtract at any time; counts in the
+             scoreboard's Bonus column via brownie_points ── */}
+      {teams.length > 0 && (
+        <div className="marking-round marking-manual">
+          <h3 className="marking-round-title">
+            <span className="round-badge">±</span>
+            Manual Points
+            <span className="round-q-count">add or subtract per team — shows in the Bonus column</span>
+          </h3>
+          <div className="marking-team-rows">
+            {teams.map(t => (
+              <ManualPointsRow
+                key={t.id}
+                team={t}
+                total={brownieTotal(t.id)}
+                onAward={(pts) => awardManual(t.id, pts)}
+              />
+            ))}
+          </div>
+        </div>
       )}
 
       {rounds.map((round, idx) => {
@@ -290,6 +346,38 @@ export default function AnswerMarking({ sessionId }) {
       {rounds.length === 0 && data && (
         <p className="marking-empty">No rounds found for this session.</p>
       )}
+    </div>
+  );
+}
+
+// One team's manual-points row: current bonus total plus an amount input with
+// add / subtract buttons. Whole points only (the brownie_points column is INT).
+function ManualPointsRow({ team, total, onAward }) {
+  const [amount, setAmount] = useState('1');
+  const apply = (sign) => {
+    const v = Math.abs(parseInt(amount, 10));
+    if (!v || Number.isNaN(v)) return;
+    onAward(sign * v);
+  };
+  return (
+    <div className="marking-team-row">
+      <span className="marking-team-name">{team.name}</span>
+      <span className={`manual-total ${total > 0 ? 'manual-pos' : total < 0 ? 'manual-neg' : ''}`}>
+        {total > 0 ? `+${total}` : total} pt
+      </span>
+      <div className="marking-score-btns manual-controls">
+        <input
+          type="number"
+          className="manual-input"
+          min="1"
+          step="1"
+          value={amount}
+          onChange={e => setAmount(e.target.value)}
+          title="Points to add or subtract"
+        />
+        <button className="score-btn" onClick={() => apply(1)}  title="Add points">＋</button>
+        <button className="score-btn" onClick={() => apply(-1)} title="Subtract points">−</button>
+      </div>
     </div>
   );
 }
