@@ -244,8 +244,12 @@ function App() {
 
       enterSession(teamData, quizData, session);
 
-      // Persist the SESSION code so a refresh/back/new tab rejoins this exact session
-      saveTeamStore({ teamId: teamData.id, code: session.code || code });
+      // Persist the SESSION code so a refresh/back/new tab rejoins this exact
+      // session. Never for the test mirror pane (?team=…&autojoin=1) — a bot
+      // identity must not stick to this browser's real join flow.
+      if (!ctx.autoTeam) {
+        saveTeamStore({ teamId: teamData.id, code: session.code || code });
+      }
 
       if (teamData.rejoined) {
         console.info(`Reconnected to existing team "${teamData.name}"`);
