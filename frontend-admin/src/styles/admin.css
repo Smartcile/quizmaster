@@ -4732,3 +4732,33 @@ input[type="checkbox"] {
   padding: .1rem .5rem;
   flex-shrink: 0;
 }
+
+/* ── Admin add/remove team controls (Control lobby + Answer Marking) ──────── */
+.lobby-team-remove { margin-left: auto; padding: .1rem .45rem; }
+.add-team-form {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  margin-top: .6rem;
+  flex-wrap: wrap;
+}
+.add-team-form input[type="text"] {
+  flex: 1;
+  min-width: 160px;
+  padding: .35rem .5rem;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.15);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: .85rem;
+}
+.add-team-form input[type="number"] {
+  width: 58px;
+  padding: .35rem .4rem;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.15);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: .85rem;
+}
+.add-team-error { font-size: .75rem; color: var(--neon-pink, #ff4d7e); }

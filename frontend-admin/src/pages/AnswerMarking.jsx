@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '../services/api';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { buildSlides } from '../utils/buildSlides';
+import { AddTeamForm } from './QuizControl';
 
 export default function AnswerMarking({ sessionId, quiz }) {
   const [data,       setData]      = useState(null);
@@ -141,6 +142,7 @@ export default function AnswerMarking({ sessionId, quiz }) {
       applyMarkLocal(parseInt(m.teamId), parseInt(m.questionId), pts);
     };
     const onSubmitted = () => loadData();  // refresh answer text when a team submits
+    const onTeamsChanged = () => loadData(); // team added/removed → refresh rows
     const onWhoamiMarked = (m) => {
       if (m && m.teamId != null) {
         const pts = m.points === null || m.points === undefined ? null : parseFloat(m.points);
@@ -158,11 +160,15 @@ export default function AnswerMarking({ sessionId, quiz }) {
     socket.on('answer_submitted',  onSubmitted);
     socket.on('whoami_locked',     onSubmitted);  // refresh guess text on lock-in
     socket.on('whoami_marked',     onWhoamiMarked);
+    socket.on('team_joined',       onTeamsChanged);
+    socket.on('team_removed',      onTeamsChanged);
     return () => {
       socket.off('answer_marked',    onMarked);
       socket.off('answer_submitted', onSubmitted);
       socket.off('whoami_locked',    onSubmitted);
       socket.off('whoami_marked',    onWhoamiMarked);
+      socket.off('team_joined',      onTeamsChanged);
+      socket.off('team_removed',     onTeamsChanged);
     };
   }, [socket, applyMarkLocal, applyBrownieLocal, loadData]);
 
@@ -193,6 +199,22 @@ export default function AnswerMarking({ sessionId, quiz }) {
     } catch (err) {
       console.error('Who Am I marking failed:', err);
       loadData();
+    }
+  };
+
+  // ── Admin team management (mirrors the Control lobby controls) ────────────
+  const addTeam = async (name, size) => {
+    await api.post('/teams', { sessionId, name, size });
+    loadData();
+  };
+
+  const removeTeam = async (team) => {
+    if (!confirm(`Remove team "${team.name}"? Their answers, scores and bonus points will be deleted.`)) return;
+    try {
+      await api.delete(`/teams/${team.id}`);
+      loadData();
+    } catch (err) {
+      console.error('Failed to remove team:', err);
     }
   };
 
@@ -274,13 +296,13 @@ export default function AnswerMarking({ sessionId, quiz }) {
         <p className="marking-empty">No teams have joined this session yet.</p>
       )}
 
-      {/* ── Manual / bonus points — add or subtract at any time; counts in the
-             scoreboard's Bonus column via brownie_points ── */}
-      {teams.length > 0 && (
+      {/* ── Teams + manual/bonus points — add/remove teams and adjust points at
+             any time; points count in the scoreboard's Bonus column ── */}
+      {data && (
         <div className="marking-round marking-manual">
           <h3 className="marking-round-title">
             <span className="round-badge">±</span>
-            Manual Points
+            Teams &amp; Manual Points
             <span className="round-q-count">add or subtract per team — shows in the Bonus column</span>
           </h3>
           <div className="marking-team-rows">
@@ -290,8 +312,10 @@ export default function AnswerMarking({ sessionId, quiz }) {
                 team={t}
                 total={brownieTotal(t.id)}
                 onAward={(pts) => awardManual(t.id, pts)}
+                onRemove={() => removeTeam(t)}
               />
             ))}
+            <AddTeamForm onAdd={addTeam} />
           </div>
         </div>
       )}
@@ -429,7 +453,7 @@ export default function AnswerMarking({ sessionId, quiz }) {
 
 // One team's manual-points row: current bonus total plus an amount input with
 // add / subtract buttons. Whole points only (the brownie_points column is INT).
-function ManualPointsRow({ team, total, onAward }) {
+function ManualPointsRow({ team, total, onAward, onRemove }) {
   const [amount, setAmount] = useState('1');
   const apply = (sign) => {
     const v = Math.abs(parseInt(amount, 10));
@@ -454,6 +478,15 @@ function ManualPointsRow({ team, total, onAward }) {
         />
         <button className="score-btn" onClick={() => apply(1)}  title="Add points">＋</button>
         <button className="score-btn" onClick={() => apply(-1)} title="Subtract points">−</button>
+        {onRemove && (
+          <button
+            className="btn btn-sm btn-danger"
+            onClick={onRemove}
+            title="Remove this team (deletes their answers and scores)"
+          >
+            ✕
+          </button>
+        )}
       </div>
     </div>
   );

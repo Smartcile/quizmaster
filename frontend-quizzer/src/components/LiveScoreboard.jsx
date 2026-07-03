@@ -31,6 +31,7 @@ export default function LiveScoreboard({ sessionId, socket, title = 'Leaderboard
     const onChange = () => refresh();
     socket.on('answer_marked',   onChange);
     socket.on('team_joined',     onChange);
+    socket.on('team_removed',    onChange);
     socket.on('answer_unlocked', onChange);
     socket.on('answer_locked',   onChange);
     socket.on('whoami_marked',   onChange);
@@ -38,6 +39,7 @@ export default function LiveScoreboard({ sessionId, socket, title = 'Leaderboard
     return () => {
       socket.off('answer_marked',   onChange);
       socket.off('team_joined',     onChange);
+      socket.off('team_removed',    onChange);
       socket.off('answer_unlocked', onChange);
       socket.off('answer_locked',   onChange);
       socket.off('whoami_marked',   onChange);

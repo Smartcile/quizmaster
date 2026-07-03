@@ -1,4 +1,5 @@
 const db = require('../config/database');
+const { getIo } = require('../sockets');
 const { loadDoubleChoicesForSession } = require('../utils/doubleUp');
 
 // Find-or-create: if a team with the same name (case-insensitive, trimmed)
@@ -227,6 +228,90 @@ async function getSessionScoreboard(req, res) {
   }
 }
 
+// ── Admin: create a team directly in a session (no quizzer device needed) ─────
+// POST /api/teams  { sessionId, name, size }
+// Find-or-create semantics match joinQuiz so an admin add never duplicates a
+// team that already joined itself. Broadcasts team_joined so every surface
+// (lobby counter, scoreboards, marking) updates live. Manually-added teams are
+// ordinary teams rows — marking and scoring treat them exactly like joined ones.
+async function createTeamAdmin(req, res) {
+  try {
+    const { sessionId, name, size } = req.body;
+    if (!sessionId || !name || !String(name).trim()) {
+      return res.status(400).json({ error: 'sessionId and name are required' });
+    }
+    const cleanName = String(name).trim();
+
+    const sess = await db.query('SELECT id FROM quiz_sessions WHERE id = $1', [sessionId]);
+    if (!sess.rows.length) return res.status(404).json({ error: 'Session not found' });
+
+    const existing = await db.query(
+      `SELECT * FROM teams
+       WHERE quiz_session_id = $1 AND LOWER(TRIM(name)) = LOWER($2)
+       LIMIT 1`,
+      [sessionId, cleanName]
+    );
+
+    let team, created = false;
+    if (existing.rows.length) {
+      team = existing.rows[0];
+    } else {
+      const ins = await db.query(
+        'INSERT INTO teams (quiz_session_id, name, size) VALUES ($1, $2, $3) RETURNING *',
+        [sessionId, cleanName, size || null]
+      );
+      team = ins.rows[0];
+      created = true;
+    }
+
+    const io = getIo();
+    if (io) {
+      io.to(`quiz-${sessionId}`).emit('team_joined', {
+        teamId:    team.id,
+        teamName:  team.name,
+        teamSize:  team.size,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    res.status(created ? 201 : 200).json(team);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
+// ── Admin: remove a team and all its data ─────────────────────────────────────
+// DELETE /api/teams/:teamId
+// answers / scores / brownie_points / whoami_guesses / double_up_choices all
+// reference teams(id) ON DELETE CASCADE, so this single delete leaves no
+// orphans. Broadcasts team_removed so every surface drops the team live.
+async function deleteTeam(req, res) {
+  try {
+    const { teamId } = req.params;
+    const teamRes = await db.query(
+      'SELECT id, name, quiz_session_id FROM teams WHERE id = $1',
+      [teamId]
+    );
+    if (!teamRes.rows.length) return res.status(404).json({ error: 'Team not found' });
+    const team = teamRes.rows[0];
+
+    await db.query('DELETE FROM teams WHERE id = $1', [teamId]);
+
+    const io = getIo();
+    if (io) {
+      io.to(`quiz-${team.quiz_session_id}`).emit('team_removed', {
+        teamId:    team.id,
+        teamName:  team.name,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
 // Look up a single team by ID — used by the quizzer to restore identity after a page refresh
 async function getTeamById(req, res) {
   try {
@@ -244,5 +329,7 @@ module.exports = {
   getTeamScores,
   getTeamAnswers,
   getTeamById,
-  getSessionScoreboard
+  getSessionScoreboard,
+  createTeamAdmin,
+  deleteTeam
 };
