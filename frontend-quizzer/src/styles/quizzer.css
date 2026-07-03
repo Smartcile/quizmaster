@@ -1288,3 +1288,23 @@ body {
   cursor: pointer;
 }
 .prelobby-cancel:hover { border-color: var(--neon-cyan, #00f0ff); color: #fff; }
+
+/* ── Question media players (tap to play — mobile autoplay is blocked) ────── */
+.media-container video {
+  width: 100%;
+  max-height: 240px;
+  border-radius: 10px;
+  background: #000;
+}
+.audio-player { display: flex; justify-content: center; }
+.audio-play-btn {
+  background: rgba(0, 240, 255, .12);
+  border: 1px solid var(--neon-cyan, #00f0ff);
+  color: var(--neon-cyan, #00f0ff);
+  border-radius: 999px;
+  padding: .6rem 1.4rem;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.audio-play-btn:active { transform: scale(.97); }
