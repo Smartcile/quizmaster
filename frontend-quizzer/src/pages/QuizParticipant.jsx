@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { api } from '../services/api';
 import { buildSlides } from '../utils/buildSlides';
 import LiveScoreboard from '../components/LiveScoreboard';
@@ -580,11 +580,17 @@ function QuestionView({ slide, answer, score, locked, onChange }) {
       {slide.mediaUrl && (
         <div className="media-container">
           {slide.questionType === 'image' && <img src={slide.mediaUrl} alt="Question" />}
-          {/* Sound plays on the big screen only — phones are silent. Video shows
-              muted (no controls) so teams can still see it; audio shows a note. */}
-          {slide.questionType === 'video' && <video src={slide.mediaUrl} muted playsInline />}
+          {/* Mobile autoplay is blocked anyway, so playback always needs a tap.
+              Finish-the-lyrics snippets still stop at audioStop so the answer
+              is never heard on the phone either. */}
+          {slide.questionType === 'video' && (
+            <video src={slide.mediaUrl} controls playsInline preload="metadata" />
+          )}
           {slide.questionType === 'audio' && (
-            <div className="media-on-screen-note">🔊 Listen on the main screen</div>
+            <QuestionAudioPlayer
+              src={slide.mediaUrl}
+              stopAt={slide.audioForm === 'finish_the_lyrics' ? slide.audioStop : null}
+            />
           )}
         </div>
       )}
@@ -773,6 +779,45 @@ function WhoamiView({ slide, guess, lock, onGuessChange, onLock }) {
           </p>
         </div>
       )}
+    </div>
+  );
+}
+
+// Tap-to-play audio for question slides (no native controls, so a
+// finish-the-lyrics cut-off can't be seeked past — playback rewinds and stops
+// at stopAt). Mobile-first: one big play/pause button.
+function QuestionAudioPlayer({ src, stopAt }) {
+  const ref = useRef(null);
+  const [playing, setPlaying] = useState(false);
+
+  const toggle = () => {
+    const el = ref.current;
+    if (!el) return;
+    if (playing) el.pause();
+    else el.play().catch(() => {});
+  };
+
+  const onTimeUpdate = (e) => {
+    if (stopAt != null && e.target.currentTime >= stopAt) {
+      e.target.pause();
+      try { e.target.currentTime = 0; } catch { /* not seekable */ }
+    }
+  };
+
+  return (
+    <div className="audio-player">
+      <button type="button" className="audio-play-btn" onClick={toggle}>
+        {playing ? '⏸ Pause' : '▶ Play audio'}
+      </button>
+      <audio
+        ref={ref}
+        src={src}
+        preload="none"
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onEnded={() => setPlaying(false)}
+        onTimeUpdate={onTimeUpdate}
+      />
     </div>
   );
 }
