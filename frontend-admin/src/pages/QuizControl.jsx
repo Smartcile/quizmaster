@@ -824,7 +824,9 @@ function TestHarness({ sessionId, quiz, slides, currentSlide, sessionStatus, soc
       const created = [];
       for (const b of settings.bots) {
         try {
-          const team = await api.post('/teams/join', { sessionId, name: b.name, size: b.size });
+          // forceNew: bot names differ by one character ("Bot 1"/"Bot 2"), so
+          // skip the fuzzy "is this your team?" suggestion — always create.
+          const team = await api.post('/teams/join', { sessionId, name: b.name, size: b.size, forceNew: true });
           created.push({ ...team, cfg: b, plan: makeWhoamiPlan(b, whoami) });
         } catch { /* ignore */ }
       }

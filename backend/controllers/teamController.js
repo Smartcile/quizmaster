@@ -2,59 +2,148 @@ const db = require('../config/database');
 const { getIo } = require('../sockets');
 const { loadDoubleChoicesForSession } = require('../utils/doubleUp');
 
-// Find-or-create: if a team with the same name (case-insensitive, trimmed)
-// already exists in this session, return that team so the guest can rejoin
-// after losing their connection. Only sessions in lobby/active accept joins —
-// finished sessions reject so stale codes don't create ghost teams.
+// Fuzzy name key: lowercase and strip everything except a-z0-9, so
+// "The-Quiz Kings!" and "thequizkings" resolve to the SAME team.
+function normTeamKey(s) {
+  return String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+// Small Levenshtein distance for the "is this your team?" suggestion.
+function editDistance(a, b) {
+  const m = a.length, n = b.length;
+  if (!m) return n;
+  if (!n) return m;
+  let prev = Array.from({ length: n + 1 }, (_, i) => i);
+  for (let i = 1; i <= m; i++) {
+    const cur = [i];
+    for (let j = 1; j <= n; j++) {
+      cur[j] = Math.min(
+        prev[j] + 1,
+        cur[j - 1] + 1,
+        prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
+      );
+    }
+    prev = cur;
+  }
+  return prev[n];
+}
+
+// Close-but-not-exact (normalised keys): worth asking the guest about, never
+// worth auto-joining.
+function isCloseName(a, b) {
+  if (!a || !b) return false;
+  const dist = editDistance(a, b);
+  return dist > 0 && dist <= (Math.min(a.length, b.length) >= 6 ? 2 : 1);
+}
+
+// Find-or-create with foolproof rejoin. Core rule: a guest who already has a
+// team ALWAYS reconnects to that existing record — a duplicate is never created
+// for them.
+//  • exact fuzzy-normalised name match → rejoin that team, adopt this deviceId
+//  • same device_id but a different name, OR a close-but-not-exact name →
+//    respond { needsConfirm, suggestion } so the client can ask "Is this your
+//    team?" (never auto-joins on a guess)
+//  • confirmTeamId → guest said YES: attach this device to that EXISTING team
+//    (never merges two established teams, never copies scores)
+//  • forceNew → guest said NO: create a genuinely new team
+// Team size never affects identity. Finished sessions stay read-only.
 async function joinQuiz(req, res) {
   try {
-    const { sessionId, name, size } = req.body;
+    const { sessionId, name, size, deviceId, confirmTeamId, forceNew } = req.body;
     if (!sessionId || !name || !String(name).trim()) {
       return res.status(400).json({ error: 'sessionId and name are required' });
     }
     const cleanName = String(name).trim();
+    const nameKey = normTeamKey(cleanName);
 
     const sess = await db.query('SELECT status FROM quiz_sessions WHERE id = $1', [sessionId]);
     if (!sess.rows.length) return res.status(404).json({ error: 'Session not found' });
     const finished = sess.rows[0].status === 'finished';
 
-    // Match purely on session + team name (case-insensitive) — team size never
-    // affects identity, so a guest can rejoin from any device.
-    const existing = await db.query(
-      `SELECT * FROM teams
-       WHERE quiz_session_id = $1 AND LOWER(TRIM(name)) = LOWER($2)
-       LIMIT 1`,
-      [sessionId, cleanName]
-    );
+    const teamsRes = await db.query('SELECT * FROM teams WHERE quiz_session_id = $1', [sessionId]);
+    const teams = teamsRes.rows;
+
+    // Rejoin an existing team: adopt this device's id (so future loads pick it
+    // up silently) and only overwrite size when explicitly re-supplied.
+    const rejoinAs = async (team) => {
+      const sets = [], params = [];
+      if (deviceId && team.device_id !== deviceId) {
+        params.push(deviceId);
+        sets.push(`device_id = $${params.length}`);
+      }
+      if (!finished && size != null && Number(size) > 0 && Number(size) !== team.size) {
+        params.push(Number(size));
+        sets.push(`size = $${params.length}`);
+      }
+      if (!sets.length) return team;
+      params.push(team.id);
+      const upd = await db.query(
+        `UPDATE teams SET ${sets.join(', ')} WHERE id = $${params.length} RETURNING *`,
+        params
+      );
+      return upd.rows[0];
+    };
+
+    // Guest confirmed "yes, that's us" — attach this device to that EXISTING team.
+    if (confirmTeamId) {
+      const target = teams.find(t => t.id === Number(confirmTeamId));
+      if (!target) return res.status(404).json({ error: 'Team to confirm not found in this session' });
+      const team = await rejoinAs(target);
+      return res.status(200).json({ ...team, rejoined: true, ...(finished ? { finished: true } : {}) });
+    }
+
+    const exact = teams.find(t => normTeamKey(t.name) === nameKey);
 
     // A finished session is read-only: return the existing team for history
     // lookup, but never create a new (ghost) team in it.
     if (finished) {
-      if (existing.rows.length) {
-        return res.status(200).json({ ...existing.rows[0], rejoined: true, finished: true });
-      }
+      if (exact) return res.status(200).json({ ...exact, rejoined: true, finished: true });
       return res.status(404).json({ error: 'No team by that name in this finished session.' });
     }
 
-    if (existing.rows.length) {
-      // Rejoin — return the existing team. Don't overwrite the original size
-      // unless the client explicitly sent a new value.
-      const team = existing.rows[0];
-      if (size != null && Number(size) > 0 && Number(size) !== team.size) {
-        const upd = await db.query(
-          'UPDATE teams SET size = $1 WHERE id = $2 RETURNING *',
-          [size, team.id]
-        );
-        return res.status(200).json({ ...upd.rows[0], rejoined: true });
-      }
+    if (exact) {
+      const team = await rejoinAs(exact);
       return res.status(200).json({ ...team, rejoined: true });
     }
 
+    if (!forceNew) {
+      // This device already has a team here (guest typed a different name), or
+      // the name is a near-miss for an existing team — ask before doing
+      // anything. The confirm step only ever attaches this device to ONE
+      // existing team.
+      const deviceMatch = deviceId ? teams.find(t => t.device_id === deviceId) : null;
+      const closeMatch  = teams.find(t => isCloseName(normTeamKey(t.name), nameKey));
+      const suggestion  = deviceMatch || closeMatch;
+      if (suggestion) {
+        return res.status(200).json({
+          needsConfirm: true,
+          suggestion: { id: suggestion.id, name: suggestion.name }
+        });
+      }
+    }
+
     const result = await db.query(
-      'INSERT INTO teams (quiz_session_id, name, size) VALUES ($1, $2, $3) RETURNING *',
-      [sessionId, cleanName, size]
+      'INSERT INTO teams (quiz_session_id, name, size, device_id) VALUES ($1, $2, $3, $4) RETURNING *',
+      [sessionId, cleanName, size, deviceId || null]
     );
     res.status(201).json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
+// Silent device pickup: the quizzer sends its persistent device id on page
+// load and reconnects straight to its existing team — no form, no duplicate.
+async function getTeamByDevice(req, res) {
+  try {
+    const { sessionId, deviceId } = req.params;
+    if (!deviceId) return res.status(400).json({ error: 'deviceId required' });
+    const r = await db.query(
+      'SELECT * FROM teams WHERE quiz_session_id = $1 AND device_id = $2 ORDER BY created_at DESC LIMIT 1',
+      [sessionId, deviceId]
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'No team for this device' });
+    res.json(r.rows[0]);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -245,16 +334,12 @@ async function createTeamAdmin(req, res) {
     const sess = await db.query('SELECT id FROM quiz_sessions WHERE id = $1', [sessionId]);
     if (!sess.rows.length) return res.status(404).json({ error: 'Session not found' });
 
-    const existing = await db.query(
-      `SELECT * FROM teams
-       WHERE quiz_session_id = $1 AND LOWER(TRIM(name)) = LOWER($2)
-       LIMIT 1`,
-      [sessionId, cleanName]
-    );
+    const teamsRes = await db.query('SELECT * FROM teams WHERE quiz_session_id = $1', [sessionId]);
+    const existing = teamsRes.rows.find(t => normTeamKey(t.name) === normTeamKey(cleanName));
 
     let team, created = false;
-    if (existing.rows.length) {
-      team = existing.rows[0];
+    if (existing) {
+      team = existing;
     } else {
       const ins = await db.query(
         'INSERT INTO teams (quiz_session_id, name, size) VALUES ($1, $2, $3) RETURNING *',
@@ -330,6 +415,7 @@ module.exports = {
   getTeamAnswers,
   getTeamById,
   getSessionScoreboard,
+  getTeamByDevice,
   createTeamAdmin,
   deleteTeam
 };
