@@ -1203,6 +1203,40 @@ select {
 .mcq-option-row input {
   flex: 1;
 }
+/* Tick-the-correct-option radio (beats the generic `input { flex: 1 }` above) */
+.mcq-option-row input.mcq-correct-radio {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--neon-green, #00ff9f);
+  cursor: pointer;
+}
+.mcq-option-row.is-correct .mcq-letter {
+  background: var(--neon-green, #00ff9f);
+  color: #04180f;
+}
+.mcq-option-row.is-correct input[type="text"] {
+  border-color: var(--neon-green, #00ff9f);
+}
+/* Read-out of the ticked answer above the free-text fallback box */
+.mcq-answer-readout {
+  display: flex;
+  align-items: center;
+  margin: 4px 0 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: rgba(0, 255, 159, .07);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.mcq-answer-readout.is-empty {
+  background: none;
+  color: var(--text-muted);
+  font-style: italic;
+  font-weight: 400;
+}
 
 .qm-import {
   padding: 20px;
@@ -3417,6 +3451,69 @@ input[type="checkbox"] {
   color: #555;
   font-style: italic;
 }
+
+/* MCQ letter beside an answer, so "Paris" reads as "B  Paris" while marking */
+.mcq-letter-tag {
+  display: inline-block;
+  min-width: 1.15rem;
+  margin-right: .4rem;
+  padding: 0 .25rem;
+  border-radius: 4px;
+  background: rgba(0, 240, 255, .16);
+  border: 1px solid rgba(0, 240, 255, .45);
+  color: var(--neon-cyan, #00f0ff);
+  font-size: .72rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+/* A manual mark whose answer was edited afterwards — needs a second look */
+.marking-team-row.answer-changed {
+  background: rgba(255, 157, 0, .10);
+  box-shadow: inset 3px 0 0 var(--neon-orange, #ff9d00);
+}
+.answer-changed-flag {
+  margin-left: .5rem;
+  font-size: .7rem;
+  font-weight: 700;
+  color: var(--neon-orange, #ff9d00);
+  white-space: nowrap;
+}
+
+/* Paper-only teams: flag + the divider that groups them for hand marking */
+.paper-tag { margin-left: .35rem; font-size: .8rem; }
+.marking-paper-divider {
+  margin: .6rem 0 .3rem;
+  padding: .3rem .4rem;
+  border-top: 1px dashed var(--border);
+  color: var(--text-muted);
+  font-size: .75rem;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+.marking-team-row.is-paper { background: rgba(255, 255, 255, .03); }
+
+/* Team admin row (size / ×2 / paper) inside Teams & Manual Points */
+.team-admin-fields {
+  display: flex;
+  align-items: center;
+  gap: .8rem;
+  flex-wrap: wrap;
+}
+.team-admin-row .team-size-edit,
+.team-admin-row .team-powerup-edit,
+.team-admin-row .team-paper-edit {
+  display: flex;
+  align-items: center;
+  gap: .3rem;
+  font-size: .7rem;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--text-muted);
+}
+.team-admin-row .team-size-input { width: 56px; padding: 2px 5px; font-size: .8rem; }
+.team-admin-row .team-powerup-edit select { padding: 2px 5px; font-size: .8rem; max-width: 150px; }
+.team-admin-row .team-paper-edit input { margin: 0; }
 .marking-score-btns {
   display: flex;
   align-items: center;

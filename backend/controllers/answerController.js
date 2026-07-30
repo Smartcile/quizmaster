@@ -16,8 +16,13 @@ function normalizeAnswer(s) {
 // Rules:
 //  • No score row yet: if answer matches → INSERT the question's full points
 //    value (a 2-point question scores 2), auto_marked=true
-//  • Existing auto-marked score: if answer no longer matches → UPDATE to 0
-//  • Existing manually-marked score (auto_marked=false): never touched
+//  • Existing AUTO-marked score: fully re-evaluated on every edit while the
+//    round is open — wrong→0, and corrected→full points again. An auto mark
+//    always reflects the team's CURRENT answer.
+//  • Existing MANUALLY-marked score (auto_marked=false): never changed. The
+//    score keeps standing, and `marked_answer` still holds the text the host
+//    judged, so the marking page can flag "they've changed it since you marked
+//    this" for review.
 //
 // Returns the points value written, or null if nothing changed.
 async function maybeAutoMark(client, teamId, questionId, answerText) {
@@ -28,7 +33,7 @@ async function maybeAutoMark(client, teamId, questionId, answerText) {
   const full = parseFloat(qres.rows[0].points) > 0 ? parseFloat(qres.rows[0].points) : 1;
 
   const existing = await client.query(
-    'SELECT id, auto_marked FROM scores WHERE team_id = $1 AND question_id = $2',
+    'SELECT id, auto_marked, points_awarded FROM scores WHERE team_id = $1 AND question_id = $2',
     [teamId, questionId]
   );
 
@@ -36,29 +41,31 @@ async function maybeAutoMark(client, teamId, questionId, answerText) {
     // No score yet — only insert if the answer is correct
     if (!isCorrect) return null;
     const ins = await client.query(
-      'INSERT INTO scores (team_id, question_id, points_awarded, auto_marked) VALUES ($1, $2, $3, true) RETURNING points_awarded',
-      [teamId, questionId, full]
+      'INSERT INTO scores (team_id, question_id, points_awarded, auto_marked, marked_answer) VALUES ($1, $2, $3, true, $4) RETURNING points_awarded',
+      [teamId, questionId, full, answerText]
     );
     return parseFloat(ins.rows[0].points_awarded);
   }
 
   const row = existing.rows[0];
 
-  // Manually-marked: admin has overridden — never auto-reset
+  // Manually-marked: the host's decision stands. The marking page compares the
+  // live answer against `marked_answer` and highlights it for a second look.
   if (!row.auto_marked) return null;
 
-  // Auto-marked: if answer changed to wrong → reset to 0 so the quizzer
-  // knows their score is now 0 (they can still be awarded manually)
-  if (!isCorrect) {
-    await client.query(
-      'UPDATE scores SET points_awarded = 0 WHERE id = $1',
-      [row.id]
-    );
-    return 0;
+  // Auto-marked: track the current answer in both directions, so fixing a typo
+  // restores the points instead of leaving a stale 0.
+  const next = isCorrect ? full : 0;
+  if (parseFloat(row.points_awarded) === next) {
+    // Same score, but keep marked_answer in step with what was judged.
+    await client.query('UPDATE scores SET marked_answer = $1 WHERE id = $2', [answerText, row.id]);
+    return null;
   }
-
-  // Auto-marked and still correct — no change needed
-  return null;
+  await client.query(
+    'UPDATE scores SET points_awarded = $1, marked_answer = $2 WHERE id = $3',
+    [next, answerText, row.id]
+  );
+  return next;
 }
 
 async function submitAnswer(req, res) {
@@ -175,15 +182,24 @@ async function markAnswer(req, res) {
           [teamId, questionId]
         );
 
+        // Record the exact answer text being judged. If the team later edits
+        // their answer, the marking page compares the two and flags the row for
+        // review instead of leaving a stale manual score unnoticed.
+        const ansRow = await client.query(
+          'SELECT answer_text FROM answers WHERE team_id = $1 AND question_id = $2',
+          [teamId, questionId]
+        );
+        const judged = ansRow.rows[0]?.answer_text ?? null;
+
         if (existing.rows.length > 0) {
           await client.query(
-            'UPDATE scores SET points_awarded = $1, auto_marked = false WHERE team_id = $2 AND question_id = $3',
-            [points, teamId, questionId]
+            'UPDATE scores SET points_awarded = $1, auto_marked = false, marked_answer = $2 WHERE team_id = $3 AND question_id = $4',
+            [points, judged, teamId, questionId]
           );
         } else {
           await client.query(
-            'INSERT INTO scores (team_id, question_id, points_awarded, auto_marked) VALUES ($1, $2, $3, false)',
-            [teamId, questionId, points]
+            'INSERT INTO scores (team_id, question_id, points_awarded, auto_marked, marked_answer) VALUES ($1, $2, $3, false, $4)',
+            [teamId, questionId, points, judged]
           );
         }
       }
@@ -225,9 +241,10 @@ async function getSessionAnswers(req, res) {
     const quizId = sessResult.rows[0].quiz_id;
 
     // Backfill auto-marks for this session's answers (idempotent via NOT EXISTS).
+    // Awards the question's own point value, matching the live auto-mark paths.
     await db.query(`
-      INSERT INTO scores (team_id, question_id, points_awarded, auto_marked)
-      SELECT a.team_id, a.question_id, 1, true
+      INSERT INTO scores (team_id, question_id, points_awarded, auto_marked, marked_answer)
+      SELECT a.team_id, a.question_id, COALESCE(NULLIF(q.points, 0), 1), true, a.answer_text
       FROM answers a
       JOIN teams t       ON a.team_id = t.id
       JOIN questions q   ON a.question_id = q.id
@@ -253,8 +270,16 @@ async function getSessionAnswers(req, res) {
     `, [quizId]);
 
     const roundIds = roundsResult.rows.map(r => r.id);
+    // options/answer_mode come through so the marking page can show the MCQ
+    // letter (A/B/C…) beside each answer instead of bare text.
     const questionsResult = roundIds.length ? await db.query(`
-      SELECT q.id, q.text, q.answer, q.points, q.type, q.media_url, rq.round_id, rq."order"
+      SELECT q.id, q.text, q.answer, q.points, q.type, q.media_url, q.options,
+             CASE rq.question_format_override
+               WHEN 'standard'    THEN 'text'
+               WHEN 'multichoice' THEN 'mcq'
+               WHEN 'both'        THEN 'both'
+               ELSE q.answer_mode END AS answer_mode,
+             rq.round_id, rq."order"
       FROM round_questions rq
       JOIN questions q ON rq.question_id = q.id
       WHERE rq.round_id = ANY($1::int[])
@@ -262,7 +287,7 @@ async function getSessionAnswers(req, res) {
     `, [roundIds]) : { rows: [] };
 
     const teamsResult = await db.query(
-      'SELECT id, name, size FROM teams WHERE quiz_session_id = $1 ORDER BY name',
+      'SELECT id, name, size, is_paper FROM teams WHERE quiz_session_id = $1 ORDER BY name',
       [sessionId]
     );
     const teamIds = teamsResult.rows.map(t => t.id);
@@ -270,7 +295,9 @@ async function getSessionAnswers(req, res) {
     const [answersResult, scoresResult, brownieResult] = teamIds.length
       ? await Promise.all([
           db.query('SELECT team_id, question_id, answer_text FROM answers WHERE team_id = ANY($1::int[])', [teamIds]),
-          db.query('SELECT team_id, question_id, points_awarded FROM scores WHERE team_id = ANY($1::int[])', [teamIds]),
+          // auto_marked + marked_answer let the UI flag "they changed their answer
+          // after you marked it" rather than silently keeping a stale score.
+          db.query('SELECT team_id, question_id, points_awarded, auto_marked, marked_answer FROM scores WHERE team_id = ANY($1::int[])', [teamIds]),
           db.query('SELECT team_id, COALESCE(SUM(points), 0)::float AS total FROM brownie_points WHERE team_id = ANY($1::int[]) GROUP BY team_id', [teamIds])
         ])
       : [{ rows: [] }, { rows: [] }, { rows: [] }];

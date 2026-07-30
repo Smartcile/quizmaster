@@ -180,6 +180,14 @@ function App() {
           const quizData = resolved.quiz;
           const session = resolved.session;
           if (!quizData || !session) throw new Error('stale');
+          // The join code is the QUIZ's and never rotates, so it resolves to
+          // whatever session is live now — which may be a NEW one. A team row
+          // belongs to exactly one session, so if ours isn't from this session
+          // the quiz has been restarted: drop the stored identity and make them
+          // join again as a fresh team (old scores stay in history).
+          if (teamData?.quiz_session_id != null && Number(teamData.quiz_session_id) !== Number(session.id)) {
+            throw new Error('stale');
+          }
           const codes = [session.code, quizData.code]
             .filter(Boolean).map(c => String(c).toUpperCase());
           // If the URL deep-links to a DIFFERENT quiz, don't hijack it with the

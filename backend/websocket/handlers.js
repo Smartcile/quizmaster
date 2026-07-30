@@ -205,16 +205,18 @@ function setupWebSocketHandlers(io) {
           );
         }
 
-        // Auto-mark: if no score yet and the submitted answer matches the
-        // correct answer (fuzzy compare), award the question's FULL point value
-        // (a 2-point question scores 2, not 1). Admin overrides afterward via
-        // the marking page are never stomped because we skip when a score row
-        // already exists.
+        // Auto-mark on every edit while the round is open, awarding the
+        // question's FULL point value (a 2-point question scores 2). An AUTO
+        // mark always tracks the team's current answer — change it to something
+        // wrong and it drops to 0; fix it and the points come back.
+        // A MANUAL mark (auto_marked = false) is the host's decision and is
+        // never touched; the marking page flags the change for review instead.
         const scoreExists = await db.query(
-          'SELECT id FROM scores WHERE team_id = $1 AND question_id = $2',
+          'SELECT id, auto_marked, points_awarded FROM scores WHERE team_id = $1 AND question_id = $2',
           [teamId, questionId]
         );
-        if (!scoreExists.rows.length) {
+        const manuallyMarked = scoreExists.rows.length && scoreExists.rows[0].auto_marked === false;
+        if (!manuallyMarked) {
           const qr = await db.query(
             `SELECT q.answer, q.points, q.audio_form, mf.artist AS media_artist, mf.title AS media_title
              FROM questions q LEFT JOIN media_files mf ON mf.url = q.media_url
@@ -241,12 +243,25 @@ function setupWebSocketHandlers(io) {
             } else if (norm(answer) === norm(row.answer)) {
               pts = full;
             }
-            if (pts != null) {
+            // No match → 0 (not "leave it"), so a corrected-then-broken answer
+            // doesn't keep the earlier points.
+            const next = pts == null ? 0 : pts;
+            if (!scoreExists.rows.length) {
+              if (next > 0) {
+                await db.query(
+                  'INSERT INTO scores (team_id, question_id, points_awarded, auto_marked, marked_answer) VALUES ($1, $2, $3, true, $4)',
+                  [teamId, questionId, next, answer]
+                );
+                autoMarked = next;
+              }
+            } else if (parseFloat(scoreExists.rows[0].points_awarded) !== next) {
               await db.query(
-                'INSERT INTO scores (team_id, question_id, points_awarded) VALUES ($1, $2, $3)',
-                [teamId, questionId, pts]
+                'UPDATE scores SET points_awarded = $1, auto_marked = true, marked_answer = $2 WHERE id = $3',
+                [next, answer, scoreExists.rows[0].id]
               );
-              autoMarked = pts;
+              autoMarked = next;
+            } else {
+              await db.query('UPDATE scores SET marked_answer = $1 WHERE id = $2', [answer, scoreExists.rows[0].id]);
             }
           }
         }
