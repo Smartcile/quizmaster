@@ -13,6 +13,7 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
   const [whoamiMiss,       setWhoamiMiss]        = useState(null);   // { clueIndex, guess } — wrong guess, can retry on a later clue
   const [doubleChoice,     setDoubleChoice]      = useState(null);   // this team's chosen ×2 round id
   const [doubleError,      setDoubleError]       = useState(null);
+  const [zoom,             setZoom]              = useState(null);   // { url, type } — in-page media lightbox
 
   const slides = useMemo(() => buildSlides(quiz), [quiz]);
   const slide = slides[currentSlide];
@@ -266,6 +267,7 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
           score={scores[activeSlide.questionId]}
           locked={isLockedFor(activeSlide.roundId)}
           onChange={(v) => submitAnswer(activeSlide.questionId, v)}
+          onZoom={setZoom}
         />
       );
     }
@@ -283,11 +285,24 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
             {(slide.questions || []).map((q) => (
               <div key={q.questionId} className="intermission-input-row">
                 <span className="intermission-input-num">{q.questionNumber}</span>
+                {/* Tap a thumbnail for a bigger look without leaving the page */}
                 {q.mediaUrl && q.questionType === 'image' && (
-                  <img className="intermission-thumb" src={q.mediaUrl} alt={`Picture ${q.questionNumber}`} />
+                  <img
+                    className="intermission-thumb is-zoomable"
+                    src={q.mediaUrl}
+                    alt={`Picture ${q.questionNumber}`}
+                    onClick={() => setZoom({ url: q.mediaUrl, type: 'image', label: `Picture ${q.questionNumber}` })}
+                  />
                 )}
                 {q.mediaUrl && q.questionType === 'video' && (
-                  <video className="intermission-thumb" src={q.mediaUrl} muted />
+                  <video
+                    className="intermission-thumb is-zoomable"
+                    src={q.mediaUrl}
+                    muted
+                    playsInline
+                    preload="metadata"
+                    onClick={() => setZoom({ url: q.mediaUrl, type: 'video', label: `Picture ${q.questionNumber}` })}
+                  />
                 )}
                 <input
                   type="text"
@@ -389,7 +404,12 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
         <div className="reveal-card">
           <p className="reveal-label">{slide.roundName} · {slide.intermission ? `Picture ${slide.questionNumber}` : `Question ${slide.questionNumber}`}</p>
           {slide.intermission && slide.mediaUrl && slide.questionType === 'image' && (
-            <img className="reveal-media" src={slide.mediaUrl} alt={`Picture ${slide.questionNumber}`} />
+            <img
+              className="reveal-media is-zoomable"
+              src={slide.mediaUrl}
+              alt={`Picture ${slide.questionNumber}`}
+              onClick={() => setZoom({ url: slide.mediaUrl, type: 'image', label: `Picture ${slide.questionNumber}` })}
+            />
           )}
           {slide.text && <h2 className="reveal-question">{slide.text}</h2>}
           {showYour && (
@@ -546,6 +566,20 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
           <p className="round-nav-hint">Tap any question to view or edit your answer. Edits are saved until the round is locked.</p>
         </div>
       )}
+
+      {/* Media lightbox — a bigger look at a picture (or a still video frame)
+          without navigating away, so nobody loses their place or their answers.
+          Video stays muted and control-less here too: sound is the big screen's job. */}
+      {zoom && (
+        <div className="media-zoom" onClick={() => setZoom(null)}>
+          <button className="media-zoom-close" onClick={() => setZoom(null)} aria-label="Close">×</button>
+          {zoom.type === 'video'
+            ? <video className="media-zoom-item" src={zoom.url} muted playsInline preload="metadata" onClick={(e) => e.stopPropagation()} />
+            : <img className="media-zoom-item" src={zoom.url} alt={zoom.label || 'Enlarged'} onClick={(e) => e.stopPropagation()} />}
+          {zoom.label && <span className="media-zoom-label">{zoom.label}</span>}
+          <span className="media-zoom-hint">Tap anywhere to close</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -581,7 +615,7 @@ function roundQuestionsFromSlides(slides, roundId) {
   return slides.filter(s => s.type === 'question' && s.roundId === roundId);
 }
 
-function QuestionView({ slide, answer, score, locked, onChange }) {
+function QuestionView({ slide, answer, score, locked, onChange, onZoom }) {
   const mode = slide.answerMode || 'text';
   const isNameTheSong = slide.audioForm === 'name_the_song';
   const showText = (mode === 'text' || mode === 'both') && !isNameTheSong;
@@ -600,12 +634,17 @@ function QuestionView({ slide, answer, score, locked, onChange }) {
 
       {slide.mediaUrl && (
         <div className="media-container">
-          {slide.questionType === 'image' && <img src={slide.mediaUrl} alt="Question" />}
-          {/* Mobile autoplay is blocked anyway, so playback always needs a tap.
-              Finish-the-lyrics snippets still stop at audioStop so the answer
-              is never heard on the phone either. */}
+          {slide.questionType === 'image' && (
+            <img src={slide.mediaUrl} alt="Question" onClick={() => onZoom?.({ url: slide.mediaUrl, type: 'image' })} />
+          )}
+          {/* Video never plays on a phone — it runs on the big screen only, so the
+              room watches together and no team can scrub or re-watch. Tap opens a
+              still, silent preview instead. */}
           {slide.questionType === 'video' && (
-            <video src={slide.mediaUrl} controls playsInline preload="metadata" />
+            <div className="media-noplay" onClick={() => onZoom?.({ url: slide.mediaUrl, type: 'video' })}>
+              <video src={slide.mediaUrl} muted playsInline preload="metadata" tabIndex={-1} />
+              <span className="media-noplay-note">🎬 Playing on the main screen — tap to enlarge</span>
+            </div>
           )}
           {slide.questionType === 'audio' && (
             <QuestionAudioPlayer

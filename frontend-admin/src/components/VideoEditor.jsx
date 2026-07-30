@@ -156,6 +156,10 @@ export default function VideoEditor({ file, onClose, onSaved }) {
             controls
             onLoadedMetadata={onMeta}
             onTimeUpdate={onTimeUpdate}
+            onError={() => setError(
+              'This browser can’t preview this video (unsupported codec/container — e.g. HEVC or .mkv). ' +
+              'Trimming needs the preview to read the duration, so convert it to H.264 MP4 first.'
+            )}
             className="ve-video"
           />
 

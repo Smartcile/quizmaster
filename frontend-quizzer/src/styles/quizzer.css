@@ -1342,3 +1342,66 @@ body {
   cursor: pointer;
 }
 .audio-play-btn:active { transform: scale(.97); }
+
+/* ── Video on a phone: a still, silent frame only (it plays on the big screen) ── */
+.media-noplay { position: relative; width: 100%; cursor: zoom-in; }
+.media-noplay video {
+  width: 100%;
+  max-height: 240px;
+  border-radius: 10px;
+  background: #000;
+  pointer-events: none;   /* no scrubbing, no play — the frame is a preview */
+}
+.media-noplay-note {
+  position: absolute;
+  left: 50%;
+  bottom: .5rem;
+  transform: translateX(-50%);
+  background: rgba(10, 14, 31, .88);
+  border: 1px solid var(--border, #2a3357);
+  color: var(--text-secondary, #b8c0e0);
+  border-radius: 999px;
+  padding: .3rem .7rem;
+  font-size: .78rem;
+  white-space: nowrap;
+}
+
+/* ── In-page media lightbox (tap a picture for a closer look) ─────────────── */
+.is-zoomable { cursor: zoom-in; }
+.media-zoom {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: rgba(4, 6, 16, .94);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: .8rem;
+  padding: 1rem;
+  animation: backNoteIn .15s ease-out;
+}
+.media-zoom-item {
+  max-width: 100%;
+  max-height: 78vh;
+  object-fit: contain;
+  border-radius: 10px;
+  border: 1px solid var(--border, #2a3357);
+  background: #000;
+}
+.media-zoom-close {
+  position: absolute;
+  top: .6rem;
+  right: .8rem;
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .12);
+  border: 1px solid var(--border, #2a3357);
+  color: #fff;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.media-zoom-label { color: var(--text-primary, #fff); font-weight: 700; }
+.media-zoom-hint { color: var(--text-muted, #8b9dc3); font-size: .8rem; }

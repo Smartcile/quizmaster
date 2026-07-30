@@ -2,7 +2,9 @@ import { useState, useEffect, useMemo } from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { api } from '../services/api';
 
-const EMPTY = { name: '', background_color: '#0a0e1f', format: 'standard', style: 'standard', display_title: '', grid_columns: 5, print_pictures: false };
+// print_pictures defaults ON: a picture round almost always wants its grid on the
+// printed answer sheet. Untick it to save ink when the pictures are screen-only.
+const EMPTY = { name: '', background_color: '#0a0e1f', format: 'standard', style: 'standard', display_title: '', grid_columns: 5, print_pictures: true };
 
 const GRID_COLUMN_OPTIONS = [3, 4, 5];
 

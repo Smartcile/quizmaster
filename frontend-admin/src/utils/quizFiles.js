@@ -144,11 +144,13 @@ export async function downloadAnswerSheet(quiz) {
       doc.text('Team:', M, y); doc.rect(M + 34, y - 9, 210, 15);
       doc.text('Size:', M + 258, y); doc.rect(M + 288, y - 9, 45, 15);
       y += 24;
-      if (whoami) {
-        doc.text('Who Am I? final guess:', M, y);
-        doc.rect(M + 125, y - 9, CONTENT_W - 125, 15);
-        y += 24;
-      }
+    }
+
+    // Who Am I? — one clue is revealed before each round, so give every page that
+    // has a clue its own guess area, labelled with that clue's number and value.
+    // (buildSlides pairs round i with clue i, bounded by the clue count.)
+    if (whoami && ri < whoami.clues.length) {
+      y = drawWhoamiBox(doc, y, whoami, ri);
     }
 
     const qs = questionsOf(round);
@@ -214,6 +216,33 @@ function drawJoinQr(doc, qr, joinUrl) {
   doc.setTextColor(0);
 }
 
+// Who Am I? guess area for the clue shown before this round. Boxed and tinted so
+// it reads as separate from the round's answers. Returns the new y.
+function drawWhoamiBox(doc, y, whoami, clueIdx) {
+  const clue = whoami.clues[clueIdx] || {};
+  const pts = clue.points ?? '';
+  const H = 34;
+  doc.setFillColor(245, 245, 250);
+  doc.setDrawColor(140);
+  doc.rect(M, y - 10, CONTENT_W, H, 'FD');
+
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(60);
+  doc.text(
+    `${(whoami.title || 'WHO AM I?').toUpperCase()} — CLUE ${clueIdx + 1}${pts !== '' ? ` (${pts} pt)` : ''}`,
+    M + 6, y
+  );
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
+  doc.text('Only your first correct guess scores — the earlier the clue, the more it is worth.', M + 6, y + 8);
+
+  // Guess line
+  doc.setFontSize(8); doc.setTextColor(0);
+  doc.text('Guess:', M + 6, y + 19);
+  doc.setDrawColor(120);
+  doc.line(M + 34, y + 19, PAGE_W - M - 8, y + 19);
+  doc.setTextColor(0);
+  return y + H + 8;
+}
+
 // Numbered picture grid + a write-in box per picture, scaled to fit one page.
 // `cells` is [{ q, img }] — a missing image just leaves an empty framed box.
 function drawPictureGrid(doc, top, cells, cols) {
@@ -238,6 +267,11 @@ function drawPictureGrid(doc, top, cells, cols) {
       const s = Math.min(cellW / img.w, imgH / img.h);
       const w = img.w * s, h = img.h * s;
       doc.addImage(img.dataUrl, 'JPEG', x + (cellW - w) / 2, y + (imgH - h) / 2, w, h);
+    } else {
+      // Say so rather than leaving a mysteriously blank frame.
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(150);
+      doc.text('image unavailable', x + cellW / 2, y + imgH / 2, { align: 'center' });
+      doc.setTextColor(0);
     }
 
     // Number badge (white box so it stays readable over a dark picture)
