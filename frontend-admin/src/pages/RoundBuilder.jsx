@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { api } from '../services/api';
 
-const EMPTY = { name: '', background_color: '#0a0e1f', format: 'standard', style: 'standard', display_title: '', grid_columns: 5 };
+const EMPTY = { name: '', background_color: '#0a0e1f', format: 'standard', style: 'standard', display_title: '', grid_columns: 5, print_pictures: false };
 
 const GRID_COLUMN_OPTIONS = [3, 4, 5];
 
@@ -76,7 +76,8 @@ export default function RoundBuilder() {
         format: r.format || 'standard',
         style: r.style || 'standard',
         display_title: r.display_title || '',
-        grid_columns: r.grid_columns || 5
+        grid_columns: r.grid_columns || 5,
+        print_pictures: !!r.print_pictures
       },
       selectedQuestions: sortedQs.map(q => q.id),
       formatOverrides: overrides
@@ -341,6 +342,14 @@ function RoundEditorModal({ editing, editingId, init, questions, questionUsage, 
                   >
                     {GRID_COLUMN_OPTIONS.map(n => <option key={n} value={n}>{n} columns wide</option>)}
                   </select>
+                  <label className="intermission-print-toggle" title="Print the pictures onto the Quizzer Answer Sheet PDF so teams can answer from paper">
+                    <input
+                      type="checkbox"
+                      checked={!!form.print_pictures}
+                      onChange={(e) => setForm({ ...form, print_pictures: e.target.checked })}
+                    />
+                    🖨 Print pictures on the answer sheet
+                  </label>
                 </div>
                 <div className="intermission-preview">
                   <span className="intermission-preview-label">Layout preview</span>

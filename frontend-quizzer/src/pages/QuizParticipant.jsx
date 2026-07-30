@@ -9,7 +9,8 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
   const [scores,           setScores]            = useState({});
   const [viewingQuestionId, setViewingQuestionId] = useState(null); // null = follow admin
   const [whoamiGuess,      setWhoamiGuess]       = useState('');
-  const [whoamiLock,       setWhoamiLock]        = useState(null);   // null = not locked yet
+  const [whoamiLock,       setWhoamiLock]        = useState(null);   // set = locked in (correct or admin-marked)
+  const [whoamiMiss,       setWhoamiMiss]        = useState(null);   // { clueIndex, guess } — wrong guess, can retry on a later clue
   const [doubleChoice,     setDoubleChoice]      = useState(null);   // this team's chosen ×2 round id
   const [doubleError,      setDoubleError]       = useState(null);
 
@@ -96,14 +97,19 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
       try {
         const res = await api.get(`/whoami/session/${sessionId}`);
         const g = (res?.guesses || []).find(x => x.team_id === team.id);
-        if (g && g.locked) {
+        if (!g) return;
+        setWhoamiGuess(g.guess_text || '');
+        if (g.locked) {
           setWhoamiLock({
             guess: g.guess_text,
             lockedClueIndex: g.locked_clue_index,
             pointsPossible: g.points_possible,
             pointsAwarded: g.points_awarded
           });
-          setWhoamiGuess(g.guess_text || '');
+        } else {
+          // A wrong guess doesn't lock them out — remember which clue it was on
+          // so the form re-opens on the next clue, not this one.
+          setWhoamiMiss({ clueIndex: g.locked_clue_index, guess: g.guess_text });
         }
       } catch {}
     })();
@@ -153,12 +159,16 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
       }
     };
     const onWhoamiMarked = (data) => {
-      if (data.teamId === team?.id) {
-        setWhoamiLock(prev => ({
-          ...(prev || {}),
-          pointsAwarded: data.points == null ? null : parseFloat(data.points)
-        }));
+      if (data.teamId !== team?.id) return;
+      const pts = data.points == null ? null : parseFloat(data.points);
+      // An AUTO mark of 0 is a wrong guess — it must not create a lock, or the
+      // team would be shut out of the retry. Only refresh an existing lock.
+      if (data.autoMarked) {
+        setWhoamiLock(prev => (prev ? { ...prev, pointsAwarded: pts } : null));
+        return;
       }
+      // An admin mark is final (the server locks the row too).
+      setWhoamiLock(prev => ({ ...(prev || {}), pointsAwarded: pts }));
     };
     const onDoubleUp = (data) => {
       if (Number(data.teamId) === Number(team?.id)) setDoubleChoice(Number(data.roundId));
@@ -181,20 +191,26 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
     };
   }, [socket, team?.id]);
 
-  // Lock in the team's Who-Am-I guess. Points come from the server (the clue
-  // currently shown). Immutable once locked.
+  // Submit the team's Who-Am-I guess. Points come from the server (the clue
+  // currently shown). A correct guess locks in; a wrong one only records a miss,
+  // so they can try again on a later clue for that clue's lower value.
   const lockWhoami = async (clueIndex) => {
     if (!team || whoamiLock) return;
     try {
       const res = await api.post('/whoami/lock', {
         sessionId, teamId: team.id, clueIndex, guess: whoamiGuess
       });
-      setWhoamiLock({
-        guess: res.guess_text,
-        lockedClueIndex: res.locked_clue_index,
-        pointsPossible: res.points_possible,
-        pointsAwarded: res.points_awarded
-      });
+      if (res.locked) {
+        setWhoamiMiss(null);
+        setWhoamiLock({
+          guess: res.guess_text,
+          lockedClueIndex: res.locked_clue_index,
+          pointsPossible: res.points_possible,
+          pointsAwarded: res.points_awarded
+        });
+      } else {
+        setWhoamiMiss({ clueIndex: res.locked_clue_index, guess: res.guess_text });
+      }
     } catch {}
   };
 
@@ -294,6 +310,7 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
           slide={slide}
           guess={whoamiGuess}
           lock={whoamiLock}
+          miss={whoamiMiss}
           onGuessChange={setWhoamiGuess}
           onLock={() => lockWhoami(slide.clueIndex)}
         />
@@ -471,14 +488,18 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
             <div className="whoami-reveal-card">
               <p className="whoami-reveal-label">{slide.whoami.title} — the answer was</p>
               <p className="whoami-reveal-answer">{slide.whoami.answer}</p>
-              {whoamiLock && (
+              {whoamiLock ? (
                 <div className={`whoami-result ${whoamiLock.pointsAwarded > 0 ? 'win' : 'miss'}`}>
                   You guessed “{whoamiLock.guess || '—'}” ·{' '}
                   {whoamiLock.pointsAwarded != null
                     ? `${whoamiLock.pointsAwarded} pt${whoamiLock.pointsAwarded !== 1 ? 's' : ''}`
                     : 'awaiting marking'}
                 </div>
-              )}
+              ) : whoamiMiss ? (
+                <div className="whoami-result miss">
+                  Your last guess was “{whoamiMiss.guess || '—'}” · 0 pts
+                </div>
+              ) : null}
             </div>
           )}
         </div>
@@ -721,9 +742,12 @@ export function AnswerReviewView({ title, slides, answers, scores }) {
 }
 
 // ── Who Am I? clue + lock-in ───────────────────────────────────────────────────
-function WhoamiView({ slide, guess, lock, onGuessChange, onLock }) {
+function WhoamiView({ slide, guess, lock, miss, onGuessChange, onLock }) {
   const locked = !!lock;
   const awarded = lock?.pointsAwarded;
+  // A wrong guess on THIS clue is spent — they get another go on the next clue.
+  const spentOnThisClue = !locked && miss?.clueIndex === slide.clueIndex;
+  const missedEarlier   = !locked && miss != null && miss.clueIndex !== slide.clueIndex;
 
   return (
     <div className="whoami-card">
@@ -757,8 +781,18 @@ function WhoamiView({ slide, guess, lock, onGuessChange, onLock }) {
             </span>
           )}
         </div>
+      ) : spentOnThisClue ? (
+        <div className="whoami-locked-box miss">
+          <span className="whoami-locked-label">Not this time — “{miss.guess || '—'}”</span>
+          <span className="whoami-retry-note">You get another go on the next clue 👀</span>
+        </div>
       ) : (
         <div className="whoami-lockin">
+          {missedEarlier && (
+            <p className="whoami-retry-banner">
+              🔄 New clue, new go — your last guess “{miss.guess || '—'}” wasn’t it.
+            </p>
+          )}
           <input
             type="text"
             className="answer-input"
@@ -774,8 +808,8 @@ function WhoamiView({ slide, guess, lock, onGuessChange, onLock }) {
             🔒 Lock in for {slide.points} pt{slide.points !== 1 ? 's' : ''}
           </button>
           <p className="whoami-lock-warn">
-            Once you lock in you can't change it — but you keep these points if you're right.
-            Wait for a later clue and it's worth less.
+            Get it right and these points are yours. Get it wrong and you can try again
+            on the next clue — but it'll be worth less.
           </p>
         </div>
       )}

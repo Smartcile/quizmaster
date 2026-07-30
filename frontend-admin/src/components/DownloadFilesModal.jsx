@@ -42,7 +42,7 @@ export default function DownloadFilesModal({ quiz: quizProp, quizId, onClose }) 
   const FILES = [
     {
       key: 'answers', icon: '📝', label: 'Quizzer Answer Sheet',
-      desc: 'PDF · one page per round · blank answer boxes in the quiz style · team name & size on page 1 · no answers.',
+      desc: 'PDF · one page per round · blank answer boxes · join QR on every page · picture rounds set to “print pictures” include their grid · no answers.',
       fn: downloadAnswerSheet
     },
     {

@@ -206,16 +206,17 @@ function setupWebSocketHandlers(io) {
         }
 
         // Auto-mark: if no score yet and the submitted answer matches the
-        // correct answer (fuzzy compare), award 1 point. Admin overrides
-        // afterward via the marking page are never stomped because we skip
-        // when a score row already exists.
+        // correct answer (fuzzy compare), award the question's FULL point value
+        // (a 2-point question scores 2, not 1). Admin overrides afterward via
+        // the marking page are never stomped because we skip when a score row
+        // already exists.
         const scoreExists = await db.query(
           'SELECT id FROM scores WHERE team_id = $1 AND question_id = $2',
           [teamId, questionId]
         );
         if (!scoreExists.rows.length) {
           const qr = await db.query(
-            `SELECT q.answer, q.audio_form, mf.artist AS media_artist, mf.title AS media_title
+            `SELECT q.answer, q.points, q.audio_form, mf.artist AS media_artist, mf.title AS media_title
              FROM questions q LEFT JOIN media_files mf ON mf.url = q.media_url
              WHERE q.id = $1`,
             [questionId]
@@ -223,10 +224,11 @@ function setupWebSocketHandlers(io) {
           if (qr.rows.length) {
             const row = qr.rows[0];
             const norm = s => String(s ?? '').toLowerCase().trim().replace(/\s+/g, ' ').replace(/^the\s+/, '');
+            const full = parseFloat(row.points) > 0 ? parseFloat(row.points) : 1;
             let pts = null;
             if (row.audio_form === 'name_the_song') {
-              // Answer is "Artist — Song"; award ½ for each part matched against
-              // the linked track's metadata (exact-normalised OR contained).
+              // Answer is "Artist — Song"; each part is worth half the question,
+              // matched against the linked track's metadata (exact or contained).
               const SEP = ' — ';
               const idx = String(answer || '').indexOf(SEP);
               const aPart = idx === -1 ? (answer || '') : String(answer).slice(0, idx);
@@ -234,10 +236,10 @@ function setupWebSocketHandlers(io) {
               const whole = norm(answer);
               const artistOk = row.media_artist && (norm(aPart) === norm(row.media_artist) || whole.includes(norm(row.media_artist)));
               const songOk   = row.media_title  && (norm(sPart) === norm(row.media_title)  || whole.includes(norm(row.media_title)));
-              const half = (artistOk ? 0.5 : 0) + (songOk ? 0.5 : 0);
+              const half = (artistOk ? full / 2 : 0) + (songOk ? full / 2 : 0);
               if (half > 0) pts = half;
             } else if (norm(answer) === norm(row.answer)) {
-              pts = 1;
+              pts = full;
             }
             if (pts != null) {
               await db.query(

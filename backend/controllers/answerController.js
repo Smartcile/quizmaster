@@ -14,16 +14,18 @@ function normalizeAnswer(s) {
 // Auto-mark logic — called whenever a team submits or updates an answer.
 //
 // Rules:
-//  • No score row yet: if answer matches → INSERT score=1, auto_marked=true
+//  • No score row yet: if answer matches → INSERT the question's full points
+//    value (a 2-point question scores 2), auto_marked=true
 //  • Existing auto-marked score: if answer no longer matches → UPDATE to 0
 //  • Existing manually-marked score (auto_marked=false): never touched
 //
-// Returns the points value written (0 or 1), or null if nothing changed.
+// Returns the points value written, or null if nothing changed.
 async function maybeAutoMark(client, teamId, questionId, answerText) {
-  const qres = await client.query('SELECT answer FROM questions WHERE id = $1', [questionId]);
+  const qres = await client.query('SELECT answer, points FROM questions WHERE id = $1', [questionId]);
   if (!qres.rows.length) return null;
 
   const isCorrect = normalizeAnswer(answerText) === normalizeAnswer(qres.rows[0].answer);
+  const full = parseFloat(qres.rows[0].points) > 0 ? parseFloat(qres.rows[0].points) : 1;
 
   const existing = await client.query(
     'SELECT id, auto_marked FROM scores WHERE team_id = $1 AND question_id = $2',
@@ -34,8 +36,8 @@ async function maybeAutoMark(client, teamId, questionId, answerText) {
     // No score yet — only insert if the answer is correct
     if (!isCorrect) return null;
     const ins = await client.query(
-      'INSERT INTO scores (team_id, question_id, points_awarded, auto_marked) VALUES ($1, $2, 1, true) RETURNING points_awarded',
-      [teamId, questionId]
+      'INSERT INTO scores (team_id, question_id, points_awarded, auto_marked) VALUES ($1, $2, $3, true) RETURNING points_awarded',
+      [teamId, questionId, full]
     );
     return parseFloat(ins.rows[0].points_awarded);
   }
@@ -147,8 +149,10 @@ async function getTeamAnswers(req, res) {
 }
 
 // Mark (or unmark) a score for a team+question.
-// • points = 0 | 0.5 | 1  → upsert the score, set auto_marked=false (manual)
-// • points = null          → delete the score row entirely (deselect)
+// • points = any number → upsert the score, set auto_marked=false (manual). The
+//   admin picks from buttons scaled to the question's own value, or types a
+//   custom amount, so a 2-point question can be awarded 0 / 0.5 / 1 / 1.5 / 2.
+// • points = null       → delete the score row entirely (deselect)
 async function markAnswer(req, res) {
   try {
     const { teamId, questionId, points, sessionId } = req.body;

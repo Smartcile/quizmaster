@@ -1023,6 +1023,17 @@ body {
 .whoami-locked-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.15em; color: var(--text-muted); }
 .whoami-locked-guess { font-size: 1.3rem; font-weight: 700; color: var(--text-primary); }
 .whoami-locked-pts { font-weight: 700; color: var(--neon-green); }
+/* Wrong guess: spent for THIS clue, but they get another go on the next one */
+.whoami-retry-note { font-size: 0.85rem; font-weight: 600; color: var(--neon-yellow, #ffe600); }
+.whoami-retry-banner {
+  margin: 0 0 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--neon-yellow, #ffe600);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 230, 0, 0.08);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+}
 
 /* End-slide Who Am I? reveal */
 .whoami-reveal-card {
@@ -1274,6 +1285,29 @@ body {
 @keyframes backNoteIn {
   from { opacity: 0; transform: translateX(-50%) translateY(8px); }
   to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* ── Connection status bar (socket drop / recovery) ───────────────────────── */
+.conn-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1100;
+  padding: .45rem .8rem;
+  text-align: center;
+  font-size: .85rem;
+  font-weight: 700;
+  pointer-events: none;
+  animation: backNoteIn .2s ease-out;
+}
+.conn-offline {
+  background: rgba(255, 157, 0, .96);
+  color: #1a1200;
+}
+.conn-back {
+  background: rgba(0, 255, 159, .96);
+  color: #04180f;
 }
 
 /* ── Pre-lobby (scanned before the session was started) ───────────────────── */

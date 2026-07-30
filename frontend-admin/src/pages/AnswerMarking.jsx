@@ -374,7 +374,7 @@ export default function AnswerMarking({ sessionId, quiz }) {
                           {ansText || '(no answer)'}
                         </span>
                         <div className="marking-score-btns">
-                          {[0, 0.5, 1].map(pts => (
+                          {scoreOptions(q.points).map(pts => (
                             <button
                               key={pts}
                               onClick={() => mark(t.id, q.id, score === pts ? null : pts)}
@@ -384,8 +384,13 @@ export default function AnswerMarking({ sessionId, quiz }) {
                               {pts}
                             </button>
                           ))}
+                          <PointsInput
+                            awarded={score}
+                            onSet={(v) => mark(t.id, q.id, v)}
+                            title="Type any number of points for this answer (blank clears it)"
+                          />
                           {score !== null && (
-                            <span className={`score-pill ${score === 1 ? 'pill-full' : score === 0.5 ? 'pill-half' : 'pill-zero'}`}>
+                            <span className={`score-pill ${score >= fullPoints(q.points) ? 'pill-full' : score > 0 ? 'pill-half' : 'pill-zero'}`}>
                               {score}pt
                             </span>
                           )}
@@ -438,6 +443,11 @@ export default function AnswerMarking({ sessionId, quiz }) {
                         title={`Award the full ${possible} points for the clue they locked on`}
                       >{possible}</button>
                     )}
+                    <PointsInput
+                      awarded={awarded}
+                      onSet={(v) => markWhoami(t.id, v)}
+                      title="Type any number of points for this guess (blank clears it)"
+                    />
                     {awarded != null && (
                       <span className={`score-pill ${awarded > 0 ? 'pill-full' : 'pill-zero'}`}>{awarded}pt</span>
                     )}
@@ -453,6 +463,61 @@ export default function AnswerMarking({ sessionId, quiz }) {
         <p className="marking-empty">No rounds found for this session.</p>
       )}
     </div>
+  );
+}
+
+// A question's point value (defaults to 1 for legacy rows with none set).
+function fullPoints(points) {
+  const p = parseFloat(points);
+  return p > 0 ? p : 1;
+}
+
+// The score buttons offered for a question, derived from its own point value —
+// so a 2-point question offers 0 / 0.5 / 1 / 1.5 / 2 rather than being capped at
+// 1. Half steps up to 2 points, whole steps above that, coarser past 5 so the
+// row never turns into a wall of buttons.
+function scoreOptions(points) {
+  const max = fullPoints(points);
+  const step = max <= 2 ? 0.5 : max <= 5 ? 1 : Math.ceil(max / 5);
+  const out = [];
+  for (let v = 0; v <= max + 1e-9; v += step) out.push(Math.round(v * 10) / 10);
+  if (out[out.length - 1] !== max) out.push(max);
+  return out;
+}
+
+// Free-entry points box — award any number the host wants (halves allowed),
+// beyond the preset buttons. Empty + Set clears the mark.
+function PointsInput({ awarded, onSet, title }) {
+  const [value, setValue] = useState(awarded == null ? '' : String(awarded));
+  // Follow external changes (socket marks, reload) unless the host is mid-edit.
+  const [dirty, setDirty] = useState(false);
+  useEffect(() => {
+    if (!dirty) setValue(awarded == null ? '' : String(awarded));
+  }, [awarded]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const commit = () => {
+    setDirty(false);
+    const raw = value.trim();
+    if (raw === '') { onSet(null); return; }
+    const v = parseFloat(raw);
+    if (Number.isNaN(v)) { setValue(awarded == null ? '' : String(awarded)); return; }
+    onSet(v);
+  };
+
+  return (
+    <>
+      <input
+        type="number"
+        className="manual-input"
+        step="0.5"
+        value={value}
+        placeholder="pts"
+        onChange={(e) => { setDirty(true); setValue(e.target.value); }}
+        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commit(); } }}
+        title={title || 'Type any number of points (blank clears it)'}
+      />
+      <button className="score-btn" onClick={commit} title="Set these points">Set</button>
+    </>
   );
 }
 

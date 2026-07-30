@@ -3,10 +3,14 @@
 // with answers/options, plus the resolved Who/What Am I widget). Used as an
 // offline fallback if the live apps go down.
 
+import { createElement } from 'react';
+import { createRoot } from 'react-dom/client';
+import { QRCodeCanvas } from 'qrcode.react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import PptxGenJS from 'pptxgenjs';
 import { buildSlides } from './buildSlides';
+import { api } from '../services/api';
 
 // ── shared helpers ────────────────────────────────────────────────────────────
 const M = 40;                 // page margin (pt)
@@ -33,6 +37,66 @@ function getWhoami(quiz) {
   return { title: d?.title || 'Who Am I?', answer: d?.answer || '', clues: Array.isArray(d?.clues) ? d.clues : [] };
 }
 const questionsOf = (round) => (round.questions || []).filter(q => q && q.id);
+// An intermission round that should have its pictures printed on the answer sheet
+const printsPictures = (round) => round.style === 'intermission' && !!round.print_pictures;
+
+// ── join link + QR ────────────────────────────────────────────────────────────
+// Same rule as the Control page: QUIZZER_URL from /api/config, else the current
+// hostname on the quizzer port. Deep link = <base>/<quiz code>.
+async function quizzerJoinUrl(quiz) {
+  let base = null;
+  try { base = (await api.get('/config'))?.quizzerUrl || null; } catch { /* offline */ }
+  if (!base) base = `${window.location.protocol}//${window.location.hostname}:3003`;
+  return `${base.replace(/\/+$/, '')}/${quiz.code || ''}`;
+}
+
+// Render a QR to a PNG data URL using the same lib the slideshow uses (no new
+// dependency, works offline). React 18 renders async, so poll for the canvas.
+async function qrDataUrl(text, px = 220) {
+  const host = document.createElement('div');
+  host.style.cssText = 'position:fixed;left:-9999px;top:0;width:0;height:0;overflow:hidden';
+  document.body.appendChild(host);
+  const root = createRoot(host);
+  try {
+    root.render(createElement(QRCodeCanvas, { value: text, size: px, level: 'M', includeMargin: true }));
+    let canvas = null;
+    for (let i = 0; i < 40 && !canvas; i++) {
+      await new Promise(r => requestAnimationFrame(r));
+      canvas = host.querySelector('canvas');
+    }
+    return canvas ? canvas.toDataURL('image/png') : null;
+  } catch {
+    return null;
+  } finally {
+    root.unmount();
+    host.remove();
+  }
+}
+
+// Decode an image and re-encode it as a print-sized JPEG data URL. Normalising
+// through a canvas means webp/gif/transparent PNGs all work (jsPDF only takes
+// PNG/JPEG) and keeps the PDF a sane size. Same-origin /uploads → no tainting.
+async function imageForPdf(url, maxPx = 900) {
+  try {
+    const img = await new Promise((res, rej) => {
+      const im = new Image();
+      im.onload = () => res(im);
+      im.onerror = rej;
+      im.src = url;
+    });
+    const scale = Math.min(1, maxPx / Math.max(img.naturalWidth, img.naturalHeight, 1));
+    const canvas = document.createElement('canvas');
+    canvas.width  = Math.max(1, Math.round(img.naturalWidth  * scale));
+    canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';                       // flatten transparency
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    return { dataUrl: canvas.toDataURL('image/jpeg', 0.82), w: canvas.width, h: canvas.height };
+  } catch {
+    return null;   // missing/broken file — the cell falls back to an empty box
+  }
+}
 const hasOptions  = (q) => {
   const m = q.answer_mode;
   return (m === 'mcq' || m === 'both') && Array.isArray(q.options) && q.options.filter(o => String(o).trim()).length > 0;
@@ -43,11 +107,26 @@ const hasOptions  = (q) => {
 // question off the screen). Multiple-choice questions get lettered tick boxes;
 // everything else gets a write-in box. Every round is sized to fit on exactly
 // one page by dividing the remaining height across the questions.
-export function downloadAnswerSheet(quiz) {
+export async function downloadAnswerSheet(quiz) {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
   const rounds = getRounds(quiz);
   const whoami = getWhoami(quiz);
   if (rounds.length === 0) { doc.text('This quiz has no rounds.', M, M); doc.save(`${safe(quiz.code)}-answer-sheet.pdf`); return; }
+
+  // Join QR — printed on every page so a team can rejoin from whichever sheet is
+  // in front of them. Generated once and reused.
+  const joinUrl = await quizzerJoinUrl(quiz);
+  const qr = await qrDataUrl(joinUrl);
+
+  // Pre-load the pictures for any round that prints its grid (async work can't
+  // happen mid-render). Keyed by round id → [{ questionId, img }].
+  const pics = new Map();
+  for (const round of rounds.filter(printsPictures)) {
+    const loaded = await Promise.all(
+      questionsOf(round).map(async q => ({ q, img: q.media_url ? await imageForPdf(q.media_url) : null }))
+    );
+    pics.set(round.id, loaded);
+  }
 
   rounds.forEach((round, ri) => {
     if (ri > 0) doc.addPage();
@@ -55,8 +134,10 @@ export function downloadAnswerSheet(quiz) {
     doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(0);
     doc.text(String(quiz.name || 'Quiz'), M, y); y += 18;
     doc.setFontSize(12); doc.setFont('helvetica', 'normal');
-    doc.text(`Round ${ri + 1}: ${round.name || ''}`, M, y); y += 6;
+    doc.text(`Round ${ri + 1}: ${round.style === 'intermission' ? (round.display_title || round.name || '') : (round.name || '')}`, M, y); y += 6;
     doc.setDrawColor(150); doc.line(M, y, PAGE_W - M, y); y += 16;
+
+    drawJoinQr(doc, qr, joinUrl);
 
     if (ri === 0) {
       doc.setFontSize(10);
@@ -72,6 +153,13 @@ export function downloadAnswerSheet(quiz) {
 
     const qs = questionsOf(round);
     if (qs.length === 0) return;
+
+    // Picture round printed on paper: numbered thumbnails, each with its own
+    // answer box, sized so the whole grid fits this page.
+    if (printsPictures(round)) {
+      drawPictureGrid(doc, y, pics.get(round.id) || [], round.grid_columns || 4);
+      return;
+    }
 
     // Divide the remaining vertical space evenly so the whole round fits.
     const bottom = PAGE_H - M;
@@ -110,6 +198,62 @@ export function downloadAnswerSheet(quiz) {
     });
   });
   doc.save(`${safe(quiz.code)}-answer-sheet.pdf`);
+}
+
+// Small join QR in the top-right corner of the current page, with the URL under
+// it as a fallback for anyone who can't scan.
+function drawJoinQr(doc, qr, joinUrl) {
+  if (!qr) return;
+  const size = 56;
+  const x = PAGE_W - M - size;
+  doc.addImage(qr, 'PNG', x, M - 14, size, size);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(6); doc.setTextColor(90);
+  doc.text('Scan to join', x + size / 2, M + size - 6, { align: 'center' });
+  const url = String(joinUrl || '').replace(/^https?:\/\//, '');
+  doc.text(doc.splitTextToSize(url, size + 40), x + size / 2, M + size + 2, { align: 'center' });
+  doc.setTextColor(0);
+}
+
+// Numbered picture grid + a write-in box per picture, scaled to fit one page.
+// `cells` is [{ q, img }] — a missing image just leaves an empty framed box.
+function drawPictureGrid(doc, top, cells, cols) {
+  const n = cells.length;
+  if (n === 0) return;
+  const gap = 8, ansH = 16, capH = 11;
+  const rows = Math.ceil(n / cols);
+  const cellW = (CONTENT_W - gap * (cols - 1)) / cols;
+  const cellH = Math.max(48, (PAGE_H - M - top - gap * (rows - 1)) / rows);
+  const imgH = cellH - ansH - capH - 4;
+
+  // Only the picture is printed — the question text stays on the screen.
+  cells.forEach(({ img }, i) => {
+    const r = Math.floor(i / cols), c = i % cols;
+    const x = M + c * (cellW + gap);
+    const y = top + r * (cellH + gap);
+
+    // Picture, letterboxed inside its frame so nothing is distorted
+    doc.setDrawColor(150);
+    doc.rect(x, y, cellW, imgH);
+    if (img) {
+      const s = Math.min(cellW / img.w, imgH / img.h);
+      const w = img.w * s, h = img.h * s;
+      doc.addImage(img.dataUrl, 'JPEG', x + (cellW - w) / 2, y + (imgH - h) / 2, w, h);
+    }
+
+    // Number badge (white box so it stays readable over a dark picture)
+    doc.setFillColor(255, 255, 255);
+    doc.rect(x + 2, y + 2, 15, 12, 'F');
+    doc.setDrawColor(150); doc.rect(x + 2, y + 2, 15, 12);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(0);
+    doc.text(String(i + 1), x + 9.5, y + 10.5, { align: 'center' });
+
+    // Answer box for this picture
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(90);
+    doc.text(`${i + 1}.`, x, y + imgH + capH - 1);
+    doc.setTextColor(0);
+    doc.setDrawColor(120);
+    doc.rect(x + 12, y + imgH + 3, cellW - 12, ansH - 3);
+  });
 }
 
 // ── 2) Questions & answers (marking reference) ────────────────────────────────

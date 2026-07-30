@@ -6,11 +6,13 @@ export default defineConfig({
   server: {
     port: 3002,
     host: '0.0.0.0',
+    // Dev-server only (the container serves the nginx build, which proxies these
+    // itself). `backend` is a Docker-network name and never resolves from the
+    // host, so target localhost — vite dev is only ever run on the host.
     proxy: {
-      '/api': {
-        target: 'http://backend:5000',
-        changeOrigin: true
-      }
+      '/api':      { target: 'http://localhost:5000', changeOrigin: true },
+      '/socket.io':{ target: 'http://localhost:5000', changeOrigin: true, ws: true },
+      '/uploads':  { target: 'http://localhost:5000', changeOrigin: true }
     }
   },
   build: {

@@ -86,9 +86,14 @@ async function getSessionWhoami(req, res) {
 
 // POST /api/whoami/lock
 // Body: { sessionId, teamId, clueIndex, guess }
-// Locks a team's guess. Points come from the server-side clue config (the
+// Submits a team's guess. Points come from the server-side clue config (the
 // client only says which clue was showing). Auto-marks: correct → clue points,
-// wrong → 0. Once a row is locked it cannot be changed here.
+// wrong → 0.
+//
+// A WRONG guess does NOT lock the team out — the row stays unlocked so they can
+// try again on a LATER clue (scoring that clue's lower value if they get it
+// right). Only a CORRECT guess locks the row, and one attempt is allowed per
+// clue so a team can't brute-force the same clue.
 async function lockGuess(req, res) {
   try {
     const { sessionId, teamId, clueIndex, guess } = req.body;
@@ -99,24 +104,36 @@ async function lockGuess(req, res) {
     const cfg = await loadWhoamiForSession(sessionId);
     if (!cfg) return res.status(404).json({ error: 'This quiz has no Who Am I?' });
 
-    // Already locked → return existing, no change (lock is immutable)
+    // Clamp clue index into the configured range
+    const maxIdx = Math.max(0, cfg.clues.length - 1);
+    const idx = Math.min(Math.max(parseInt(clueIndex) || 0, 0), maxIdx);
+
     const existing = await db.query('SELECT * FROM whoami_guesses WHERE team_id = $1', [teamId]);
-    if (existing.rows.length && existing.rows[0].locked) {
-      const row = existing.rows[0];
+    const prev = existing.rows[0];
+
+    // Locked in (they got it right, or the admin marked it) → immutable.
+    if (prev && prev.locked) {
       return res.json({
         teamId: parseInt(teamId),
-        guess_text: row.guess_text,
-        locked_clue_index: row.locked_clue_index,
-        points_possible: parseFloat(row.points_possible),
-        points_awarded: row.points_awarded == null ? null : parseFloat(row.points_awarded),
+        guess_text: prev.guess_text,
+        locked_clue_index: prev.locked_clue_index,
+        points_possible: prev.points_possible == null ? null : parseFloat(prev.points_possible),
+        points_awarded: prev.points_awarded == null ? null : parseFloat(prev.points_awarded),
         locked: true,
         alreadyLocked: true
       });
     }
 
-    // Clamp clue index into the configured range
-    const maxIdx = Math.max(0, cfg.clues.length - 1);
-    const idx = Math.min(Math.max(parseInt(clueIndex) || 0, 0), maxIdx);
+    // One go per clue — they must wait for the next clue to try again.
+    if (prev && prev.locked_clue_index === idx) {
+      return res.status(409).json({
+        error: 'You have already guessed on this clue — try again on the next one.',
+        locked: false,
+        locked_clue_index: prev.locked_clue_index,
+        guess_text: prev.guess_text
+      });
+    }
+
     const pointsPossible = parseFloat(cfg.clues[idx]?.points) || 0;
     const isCorrect = normalizeAnswer(guess) === normalizeAnswer(cfg.answer);
     const pointsAwarded = isCorrect ? pointsPossible : 0;
@@ -124,27 +141,31 @@ async function lockGuess(req, res) {
     const upsert = await db.query(
       `INSERT INTO whoami_guesses
          (team_id, guess_text, locked_clue_index, points_possible, points_awarded, auto_marked, locked, updated_at)
-       VALUES ($1, $2, $3, $4, $5, true, true, NOW())
+       VALUES ($1, $2, $3, $4, $5, true, $6, NOW())
        ON CONFLICT (team_id) DO UPDATE
          SET guess_text = EXCLUDED.guess_text,
              locked_clue_index = EXCLUDED.locked_clue_index,
              points_possible = EXCLUDED.points_possible,
              points_awarded = EXCLUDED.points_awarded,
              auto_marked = true,
-             locked = true,
+             locked = EXCLUDED.locked,
              updated_at = NOW()
        RETURNING *`,
-      [teamId, guess ?? '', idx, pointsPossible, pointsAwarded]
+      [teamId, guess ?? '', idx, pointsPossible, pointsAwarded, isCorrect]
     );
     const row = upsert.rows[0];
 
     const io = getIo();
     if (io) {
-      io.to(`quiz-${sessionId}`).emit('whoami_locked', {
-        teamId: parseInt(teamId),
-        lockedClueIndex: idx,
-        timestamp: new Date().toISOString()
-      });
+      // Only announce a LOCK when the guess actually locked them in — a wrong
+      // guess must leave every surface showing them as still able to answer.
+      if (isCorrect) {
+        io.to(`quiz-${sessionId}`).emit('whoami_locked', {
+          teamId: parseInt(teamId),
+          lockedClueIndex: idx,
+          timestamp: new Date().toISOString()
+        });
+      }
       io.to(`quiz-${sessionId}`).emit('whoami_marked', {
         teamId: parseInt(teamId),
         points: pointsAwarded,
@@ -159,7 +180,8 @@ async function lockGuess(req, res) {
       locked_clue_index: row.locked_clue_index,
       points_possible: parseFloat(row.points_possible),
       points_awarded: parseFloat(row.points_awarded),
-      locked: true
+      correct: isCorrect,
+      locked: isCorrect
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -178,9 +200,12 @@ async function markGuess(req, res) {
 
     const existing = await db.query('SELECT id FROM whoami_guesses WHERE team_id = $1', [teamId]);
     if (existing.rows.length) {
+      // Awarding points also locks the row so a further team guess can't
+      // overwrite the admin's decision. Clearing leaves the lock as it was.
       await db.query(
         `UPDATE whoami_guesses
-         SET points_awarded = $1, auto_marked = false, updated_at = NOW()
+         SET points_awarded = $1::numeric, auto_marked = false,
+             locked = (locked OR $1::numeric IS NOT NULL), updated_at = NOW()
          WHERE team_id = $2`,
         [clear ? null : points, teamId]
       );
