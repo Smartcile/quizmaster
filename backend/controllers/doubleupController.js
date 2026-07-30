@@ -75,4 +75,49 @@ async function chooseRound(req, res) {
   }
 }
 
-module.exports = { getSessionChoices, chooseRound };
+// POST /api/doubleup/admin-set  Body: { sessionId, teamId, roundId|null }
+// Host override from the Control page. Unlike chooseRound this ignores the lock
+// rules — the host is the referee and may need to set (or clear) a team's
+// power-up after a round has closed, e.g. for a paper team or a missed pick.
+// Auth-gated precisely because it bypasses those guards. roundId null clears it.
+async function adminSetRound(req, res) {
+  try {
+    const { sessionId, teamId, roundId } = req.body;
+    if (!sessionId || !teamId) {
+      return res.status(400).json({ error: 'sessionId and teamId are required' });
+    }
+
+    const team = await db.query('SELECT id FROM teams WHERE id = $1 AND quiz_session_id = $2', [teamId, sessionId]);
+    if (!team.rows.length) return res.status(404).json({ error: 'Team not found in this session' });
+
+    if (roundId === null || roundId === undefined || roundId === '') {
+      await db.query('DELETE FROM double_up_choices WHERE team_id = $1', [teamId]);
+    } else {
+      await db.query(
+        `INSERT INTO double_up_choices (team_id, session_id, round_id, updated_at)
+         VALUES ($1, $2, $3, NOW())
+         ON CONFLICT (team_id) DO UPDATE
+           SET session_id = EXCLUDED.session_id,
+               round_id   = EXCLUDED.round_id,
+               updated_at = NOW()`,
+        [teamId, sessionId, roundId]
+      );
+    }
+
+    const io = getIo();
+    if (io) {
+      io.to(`quiz-${sessionId}`).emit('doubleup_chosen', {
+        teamId:  Number(teamId),
+        roundId: roundId === null || roundId === undefined || roundId === '' ? null : Number(roundId),
+        byAdmin: true,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    res.json({ teamId: Number(teamId), roundId: roundId ? Number(roundId) : null });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
+module.exports = { getSessionChoices, chooseRound, adminSetRound };
