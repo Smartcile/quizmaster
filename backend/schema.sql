@@ -247,6 +247,9 @@ ALTER TABLE round_questions ADD COLUMN IF NOT EXISTS question_format_override VA
 ALTER TABLE rounds ADD COLUMN IF NOT EXISTS style VARCHAR(20) DEFAULT 'standard';
 ALTER TABLE rounds ADD COLUMN IF NOT EXISTS display_title TEXT;
 ALTER TABLE rounds ADD COLUMN IF NOT EXISTS grid_columns INT DEFAULT 5;
+-- Print this round's picture grid onto the Quizzer Answer Sheet PDF
+-- (intermission rounds only — teams then answer from the printed pictures).
+ALTER TABLE rounds ADD COLUMN IF NOT EXISTS print_pictures BOOLEAN DEFAULT FALSE;
 
 -- ============================================================
 -- Categories — promoted from a derived list to a managed table

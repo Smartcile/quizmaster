@@ -77,6 +77,10 @@ function App() {
   const [pendingJoin, setPendingJoin] = useState(null); // { code, teamName, teamSize }
   const autoJoinedRef = useRef(false);
   const socket = useWebSocket();
+  // 'online' | 'offline' | 'back' — drives the connection bar. Socket.io queues
+  // outgoing answers while offline and flushes them on reconnect, so this is
+  // reassurance: it stops guests force-reloading when the wifi blips.
+  const [conn, setConn] = useState('online');
 
   // ── Back-button hardening (Android especially) ────────────────────────────
   // Browsers can't disable Back and popup-blockers rule out forcing a new tab,
@@ -103,6 +107,29 @@ function App() {
       window.removeEventListener('popstate', onPop);
     };
   }, [inQuiz]);
+
+  // ── Connection status bar ─────────────────────────────────────────────────
+  useEffect(() => {
+    if (!socket) return;
+    let backTimer;
+    const onDisconnect = () => { clearTimeout(backTimer); setConn('offline'); };
+    const onConnect = () => {
+      setConn(prev => {
+        if (prev === 'online') return prev;      // first connect — say nothing
+        clearTimeout(backTimer);
+        backTimer = setTimeout(() => setConn('online'), 2500);
+        return 'back';
+      });
+    };
+    socket.on('disconnect', onDisconnect);
+    socket.on('connect', onConnect);
+    if (!socket.connected) setConn('offline');
+    return () => {
+      clearTimeout(backTimer);
+      socket.off('disconnect', onDisconnect);
+      socket.off('connect', onConnect);
+    };
+  }, [socket]);
 
   // Confirm before closing/reloading the tab while the quiz is live.
   const guardUnload = phase === 'playing' && !!team;
@@ -417,6 +444,14 @@ function App() {
   return (
     <>
       {renderView()}
+
+      {inQuiz && conn !== 'online' && (
+        <div className={`conn-bar conn-${conn}`}>
+          {conn === 'offline'
+            ? '⚠ Reconnecting… your answers are saved'
+            : '✓ Back online'}
+        </div>
+      )}
 
       {backNote && (
         <div className="back-note">👍 You're still in the quiz</div>
