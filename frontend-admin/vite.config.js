@@ -10,25 +10,29 @@ import { createRequire } from 'module';
 const _dirname = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 
-// ffmpeg.wasm's worker loads the UMD core via importScripts, but the package's
-// `exports` map hides the deep dist/umd path from bundlers. This plugin copies
-// the UMD core + wasm to a stable served path (/ffmpeg/*) — emitted into the
-// production build and served by middleware in dev — so VideoEditor can load
-// them with toBlobURL offline, no CDN.
+// The core must be the ESM build. @ffmpeg/ffmpeg (0.12.15) always spawns its
+// worker with `type: "module"`, where `importScripts()` does not exist — so the
+// worker's only working path is `await import(coreURL)`, and a UMD core imported
+// as a module exposes no default export ("failed to import ffmpeg-core.js").
+// The package's `exports` map hides the deep dist path from bundlers, so copy
+// dist/esm/* to a stable served path (/ffmpeg/*) — emitted into the production
+// build and served by middleware in dev — for offline toBlobURL loading, no CDN.
 function ffmpegCore() {
-  const umdJs = require.resolve('@ffmpeg/core');      // .../dist/umd/ffmpeg-core.js
-  const wasm  = join(dirname(umdJs), 'ffmpeg-core.wasm');
+  // require.resolve honours the "require" condition → dist/umd; step across to esm.
+  const esmDir = join(dirname(require.resolve('@ffmpeg/core')), '..', 'esm');
+  const coreJs = join(esmDir, 'ffmpeg-core.js');
+  const wasm   = join(esmDir, 'ffmpeg-core.wasm');
   return {
     name: 'ffmpeg-core-copy',
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
-        if (req.url === '/ffmpeg/ffmpeg-core.js')   { res.setHeader('Content-Type', 'text/javascript'); createReadStream(umdJs).pipe(res); return; }
+        if (req.url === '/ffmpeg/ffmpeg-core.js')   { res.setHeader('Content-Type', 'text/javascript'); createReadStream(coreJs).pipe(res); return; }
         if (req.url === '/ffmpeg/ffmpeg-core.wasm')  { res.setHeader('Content-Type', 'application/wasm'); createReadStream(wasm).pipe(res); return; }
         next();
       });
     },
     generateBundle() {
-      this.emitFile({ type: 'asset', fileName: 'ffmpeg/ffmpeg-core.js',   source: readFileSync(umdJs) });
+      this.emitFile({ type: 'asset', fileName: 'ffmpeg/ffmpeg-core.js',   source: readFileSync(coreJs) });
       this.emitFile({ type: 'asset', fileName: 'ffmpeg/ffmpeg-core.wasm', source: readFileSync(wasm) });
     }
   };
