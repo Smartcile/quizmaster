@@ -1629,6 +1629,43 @@ select {
   color: var(--text-muted);
 }
 
+/* Editable team row: size + power-up round, on the Control page */
+.team-edit-row { gap: 8px; }
+.team-size-edit,
+.team-powerup-edit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.team-size-edit > span,
+.team-powerup-edit > span {
+  flex: 0 0 auto;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.team-size-input {
+  width: 64px;
+  padding: 3px 6px;
+  font-size: 0.85rem;
+}
+.team-powerup-edit select {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 6px;
+  font-size: 0.85rem;
+}
+.team-edit-row .lobby-team-remove { align-self: flex-end; margin-top: 2px; }
+.teams-collapse {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.9rem;
+  padding: 0 4px 0 0;
+}
+
 .slide-navigation {
   display: flex;
   gap: 12px;

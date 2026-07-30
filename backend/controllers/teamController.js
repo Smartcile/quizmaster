@@ -365,6 +365,56 @@ async function createTeamAdmin(req, res) {
   }
 }
 
+// ── Admin: edit a team (size / name) from the Control page ────────────────────
+// PUT /api/teams/:teamId   Body: { size?, name? }
+// Size drives handicap scoring, which is computed at scoreboard-aggregation time
+// (GREATEST(-4, LEAST(5, 6 - size))), so a correction here re-scores instantly —
+// no stored points are touched. Broadcasts team_updated so every live scoreboard
+// re-fetches.
+async function updateTeam(req, res) {
+  try {
+    const { teamId } = req.params;
+    const { size, name } = req.body;
+
+    const cur = await db.query('SELECT id, name, size, quiz_session_id FROM teams WHERE id = $1', [teamId]);
+    if (!cur.rows.length) return res.status(404).json({ error: 'Team not found' });
+
+    let nextSize = cur.rows[0].size;
+    if (size !== undefined) {
+      if (size === null || size === '') {
+        nextSize = null;
+      } else {
+        const n = parseInt(size, 10);
+        if (Number.isNaN(n) || n < 1) return res.status(400).json({ error: 'size must be a positive whole number' });
+        nextSize = n;
+      }
+    }
+
+    let nextName = cur.rows[0].name;
+    if (name !== undefined && String(name).trim()) nextName = String(name).trim();
+
+    const upd = await db.query(
+      'UPDATE teams SET name = $1, size = $2 WHERE id = $3 RETURNING *',
+      [nextName, nextSize, teamId]
+    );
+    const team = upd.rows[0];
+
+    const io = getIo();
+    if (io) {
+      io.to(`quiz-${team.quiz_session_id}`).emit('team_updated', {
+        teamId:   team.id,
+        teamName: team.name,
+        teamSize: team.size,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    res.json(team);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
 // ── Admin: remove a team and all its data ─────────────────────────────────────
 // DELETE /api/teams/:teamId
 // answers / scores / brownie_points / whoami_guesses / double_up_choices all
@@ -417,5 +467,6 @@ module.exports = {
   getSessionScoreboard,
   getTeamByDevice,
   createTeamAdmin,
+  updateTeam,
   deleteTeam
 };

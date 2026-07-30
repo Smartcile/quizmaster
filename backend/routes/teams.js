@@ -9,6 +9,7 @@ const {
   getSessionScoreboard,
   getTeamByDevice,
   createTeamAdmin,
+  updateTeam,
   deleteTeam
 } = require('../controllers/teamController');
 
@@ -20,6 +21,7 @@ router.get('/session/:sessionId/device/:deviceId', getTeamByDevice);
 router.get('/:teamId/scores', getTeamScores);
 router.get('/:teamId/answers', getTeamAnswers);
 router.get('/:teamId', getTeamById);
+router.put('/:teamId', updateTeam);
 router.delete('/:teamId', deleteTeam);
 
 module.exports = router;

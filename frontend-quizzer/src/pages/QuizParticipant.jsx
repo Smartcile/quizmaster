@@ -172,7 +172,11 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
       setWhoamiLock(prev => ({ ...(prev || {}), pointsAwarded: pts }));
     };
     const onDoubleUp = (data) => {
-      if (Number(data.teamId) === Number(team?.id)) setDoubleChoice(Number(data.roundId));
+      // roundId is null when the host clears the pick from Control — Number(null)
+      // would be 0 and quietly look like a real round id.
+      if (Number(data.teamId) === Number(team?.id)) {
+        setDoubleChoice(data.roundId == null ? null : Number(data.roundId));
+      }
     };
     socket.on('session_state',   onSessionState);
     socket.on('answer_locked',   onLocked);

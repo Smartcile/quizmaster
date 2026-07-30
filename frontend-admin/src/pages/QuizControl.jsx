@@ -23,10 +23,18 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd, isTest = fa
   const [showPreviews, setShowPreviews] = useState(false); // live-quiz embedded previews
   const [sessionCode, setSessionCode] = useState(null); // per-session join code
   const [playedSlides, setPlayedSlides] = useState(() => new Set()); // media slides already triggered
+  const [powerups, setPowerups] = useState({}); // teamId → chosen ×2 round id
   const mediaNonceRef = useRef(0);
   const socket = useWebSocket();
   const slides = useMemo(() => buildSlides(quiz), [quiz]);
   const teamsCount = teams.length;
+  // Rounds a power-up (×2) can be applied to — same rule the quizzer picker uses:
+  // every scoring round except intermission (picture) rounds.
+  const powerupRounds = useMemo(() => (
+    (quiz?.items || quiz?.rounds || [])
+      .filter(i => (i?.kind === 'round' || i?.questions) && i.id != null && i.style !== 'intermission')
+      .map(r => ({ id: Number(r.id), name: r.name }))
+  ), [quiz]);
 
   // Canonical quizzer base URL: SLIDESHOW/QUIZZER_URL from /api/config, else
   // fall back to the current hostname on the quizzer port. Trailing slash stripped.
@@ -64,6 +72,9 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd, isTest = fa
     }).catch(() => {});
 
     api.get(`/teams/session/${sessionId}`).then(setTeams).catch(() => {});
+    api.get(`/doubleup/session/${sessionId}`)
+      .then(r => setPowerups(Object.fromEntries((r?.choices || []).map(c => [c.team_id, Number(c.round_id)]))))
+      .catch(() => {});
   }, [sessionId]);
 
   // ── WebSocket subscriptions + auto-rejoin ────────────────────────────────
@@ -102,6 +113,12 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd, isTest = fa
       api.get(`/teams/session/${sessionId}`).then(setTeams).catch(() => {});
     };
 
+    // A team picked (or was given) its ×2 round on another surface
+    const onPowerup = (data) => {
+      if (data?.teamId == null) return;
+      setPowerups(prev => ({ ...prev, [data.teamId]: data.roundId == null ? null : Number(data.roundId) }));
+    };
+
     const onLocked = (data) => {
       setLockedRounds(prev => new Set([...prev, data.roundId]));
     };
@@ -119,6 +136,8 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd, isTest = fa
     socket.on('session_status_changed', onStatus);
     socket.on('team_joined',            onTeamJoin);
     socket.on('team_removed',           onTeamJoin);
+    socket.on('team_updated',           onTeamJoin);
+    socket.on('doubleup_chosen',        onPowerup);
     socket.on('answer_locked',          onLocked);
     socket.on('answer_unlocked',        onUnlocked);
     socket.on('scoreboard_visibility_changed', onScoreboardVis);
@@ -133,6 +152,8 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd, isTest = fa
       socket.off('session_status_changed', onStatus);
       socket.off('team_joined',            onTeamJoin);
       socket.off('team_removed',           onTeamJoin);
+      socket.off('team_updated',           onTeamJoin);
+      socket.off('doubleup_chosen',        onPowerup);
       socket.off('answer_locked',          onLocked);
       socket.off('answer_unlocked',        onUnlocked);
       socket.off('scoreboard_visibility_changed', onScoreboardVis);
@@ -140,6 +161,11 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd, isTest = fa
   }, [sessionId, socket]);
 
   const reloadTeams = () => api.get(`/teams/session/${sessionId}`).then(setTeams).catch(() => {});
+
+  // teamId → chosen ×2 round id (the per-team power-up)
+  const loadPowerups = () => api.get(`/doubleup/session/${sessionId}`)
+    .then(r => setPowerups(Object.fromEntries((r?.choices || []).map(c => [c.team_id, Number(c.round_id)]))))
+    .catch(() => {});
 
   // ── Admin team management (works without any quizzer device) ─────────────
   const addTeam = async (name, size) => {
@@ -154,6 +180,39 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd, isTest = fa
       reloadTeams();
     } catch (err) {
       alert('Failed to remove team: ' + err.message);
+    }
+  };
+
+  // Team size drives handicap scoring, which is recomputed from `size` every
+  // time a scoreboard is built — so a correction re-scores instantly.
+  const setTeamSize = async (team, size) => {
+    try {
+      await api.put(`/teams/${team.id}`, { size });
+      reloadTeams();
+    } catch (err) {
+      alert('Failed to update team size: ' + err.message);
+      reloadTeams();
+    }
+  };
+
+  // Host override of a team's power-up (Double Up) round. Uses the admin route,
+  // which ignores the lock rules that bind a team's own pick — so warn when the
+  // round has already been marked, since it changes a settled score.
+  const setTeamPowerup = async (team, roundId) => {
+    const target = (quiz?.items || quiz?.rounds || []).find(r => Number(r.id) === Number(roundId));
+    if (roundId && lockedRounds.has(Number(roundId))) {
+      const ok = confirm(
+        `"${target?.name || 'That round'}" is already locked — its answers are marked.\n\n` +
+        `Setting it as ${team.name}'s ×2 round will change their score for a round that has already been played. Continue?`
+      );
+      if (!ok) return;
+    }
+    try {
+      await api.post('/doubleup/admin-set', { sessionId, teamId: team.id, roundId: roundId || null });
+      setPowerups(prev => ({ ...prev, [team.id]: roundId ? Number(roundId) : null }));
+    } catch (err) {
+      alert('Failed to set the power-up round: ' + err.message);
+      loadPowerups();
     }
   };
 
@@ -447,6 +506,22 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd, isTest = fa
         </div>
       )}
 
+      {/* Teams stay editable mid-quiz: sizes get mistyped at the door and a team
+          can need its power-up set by hand (paper team, missed the pick). */}
+      {sessionStatus === 'active' && (
+        <TeamsPanel
+          teams={teams}
+          rounds={powerupRounds}
+          powerups={powerups}
+          lockedRounds={lockedRounds}
+          onSize={setTeamSize}
+          onPowerup={setTeamPowerup}
+          onRemove={removeTeam}
+          onAdd={addTeam}
+          collapsible
+        />
+      )}
+
       {sessionStatus === 'active' && (
         <>
           <div className="slide-navigation">
@@ -516,46 +591,16 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd, isTest = fa
             (code <strong>{joinCode}</strong> is pre-filled). Click <strong>Begin Quiz</strong> when ready.
           </p>
 
-          <div className="lobby-teams-panel">
-            <div className="lobby-teams-header">
-              <h4>Joined teams</h4>
-              <span className="lobby-teams-count">
-                {teamsCount} team{teamsCount !== 1 ? 's' : ''}
-              </span>
-            </div>
-
-            {teamsCount === 0 ? (
-              <p className="lobby-teams-empty">No teams have joined yet — waiting for first join…</p>
-            ) : (
-              <ul className="lobby-teams-list">
-                {teams.map((t) => (
-                  <li key={t.id} className="lobby-team-item">
-                    <span className="lobby-team-name">{t.name}</span>
-                    {t.size != null && (
-                      <span className="lobby-team-size">
-                        {t.size} player{t.size !== 1 ? 's' : ''}
-                      </span>
-                    )}
-                    {t.created_at && (
-                      <span className="lobby-team-joined">
-                        joined {new Date(t.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-danger lobby-team-remove"
-                      onClick={() => removeTeam(t)}
-                      title="Remove this team (deletes their answers and scores)"
-                    >
-                      ✕
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            <AddTeamForm onAdd={addTeam} />
-          </div>
+          <TeamsPanel
+            teams={teams}
+            rounds={powerupRounds}
+            powerups={powerups}
+            lockedRounds={lockedRounds}
+            onSize={setTeamSize}
+            onPowerup={setTeamPowerup}
+            onRemove={removeTeam}
+            onAdd={addTeam}
+          />
         </div>
       )}
         </div>{/* /test-controls-col */}
@@ -579,6 +624,109 @@ export default function QuizControl({ sessionId, quiz, onSessionEnd, isTest = fa
         <DownloadFilesModal quiz={quiz} onClose={() => setFilesOpen(false)} />
       )}
     </div>
+  );
+}
+
+// Teams on the Control page: name, editable size (drives handicap scoring) and
+// the team's power-up (×2) round. Shown in the lobby and during a live quiz —
+// `collapsible` folds it away mid-show so it doesn't crowd the slide controls.
+function TeamsPanel({ teams, rounds, powerups, lockedRounds, onSize, onPowerup, onRemove, onAdd, collapsible = false }) {
+  const [open, setOpen] = useState(!collapsible);
+
+  return (
+    <div className="lobby-teams-panel">
+      <div className="lobby-teams-header">
+        <h4>
+          {collapsible && (
+            <button type="button" className="teams-collapse" onClick={() => setOpen(o => !o)} title={open ? 'Hide teams' : 'Show teams'}>
+              {open ? '▾' : '▸'}
+            </button>
+          )}
+          Teams
+        </h4>
+        <span className="lobby-teams-count">{teams.length} team{teams.length !== 1 ? 's' : ''}</span>
+      </div>
+
+      {open && (
+        <>
+          {teams.length === 0 ? (
+            <p className="lobby-teams-empty">No teams have joined yet — waiting for first join…</p>
+          ) : (
+            <ul className="lobby-teams-list">
+              {teams.map((t) => (
+                <li key={t.id} className="lobby-team-item team-edit-row">
+                  <span className="lobby-team-name">{t.name}</span>
+
+                  <label className="team-size-edit" title="Team size — sets their handicap starting points">
+                    <span>Size</span>
+                    <TeamSizeInput team={t} onSave={onSize} />
+                  </label>
+
+                  <label className="team-powerup-edit" title="This team's ×2 power-up round">
+                    <span>×2 round</span>
+                    <select
+                      value={powerups[t.id] ?? ''}
+                      onChange={(e) => onPowerup(t, e.target.value ? Number(e.target.value) : null)}
+                    >
+                      <option value="">— none —</option>
+                      {rounds.map(r => (
+                        <option key={r.id} value={r.id}>
+                          {r.name}{lockedRounds.has(r.id) ? ' (locked)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-danger lobby-team-remove"
+                    onClick={() => onRemove(t)}
+                    title="Remove this team (deletes their answers and scores)"
+                  >
+                    ✕
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <AddTeamForm onAdd={onAdd} />
+        </>
+      )}
+    </div>
+  );
+}
+
+// Size box that only commits on blur/Enter, so typing "12" isn't saved as "1"
+// on the way past. Follows the server value when it changes elsewhere.
+function TeamSizeInput({ team, onSave }) {
+  const [value, setValue] = useState(team.size == null ? '' : String(team.size));
+  const [dirty, setDirty] = useState(false);
+
+  useEffect(() => {
+    if (!dirty) setValue(team.size == null ? '' : String(team.size));
+  }, [team.size]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const commit = () => {
+    setDirty(false);
+    const raw = value.trim();
+    if (raw === (team.size == null ? '' : String(team.size))) return;   // unchanged
+    if (raw === '') { onSave(team, null); return; }
+    const n = parseInt(raw, 10);
+    if (Number.isNaN(n) || n < 1) { setValue(team.size == null ? '' : String(team.size)); return; }
+    onSave(team, n);
+  };
+
+  return (
+    <input
+      type="number"
+      min="1"
+      className="team-size-input"
+      value={value}
+      onChange={(e) => { setDirty(true); setValue(e.target.value); }}
+      onBlur={commit}
+      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } }}
+    />
   );
 }
 
