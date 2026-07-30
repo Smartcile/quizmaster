@@ -24,6 +24,19 @@ export default function RoundBuilder() {
 
   useEffect(() => { loadAll(); }, []);
 
+  // questionId → the rounds that already contain it, so the picker can warn
+  // before the same question is used twice across two rounds.
+  const questionUsage = useMemo(() => {
+    const map = new Map();
+    rounds.forEach(r => (r.questions || []).forEach(q => {
+      if (!q || !q.id) return;
+      const list = map.get(q.id) || [];
+      if (!list.some(x => x.id === r.id)) list.push({ id: r.id, name: r.name });
+      map.set(q.id, list);
+    }));
+    return map;
+  }, [rounds]);
+
   const loadAll = async () => {
     try {
       const [rs, qs, cats] = await Promise.all([
@@ -164,8 +177,10 @@ export default function RoundBuilder() {
       {modalOpen && editInit && (
         <RoundEditorModal
           editing={!!editingId}
+          editingId={editingId}
           init={editInit}
           questions={questions}
+          questionUsage={questionUsage}
           categories={categories}
           onSave={handleSave}
           onClose={closeModal}
@@ -176,7 +191,7 @@ export default function RoundBuilder() {
 }
 
 // ── Round create/edit modal (form + drag-drop question picker) ────────────────
-function RoundEditorModal({ editing, init, questions, categories, onSave, onClose }) {
+function RoundEditorModal({ editing, editingId, init, questions, questionUsage, categories, onSave, onClose }) {
   const [form, setForm] = useState(init.form);
   const [selectedQuestions, setSelectedQuestions] = useState(init.selectedQuestions);
   const [formatOverrides, setFormatOverrides] = useState(init.formatOverrides);
@@ -216,6 +231,9 @@ function RoundEditorModal({ editing, init, questions, categories, onSave, onClos
     const byId = new Map(questions.map(q => [q.id, q]));
     return selectedQuestions.map(id => byId.get(id)).filter(Boolean);
   }, [selectedQuestions, questions]);
+
+  // Rounds (other than this one) that already use the question.
+  const usedIn = (q) => (questionUsage.get(q.id) || []).filter(r => r.id !== editingId);
 
   const toggleFormat = (questionId, value) => {
     setFormatOverrides(prev => ({ ...prev, [questionId]: value }));
@@ -399,6 +417,7 @@ function RoundEditorModal({ editing, init, questions, categories, onSave, onClos
                                 <div className="dnd-item-text">{q.text}</div>
                                 <div className="dnd-item-meta">
                                   <span className={`qm-tag qm-tag-${q.type}`}>{q.type}</span>
+                                  <UsedBadge rounds={usedIn(q)} />
                                   <ModeBadge q={q} />
                                   {isBoth(q) && <span className="rq-both-label" title="Answer Mode: Both">🔀 T&M</span>}
                                   {isAudioBoth(q) && <span className="rq-both-label" title="Audio form: Both">🎵 NTS/FTL</span>}
@@ -441,6 +460,7 @@ function RoundEditorModal({ editing, init, questions, categories, onSave, onClos
                                 <span className="dnd-order">{i + 1}</span>
                                 <div className="dnd-item-text">
                                   {q.text}
+                                  <UsedBadge rounds={usedIn(q)} />
                                   {isBoth(q) && <span className="rq-both-label" title="Answer Mode: Both — choose how it's shown for this round">🔀 T&M</span>}
                                   {isAudioBoth(q) && <span className="rq-both-label" title="Audio form: Both — choose Name the Song or Finish the Lyrics for this round">🎵 NTS/FTL</span>}
                                 </div>
@@ -479,6 +499,17 @@ function RoundEditorModal({ editing, init, questions, categories, onSave, onClos
         </form>
       </div>
     </div>
+  );
+}
+
+// Warns that a question is already in another round, so it isn't used twice.
+function UsedBadge({ rounds }) {
+  if (!rounds || rounds.length === 0) return null;
+  const names = rounds.map(r => r.name).join(', ');
+  return (
+    <span className="rq-used-label" title={`Already used in: ${names}`}>
+      ⚠ In {rounds.length === 1 ? rounds[0].name : `${rounds.length} rounds`}
+    </span>
   );
 }
 

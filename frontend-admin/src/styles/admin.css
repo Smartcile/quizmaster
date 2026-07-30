@@ -4666,6 +4666,16 @@ input[type="checkbox"] {
 }
 .rq-toggle-btn.active-both { border-color: var(--neon-yellow); color: var(--neon-yellow); }
 
+/* "already in a round" label — round picker + question bank */
+.rq-used-label {
+  display: inline-block;
+  margin-left: 8px; font-size: 0.6rem; font-weight: 800; letter-spacing: 0.05em;
+  color: var(--neon-orange, #ff9d00); background: rgba(255, 157, 0, 0.14);
+  border: 1px solid rgba(255, 157, 0, 0.5);
+  border-radius: 4px; padding: 1px 5px; vertical-align: middle;
+  max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
 /* =====================================================
    DOWNLOAD QUIZ FILES modal
    ===================================================== */

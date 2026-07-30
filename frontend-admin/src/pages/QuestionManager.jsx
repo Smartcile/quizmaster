@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { api } from '../services/api';
 import MediaPicker from '../components/MediaPicker';
 import AudioEditor from '../components/AudioEditor';
+import VideoEditor from '../components/VideoEditor';
 
 // Map an uploaded file's MIME type to a question media type.
 const mimeToType = (mime) =>
@@ -279,7 +280,9 @@ export default function QuestionManager() {
   const [catManagerOpen, setCatManagerOpen] = useState(false);
   const [mediaPickerOpen, setMediaPickerOpen] = useState(false);
   const [audioEditorOpen, setAudioEditorOpen] = useState(false);
+  const [videoEditorOpen, setVideoEditorOpen] = useState(false);
   const [mediaByUrl, setMediaByUrl] = useState({}); // url → full media record (lyrics, ftl…)
+  const [rounds, setRounds] = useState([]); // for the "already in a round" label
   const [managedCategories, setManagedCategories] = useState([]);
   // Duplicate-aware import state
   const [importDupes, setImportDupes]   = useState([]); // [{ question, existingId, existingText }]
@@ -293,21 +296,35 @@ export default function QuestionManager() {
 
   const loadAll = async () => {
     try {
-      const [qs, cats, managed, media] = await Promise.all([
+      const [qs, cats, managed, media, rs] = await Promise.all([
         api.get('/questions'),
         api.get('/questions/categories'),
         api.get('/categories').catch(() => []),
-        api.get('/media').catch(() => [])
+        api.get('/media').catch(() => []),
+        api.get('/rounds').catch(() => [])
       ]);
       setQuestions(qs);
       setCategories(cats);
       setManagedCategories(managed);
       setMediaByUrl(Object.fromEntries((media || []).map(f => [f.url, f])));
+      setRounds(rs || []);
       setError(null);
     } catch (err) {
       setError(err.message);
     }
   };
+
+  // questionId → the rounds already using it, so the list can flag reuse.
+  const questionUsage = useMemo(() => {
+    const map = new Map();
+    rounds.forEach(r => (r.questions || []).forEach(q => {
+      if (!q || !q.id) return;
+      const list = map.get(q.id) || [];
+      if (!list.some(x => x.id === r.id)) list.push({ id: r.id, name: r.name });
+      map.set(q.id, list);
+    }));
+    return map;
+  }, [rounds]);
 
   // Apply a picked/edited media file to the form, importing a remembered
   // Finish-the-Lyrics answer from the track when relevant (without clobbering
@@ -348,10 +365,22 @@ export default function QuestionManager() {
     });
   };
 
-  // Build a file object for the audio editor from the current selection.
+  // The video editor saved a trimmed clip (new file, or the original overwritten
+  // in place — same url). Point the question at whatever came back.
+  const handleVideoEdited = (data) => {
+    setVideoEditorOpen(false);
+    if (!data?.url) return;
+    setMediaByUrl(prev => ({ ...prev, [data.url]: data }));
+    setForm(prev => ({ ...prev, media_url: data.url, type: 'video' }));
+  };
+
+  // Build a file object for the audio/video editor from the current selection.
   const currentMediaFile = () =>
-    mediaByUrl[form.media_url] ||
-    { url: form.media_url, mime_type: 'audio/mpeg', original_name: (form.media_url || '').split('/').pop() };
+    mediaByUrl[form.media_url] || {
+      url: form.media_url,
+      mime_type: form.type === 'video' ? 'video/mp4' : 'audio/mpeg',
+      original_name: (form.media_url || '').split('/').pop()
+    };
 
   const reloadCategories = async () => {
     try {
@@ -719,6 +748,7 @@ export default function QuestionManager() {
                 <div className="qm-question-text">{q.text}</div>
                 <div className="qm-question-meta">
                   {q.approved && <span className="qm-approved" title="Approved">✓</span>}
+                  <UsedInRoundsBadge rounds={questionUsage.get(q.id)} />
                   <SourceBadge value={q.source || 'local'} />
                   {q.is_whoami ? (
                     <>
@@ -961,6 +991,11 @@ export default function QuestionManager() {
                             ✂ Cut down / lyrics
                           </button>
                         )}
+                        {form.type === 'video' && (
+                          <button type="button" className="btn btn-secondary btn-sm" onClick={() => setVideoEditorOpen(true)} title="Trim the clip — save as a new file or overwrite the original">
+                            ✂ Cut down / trim
+                          </button>
+                        )}
                         <button type="button" className="btn btn-danger btn-sm" onClick={() => setForm({ ...form, media_url: '' })}>
                           ✕
                         </button>
@@ -1089,6 +1124,14 @@ export default function QuestionManager() {
           defaultMarkAnswer={form.audio_form === 'finish_the_lyrics'}
           onClose={() => setAudioEditorOpen(false)}
           onSaved={handleAudioEdited}
+        />
+      )}
+
+      {videoEditorOpen && (
+        <VideoEditor
+          file={currentMediaFile()}
+          onClose={() => setVideoEditorOpen(false)}
+          onSaved={handleVideoEdited}
         />
       )}
 
@@ -1305,6 +1348,18 @@ function CategoriesModal({ categories, onClose, onChanged, onError }) {
         </div>
       </div>
     </div>
+  );
+}
+
+// Flags a question that is already in one or more rounds (same label as the
+// Round Builder picker) so it isn't unknowingly reused.
+function UsedInRoundsBadge({ rounds }) {
+  if (!rounds || rounds.length === 0) return null;
+  const names = rounds.map(r => r.name).join(', ');
+  return (
+    <span className="rq-used-label" title={`Already used in: ${names}`}>
+      ⚠ In {rounds.length === 1 ? rounds[0].name : `${rounds.length} rounds`}
+    </span>
   );
 }
 
