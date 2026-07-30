@@ -70,6 +70,14 @@ const AUDIO_PROMPTS = {
 };
 const isAutoPrompt = (t) => Object.values(AUDIO_PROMPTS).includes(String(t || '').trim());
 
+// Letter (A/B/C…) of the option currently set as the answer, for the read-out
+// under the MCQ editor. Blank when the answer isn't one of the options.
+function mcqLetterFor(form) {
+  const opts = (form.options || []).filter(o => String(o).trim());
+  const i = opts.findIndex(o => normText(o) === normText(form.answer));
+  return i === -1 ? '?' : String.fromCharCode(65 + i);
+}
+
 // Apply an audio form to the form state, autofilling the prompt + answer/stop
 // from the linked track (f) where empty. NTS answer = "Artist — Song" (metadata);
 // FTL/Both answer = the track's remembered lyrics answer.
@@ -934,39 +942,79 @@ export default function QuestionManager() {
                         + Add Option
                       </button>
                     </div>
-                    {form.options.map((opt, i) => (
-                      <div key={i} className="mcq-option-row">
-                        <span className="mcq-letter">{String.fromCharCode(65 + i)}</span>
-                        <input
-                          type="text"
-                          placeholder={`Option ${String.fromCharCode(65 + i)}`}
-                          value={opt}
-                          onChange={(e) => updateOption(i, e.target.value)}
-                        />
-                        <button
-                          type="button"
-                          className="mcq-remove-btn"
-                          onClick={() => removeOption(i)}
-                          disabled={form.options.length <= 2}
-                          title={form.options.length <= 2 ? 'Need at least 2 options' : 'Remove option'}
-                        >
-                          ×
-                        </button>
-                      </div>
-                    ))}
+                    <p className="help-text" style={{ marginTop: 0 }}>
+                      Tick the correct option — no need to retype it below.
+                    </p>
+                    {form.options.map((opt, i) => {
+                      const isCorrect = !!opt.trim() && normText(opt) === normText(form.answer);
+                      return (
+                        <div key={i} className={`mcq-option-row ${isCorrect ? 'is-correct' : ''}`}>
+                          {/* Ticking copies the option text into `answer`, which is
+                              still the single source of truth for marking. */}
+                          <input
+                            type="radio"
+                            className="mcq-correct-radio"
+                            name="mcq-correct"
+                            checked={isCorrect}
+                            disabled={!opt.trim()}
+                            onChange={() => setForm(prev => ({ ...prev, answer: opt }))}
+                            title={opt.trim() ? `Mark ${String.fromCharCode(65 + i)} as the correct answer` : 'Type the option first'}
+                          />
+                          <span className="mcq-letter">{String.fromCharCode(65 + i)}</span>
+                          <input
+                            type="text"
+                            placeholder={`Option ${String.fromCharCode(65 + i)}`}
+                            value={opt}
+                            onChange={(e) => updateOption(i, e.target.value)}
+                          />
+                          <button
+                            type="button"
+                            className="mcq-remove-btn"
+                            onClick={() => removeOption(i)}
+                            disabled={form.options.length <= 2}
+                            title={form.options.length <= 2 ? 'Need at least 2 options' : 'Remove option'}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
 
-                <label className="form-label">
-                  {showMcq ? 'Correct answer (exact text of the correct option)' : 'Answer'}
-                  <input
-                    type="text"
-                    placeholder="Paris"
-                    value={form.answer}
-                    onChange={(e) => setForm({ ...form, answer: e.target.value })}
-                    required
-                  />
-                </label>
+                {showMcq ? (
+                  <div className="form-label">
+                    Correct answer
+                    <div className={`mcq-answer-readout ${form.answer.trim() ? '' : 'is-empty'}`}>
+                      {form.answer.trim()
+                        ? <>
+                            <span className="mcq-letter-tag">{mcqLetterFor(form)}</span>
+                            {form.answer}
+                          </>
+                        : 'Tick the correct option above'}
+                    </div>
+                    {/* Keeps free-text answers possible for "both" questions, where
+                        teams may type instead of picking. */}
+                    <input
+                      type="text"
+                      placeholder="…or type it by hand"
+                      value={form.answer}
+                      onChange={(e) => setForm({ ...form, answer: e.target.value })}
+                      required
+                    />
+                  </div>
+                ) : (
+                  <label className="form-label">
+                    Answer
+                    <input
+                      type="text"
+                      placeholder="Paris"
+                      value={form.answer}
+                      onChange={(e) => setForm({ ...form, answer: e.target.value })}
+                      required
+                    />
+                  </label>
+                )}
 
                 {['image', 'video', 'audio'].includes(form.type) && (
                   <div className="form-label">

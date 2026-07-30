@@ -74,14 +74,28 @@ export default function Dashboard({ onResume, onQuizStart, activeQuizId }) {
     }
   };
 
-  const startQuiz = async (quizId, isTest = false) => {
+  const startQuiz = async (quizId, isTest = false, force = false) => {
     try {
       const [session, quiz] = await Promise.all([
-        api.post(`/quizzes/${quizId}/start`, { isTest }),
+        api.post(`/quizzes/${quizId}/start`, { isTest, force }),
         api.get(`/quizzes/${quizId}`)
       ]);
       onQuizStart(session.id, quiz, isTest);
     } catch (err) {
+      // The server refuses to start over a live session (409). Starting again
+      // would end it and empty the lobby — teams, sizes and ×2 picks all gone —
+      // so make the host say so out loud before we force it.
+      if (/already running/i.test(err.message)) {
+        const ok = confirm(
+          `This quiz already has a live session.\n\n` +
+          `Starting again ENDS it and opens an empty one: every team has to rejoin, ` +
+          `and their team sizes and ×2 power-up picks are cleared.\n\n` +
+          `Use "Resume Control" to carry on with the current session instead.\n\n` +
+          `Start a new session anyway?`
+        );
+        if (!ok) { refresh(); return; }
+        return startQuiz(quizId, isTest, true);
+      }
       setError(`Failed to ${isTest ? 'start test' : 'start'}: ` + err.message);
     }
   };

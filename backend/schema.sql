@@ -251,6 +251,17 @@ ALTER TABLE rounds ADD COLUMN IF NOT EXISTS grid_columns INT DEFAULT 5;
 -- (intermission rounds only — teams then answer from the printed pictures).
 ALTER TABLE rounds ADD COLUMN IF NOT EXISTS print_pictures BOOLEAN DEFAULT FALSE;
 
+-- Paper-only teams: no device, marked by hand from their sheet. Flagged from the
+-- Mark Answers / Control team lists so they can be grouped together for marking.
+ALTER TABLE teams ADD COLUMN IF NOT EXISTS is_paper BOOLEAN DEFAULT FALSE;
+
+-- Answer-change review. `scores.marked_answer` records the exact answer text a
+-- score was awarded for, so the marking page can flag "they changed it after you
+-- marked it" (manual marks) instead of silently keeping a stale score. Comparing
+-- text rather than timestamps makes it exact and clock-independent.
+ALTER TABLE scores  ADD COLUMN IF NOT EXISTS marked_answer TEXT;
+ALTER TABLE answers ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
+
 -- ============================================================
 -- Categories — promoted from a derived list to a managed table
 -- ============================================================

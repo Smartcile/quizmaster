@@ -14,6 +14,7 @@ export default function AnswerMarking({ sessionId, quiz }) {
   const [lockedRounds,    setLockedRounds]    = useState(new Set());
   // Manual expand/collapse overrides — a user click always wins over auto state.
   const [collapseOverride, setCollapseOverride] = useState({});
+  const [powerups, setPowerups] = useState({});   // teamId → chosen ×2 round id
   const socket = useWebSocket();
 
   const slides = useMemo(() => buildSlides(quiz), [quiz]);
@@ -32,12 +33,14 @@ export default function AnswerMarking({ sessionId, quiz }) {
     if (!sessionId) return;
     setLoading(true);
     try {
-      const [result, wa] = await Promise.all([
+      const [result, wa, dup] = await Promise.all([
         api.get(`/answers/session/${sessionId}`),
-        api.get(`/whoami/session/${sessionId}`).catch(() => ({ whoami: null, guesses: [] }))
+        api.get(`/whoami/session/${sessionId}`).catch(() => ({ whoami: null, guesses: [] })),
+        api.get(`/doubleup/session/${sessionId}`).catch(() => ({ choices: [] }))
       ]);
       setData(result);
       setWhoami(wa);
+      setPowerups(Object.fromEntries((dup?.choices || []).map(c => [c.team_id, Number(c.round_id)])));
     } catch (err) {
       console.error('Failed to load marking data:', err);
     } finally {
@@ -162,6 +165,8 @@ export default function AnswerMarking({ sessionId, quiz }) {
     socket.on('whoami_marked',     onWhoamiMarked);
     socket.on('team_joined',       onTeamsChanged);
     socket.on('team_removed',      onTeamsChanged);
+    socket.on('team_updated',      onTeamsChanged);   // size / paper flag edited elsewhere
+    socket.on('doubleup_chosen',   onTeamsChanged);   // ×2 round picked by a team or host
     return () => {
       socket.off('answer_marked',    onMarked);
       socket.off('answer_submitted', onSubmitted);
@@ -169,6 +174,8 @@ export default function AnswerMarking({ sessionId, quiz }) {
       socket.off('whoami_marked',    onWhoamiMarked);
       socket.off('team_joined',      onTeamsChanged);
       socket.off('team_removed',     onTeamsChanged);
+      socket.off('team_updated',     onTeamsChanged);
+      socket.off('doubleup_chosen',  onTeamsChanged);
     };
   }, [socket, applyMarkLocal, applyBrownieLocal, loadData]);
 
@@ -215,6 +222,35 @@ export default function AnswerMarking({ sessionId, quiz }) {
       loadData();
     } catch (err) {
       console.error('Failed to remove team:', err);
+    }
+  };
+
+  // Team size (handicap) and the paper-only flag — same endpoint, both are just
+  // team fields. Optimistic so the row doesn't flicker while marking.
+  const patchTeam = async (team, patch) => {
+    setData(prev => prev && ({ ...prev, teams: prev.teams.map(t => t.id === team.id ? { ...t, ...patch } : t) }));
+    try {
+      await api.put(`/teams/${team.id}`, patch);
+    } catch (err) {
+      console.error('Failed to update team:', err);
+      loadData();
+    }
+  };
+
+  // Host override of a team's ×2 power-up round. Warns first when the round is
+  // already locked, since that rewrites a score for a round already played.
+  const setTeamPowerup = async (team, roundId) => {
+    if (roundId && lockedRounds.has(Number(roundId))) {
+      const name = (data?.rounds || []).find(r => Number(r.id) === Number(roundId))?.name || 'That round';
+      if (!confirm(`"${name}" is already locked — its answers are marked.\n\nSetting it as ${team.name}'s ×2 round changes their score for a round that has already been played. Continue?`)) return;
+    }
+    const prev = powerups[team.id] ?? null;
+    setPowerups(p => ({ ...p, [team.id]: roundId ? Number(roundId) : null }));
+    try {
+      await api.post('/doubleup/admin-set', { sessionId, teamId: team.id, roundId: roundId || null });
+    } catch (err) {
+      console.error('Failed to set the power-up round:', err);
+      setPowerups(p => ({ ...p, [team.id]: prev }));
     }
   };
 
@@ -271,6 +307,35 @@ export default function AnswerMarking({ sessionId, quiz }) {
     return s != null ? parseFloat(s.points_awarded) : null;
   };
 
+  // Rounds a ×2 power-up can apply to — same rule as the quizzer picker
+  // (everything except intermission picture rounds).
+  const powerupRounds = rounds.filter(r => r.style !== 'intermission');
+  // Paper-only teams are grouped at the end of every list, so the host can mark
+  // all the hand-written sheets in one pass instead of hunting for them.
+  const deviceTeams  = teams.filter(t => !t.is_paper);
+  const paperTeams   = teams.filter(t => t.is_paper);
+  const orderedTeams = [...deviceTeams, ...paperTeams];
+
+  // The letter of the MCQ option matching this text (A/B/C…), or null when the
+  // question isn't multiple choice / the text isn't one of the options.
+  const optionLetter = (q, text) => {
+    const opts = Array.isArray(q.options) ? q.options.filter(o => String(o).trim()) : [];
+    if (!opts.length || !text) return null;
+    const norm = (s) => String(s ?? '').toLowerCase().trim().replace(/\s+/g, ' ');
+    const i = opts.findIndex(o => norm(o) === norm(text));
+    return i === -1 ? null : String.fromCharCode(65 + i);
+  };
+
+  // A MANUAL mark whose answer has since been edited — flagged for a re-check.
+  // Auto marks re-evaluate themselves server-side, so they're never "stale".
+  const answerChangedSinceMark = (teamId, qId) => {
+    const s = scores.find(s => s.team_id === teamId && s.question_id === qId);
+    if (!s || s.auto_marked !== false) return null;
+    const current = answers.find(a => a.team_id === teamId && a.question_id === qId)?.answer_text ?? '';
+    const marked  = s.marked_answer ?? '';
+    return String(current) === String(marked) ? null : { marked };
+  };
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="answer-marking">
@@ -306,15 +371,45 @@ export default function AnswerMarking({ sessionId, quiz }) {
             <span className="round-q-count">add or subtract per team — shows in the Bonus column</span>
           </h3>
           <div className="marking-team-rows">
-            {teams.map(t => (
+            {deviceTeams.map(t => (
               <ManualPointsRow
                 key={t.id}
                 team={t}
                 total={brownieTotal(t.id)}
+                rounds={powerupRounds}
+                powerup={powerups[t.id] ?? null}
+                lockedRounds={lockedRounds}
                 onAward={(pts) => awardManual(t.id, pts)}
+                onPatch={(patch) => patchTeam(t, patch)}
+                onPowerup={(roundId) => setTeamPowerup(t, roundId)}
                 onRemove={() => removeTeam(t)}
               />
             ))}
+
+            {/* Paper teams sit together at the bottom: they have no device, so
+                they're marked by hand off their sheet in one pass. */}
+            {paperTeams.length > 0 && (
+              <>
+                <div className="marking-paper-divider">
+                  <span>📄 Paper teams — mark by hand ({paperTeams.length})</span>
+                </div>
+                {paperTeams.map(t => (
+                  <ManualPointsRow
+                    key={t.id}
+                    team={t}
+                    total={brownieTotal(t.id)}
+                    rounds={powerupRounds}
+                    powerup={powerups[t.id] ?? null}
+                    lockedRounds={lockedRounds}
+                    onAward={(pts) => awardManual(t.id, pts)}
+                    onPatch={(patch) => patchTeam(t, patch)}
+                    onPowerup={(roundId) => setTeamPowerup(t, roundId)}
+                    onRemove={() => removeTeam(t)}
+                  />
+                ))}
+              </>
+            )}
+
             <AddTeamForm onAdd={addTeam} />
           </div>
         </div>
@@ -357,21 +452,38 @@ export default function AnswerMarking({ sessionId, quiz }) {
                   <span className="marking-q-text">
                     {q.text || (q.type === 'image' ? `(picture ${q.order})` : '(no question text)')}
                   </span>
-                  <span className="marking-q-answer">✓ {q.answer}</span>
+                  <span className="marking-q-answer">
+                    ✓ {optionLetter(q, q.answer) && <span className="mcq-letter-tag">{optionLetter(q, q.answer)}</span>}
+                    {q.answer}
+                  </span>
                   <span className="marking-q-pts">{q.points}pt</span>
                 </div>
 
                 <div className="marking-team-rows">
                   {teams.length === 0 ? (
                     <p className="marking-empty">No teams yet</p>
-                  ) : teams.map(t => {
+                  ) : orderedTeams.map(t => {
                     const ansText = getAnswer(t.id, q.id);
                     const score   = getScore(t.id, q.id);
+                    const letter  = optionLetter(q, ansText);
+                    const changed = answerChangedSinceMark(t.id, q.id);
                     return (
-                      <div key={t.id} className="marking-team-row">
-                        <span className="marking-team-name">{t.name}</span>
+                      <div key={t.id} className={`marking-team-row ${changed ? 'answer-changed' : ''}`}>
+                        <span className="marking-team-name">
+                          {t.name}
+                          {t.is_paper && <span className="paper-tag" title="Paper team">📄</span>}
+                        </span>
                         <span className={`marking-answer-text ${!ansText ? 'no-answer' : ''}`}>
+                          {letter && <span className="mcq-letter-tag">{letter}</span>}
                           {ansText || '(no answer)'}
+                          {changed && (
+                            <span
+                              className="answer-changed-flag"
+                              title={`You marked "${changed.marked || '(blank)'}" — they've since changed it. Re-check this one.`}
+                            >
+                              ⚠ changed since marked
+                            </span>
+                          )}
                         </span>
                         <div className="marking-score-btns">
                           {scoreOptions(q.points).map(pts => (
@@ -417,7 +529,7 @@ export default function AnswerMarking({ sessionId, quiz }) {
           <div className="marking-team-rows">
             {teams.length === 0 ? (
               <p className="marking-empty">No teams yet</p>
-            ) : teams.map(t => {
+            ) : orderedTeams.map(t => {
               const g = (whoami.guesses || []).find(x => x.team_id === t.id);
               const possible = g?.points_possible != null ? parseFloat(g.points_possible) : null;
               const awarded  = g?.points_awarded  != null ? parseFloat(g.points_awarded)  : null;
@@ -521,9 +633,10 @@ function PointsInput({ awarded, onSet, title }) {
   );
 }
 
-// One team's manual-points row: current bonus total plus an amount input with
-// add / subtract buttons. Whole points only (the brownie_points column is INT).
-function ManualPointsRow({ team, total, onAward, onRemove }) {
+// One team's admin row: bonus points, team size (handicap), the ×2 power-up
+// round and the paper-only flag — everything the host needs to fix mid-quiz
+// without leaving the marking page.
+function ManualPointsRow({ team, total, rounds = [], powerup = null, lockedRounds, onAward, onPatch, onPowerup, onRemove }) {
   const [amount, setAmount] = useState('1');
   const apply = (sign) => {
     const v = Math.abs(parseInt(amount, 10));
@@ -531,8 +644,40 @@ function ManualPointsRow({ team, total, onAward, onRemove }) {
     onAward(sign * v);
   };
   return (
-    <div className="marking-team-row">
-      <span className="marking-team-name">{team.name}</span>
+    <div className={`marking-team-row team-admin-row ${team.is_paper ? 'is-paper' : ''}`}>
+      <span className="marking-team-name">
+        {team.name}
+        {team.is_paper && <span className="paper-tag" title="Marked by hand from a paper sheet">📄</span>}
+      </span>
+
+      <div className="team-admin-fields">
+        <label className="team-size-edit" title="Team size — sets their handicap starting points">
+          <span>Size</span>
+          <TeamSizeInput team={team} onSave={(size) => onPatch({ size })} />
+        </label>
+
+        <label className="team-powerup-edit" title="This team's ×2 power-up round">
+          <span>×2</span>
+          <select value={powerup ?? ''} onChange={(e) => onPowerup(e.target.value ? Number(e.target.value) : null)}>
+            <option value="">— none —</option>
+            {rounds.map(r => (
+              <option key={r.id} value={r.id}>
+                {r.name}{lockedRounds?.has(Number(r.id)) ? ' (locked)' : ''}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="team-paper-edit" title="No device — group this team with the other paper sheets for hand marking">
+          <input
+            type="checkbox"
+            checked={!!team.is_paper}
+            onChange={(e) => onPatch({ is_paper: e.target.checked })}
+          />
+          <span>Paper</span>
+        </label>
+      </div>
+
       <span className={`manual-total ${total > 0 ? 'manual-pos' : total < 0 ? 'manual-neg' : ''}`}>
         {total > 0 ? `+${total}` : total} pt
       </span>
@@ -559,5 +704,38 @@ function ManualPointsRow({ team, total, onAward, onRemove }) {
         )}
       </div>
     </div>
+  );
+}
+
+// Size box that only commits on blur/Enter, so typing "12" isn't saved as "1"
+// on the way past. Follows the server value when it changes elsewhere.
+function TeamSizeInput({ team, onSave }) {
+  const [value, setValue] = useState(team.size == null ? '' : String(team.size));
+  const [dirty, setDirty] = useState(false);
+
+  useEffect(() => {
+    if (!dirty) setValue(team.size == null ? '' : String(team.size));
+  }, [team.size]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const commit = () => {
+    setDirty(false);
+    const raw = value.trim();
+    if (raw === (team.size == null ? '' : String(team.size))) return;
+    if (raw === '') { onSave(null); return; }
+    const n = parseInt(raw, 10);
+    if (Number.isNaN(n) || n < 1) { setValue(team.size == null ? '' : String(team.size)); return; }
+    onSave(n);
+  };
+
+  return (
+    <input
+      type="number"
+      min="1"
+      className="team-size-input"
+      value={value}
+      onChange={(e) => { setDirty(true); setValue(e.target.value); }}
+      onBlur={commit}
+      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } }}
+    />
   );
 }

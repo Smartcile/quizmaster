@@ -247,16 +247,6 @@ async function createQuiz(req, res) {
   }
 }
 
-// Generate a session join code that isn't already in use.
-async function uniqueSessionCode(client) {
-  for (let i = 0; i < 25; i++) {
-    const code = generateQuizCode();
-    const r = await client.query('SELECT 1 FROM quiz_sessions WHERE code = $1', [code]);
-    if (!r.rows.length) return code;
-  }
-  return generateQuizCode();
-}
-
 async function startQuiz(req, res) {
   try {
     const { id } = req.params;
@@ -267,17 +257,41 @@ async function startQuiz(req, res) {
       const quizResult = await client.query('SELECT * FROM quizzes WHERE id = $1', [id]);
       if (quizResult.rows.length === 0) throw new Error('Quiz not found');
 
-      // Close any existing live session for this quiz. Test sessions are left
-      // alone so a test run never disturbs (or is disturbed by) a live one.
+      // Starting a second session ENDS the live one — which throws away the
+      // lobby setup (teams, sizes, ×2 power-up picks) and forces everyone to
+      // rejoin. Refuse unless the caller explicitly confirms with force:true, so
+      // a stale dashboard, a double-click or a second browser tab can't quietly
+      // wipe a night that's already under way. Test sessions are left alone.
+      const live = await client.query(
+        `SELECT s.id, s.status, (SELECT COUNT(*) FROM teams t WHERE t.quiz_session_id = s.id)::int AS team_count
+         FROM quiz_sessions s
+         WHERE s.quiz_id = $1 AND s.status IN ('lobby', 'active') AND s.is_test = FALSE
+         ORDER BY s.created_at DESC LIMIT 1`,
+        [id]
+      );
+      if (live.rows.length && !isTest && req.body?.force !== true) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          error: 'A session is already running for this quiz.',
+          liveSession: live.rows[0],
+          hint: 'Resume it, or start again with { force: true } to end it and open an empty session.'
+        });
+      }
+
       await client.query(
         "UPDATE quiz_sessions SET status = 'finished' WHERE quiz_id = $1 AND status IN ('lobby', 'active') AND is_test = FALSE",
         [id]
       );
 
-      const sessionCode = await uniqueSessionCode(client);
+      // No per-session code. The QUIZ code is the one printed on answer sheets
+      // and QR codes, so it has to keep working week after week; joining resolves
+      // it to whichever session is live *right now* (see resolveCode). That also
+      // means a code stops working the moment a session ends, so teams from a
+      // finished session can never wander into the next one. Test sessions are
+      // targeted by explicit ?session=<id>, not by code.
       const sessionResult = await client.query(
-        "INSERT INTO quiz_sessions (quiz_id, status, current_slide_index, is_test, code) VALUES ($1, 'lobby', 0, $2, $3) RETURNING *",
-        [id, isTest, sessionCode]
+        "INSERT INTO quiz_sessions (quiz_id, status, current_slide_index, is_test, code) VALUES ($1, 'lobby', 0, $2, NULL) RETURNING *",
+        [id, isTest]
       );
 
       await client.query('COMMIT');

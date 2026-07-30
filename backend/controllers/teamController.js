@@ -374,9 +374,9 @@ async function createTeamAdmin(req, res) {
 async function updateTeam(req, res) {
   try {
     const { teamId } = req.params;
-    const { size, name } = req.body;
+    const { size, name, is_paper } = req.body;
 
-    const cur = await db.query('SELECT id, name, size, quiz_session_id FROM teams WHERE id = $1', [teamId]);
+    const cur = await db.query('SELECT id, name, size, is_paper, quiz_session_id FROM teams WHERE id = $1', [teamId]);
     if (!cur.rows.length) return res.status(404).json({ error: 'Team not found' });
 
     let nextSize = cur.rows[0].size;
@@ -393,18 +393,21 @@ async function updateTeam(req, res) {
     let nextName = cur.rows[0].name;
     if (name !== undefined && String(name).trim()) nextName = String(name).trim();
 
+    const nextPaper = is_paper === undefined ? cur.rows[0].is_paper : !!is_paper;
+
     const upd = await db.query(
-      'UPDATE teams SET name = $1, size = $2 WHERE id = $3 RETURNING *',
-      [nextName, nextSize, teamId]
+      'UPDATE teams SET name = $1, size = $2, is_paper = $3 WHERE id = $4 RETURNING *',
+      [nextName, nextSize, nextPaper, teamId]
     );
     const team = upd.rows[0];
 
     const io = getIo();
     if (io) {
       io.to(`quiz-${team.quiz_session_id}`).emit('team_updated', {
-        teamId:   team.id,
-        teamName: team.name,
-        teamSize: team.size,
+        teamId:    team.id,
+        teamName:  team.name,
+        teamSize:  team.size,
+        isPaper:   team.is_paper,
         timestamp: new Date().toISOString()
       });
     }

@@ -191,9 +191,9 @@ Key tables and their purposes:
 | `quiz_rounds` | Junction: rounds within a quiz. `position` column stores global interleaved order (shared namespace with `quiz_widgets.position`). Legacy `"order"` column kept for backward compat. |
 | `quiz_widgets` | Custom slides (scoreboard/rules/custom) attached to a quiz, with `data` JSONB. `position` column stores global interleaved order. |
 | `quiz_sessions` | A running instance of a quiz. `status`: `lobby` → `active` → `finished`. `current_slide_index` drives sync. `locked_round_ids` JSONB array tracks which rounds' answers are locked. `scoreboard_visibility` JSONB `{slideshow,quizzer,admin}` tracks per-surface scoreboard show/hide. `is_test BOOLEAN` flags a Test Quiz run (hidden from History + the dashboard active-session lookup; deletable any time for auto-clean). `code` is the per-session rotating join code (kept on restart, preserved after end for history lookup). |
-| `teams` | Teams in a session (name + size). Find-or-create by case-insensitive name enables rejoining. |
+| `teams` | Teams in a session (name + size). Find-or-create by case-insensitive name enables rejoining. `is_paper` flags a no-device team marked by hand, which groups it at the end of the marking lists. |
 | `answers` | Team answer submissions (auto-saved on every keystroke via socket) |
-| `scores` | Admin-marked scores: 0, 0.5, or 1 per question per team. Auto-populated when submitted answer matches the correct answer (normalised). `auto_marked BOOLEAN` distinguishes system marks from manual overrides. |
+| `scores` | Marked scores (any value up to the question's points). `marked_answer` holds the answer text that was judged, so an edit after a **manual** mark is flagged for review. Originally 0 / 0.5 / 1 per question per team. Auto-populated when submitted answer matches the correct answer (normalised). `auto_marked BOOLEAN` distinguishes system marks from manual overrides. |
 | `brownie_points` | Bonus points the admin can award manually |
 | `slide_masters` | Visual themes: background, text styles, placeholder positions, and per-slide-type content `templates` JSONB. `is_default BOOLEAN` flags the one protected **Default Profile** (seeded on startup if none exists) — the standard theme for every quiz; it can't be deleted. |
 | `slides` | Per-quiz Fabric.js canvas slides (intro/custom types) linked to a master for styling |
@@ -255,7 +255,9 @@ A question's `points` drives what can be awarded, so a 2-point question isn't ca
 ### Auto-mark
 When a team submits an answer, the backend normalises both the submitted text and the stored correct answer (lowercase, trim, collapse whitespace, strip leading "the ") and inserts the question's point value if they match — but only if no score row already exists. The admin can always override by marking manually. No page refresh needed; the socket `answer_marked` event updates all clients immediately.
 
-**Auto-mark reset**: If a team changes a previously correct auto-marked answer to an incorrect one, `maybeAutoMark` detects this (via `scores.auto_marked = true`) and resets the score to 0. Manually-marked scores (`auto_marked = false`) are never touched by this logic.
+**Auto marks track the live answer; manual marks are flagged instead.** `scores.marked_answer` stores the exact answer text a score was awarded for.
+- **Auto-marked** (`auto_marked = true`): re-evaluated on *every* edit while the round is open, in both directions — break a correct answer and it drops to 0, fix it again and the full points come back. (The restore direction was previously missing: a corrected answer stayed at 0.) Both write paths do this — the REST `maybeAutoMark` and the `submit_answer` socket handler.
+- **Manually marked** (`auto_marked = false`): never changed by a team edit. Instead the marking page compares the live answer with `marked_answer` and highlights the row **"⚠ changed since marked"** (amber, with the previously-judged text in the tooltip) so the host can re-check it. Comparing text rather than timestamps makes this exact and clock-independent.
 
 **Auto-zero unanswered on lock**: When a round is locked (the `answer_locked` socket handler), every team that has *no answer and no score* for a question in that round gets an explicit `0` inserted (`auto_marked = true`), broadcast via `answer_marked`. This makes unanswered questions show as 0 in the marking page, scoreboard, and as a red "(no answer)" glow on the quizzer reveal — rather than silently counting as nothing.
 
@@ -270,7 +272,14 @@ Admins can manually lock or unlock a round's answers at any time via the buttons
 ### Score deselection
 In AnswerMarking, clicking an already-active score button (0, 0.5, or 1) sends `points: null` to `POST /api/answers/mark`, which deletes the score row. The `answer_marked` socket event is broadcast with `points: null` so all clients remove the score immediately.
 
-### Per-session join codes + rejoin
+### Static join codes (the quiz code is the only code)
+Sessions do **not** mint their own join code — `startQuiz` inserts `code = NULL`. The **quiz** code is the one printed on answer sheets and QR codes, so it keeps working week after week. `GET /api/quizzes/resolve/:code` still matches a session code first (legacy rows keep theirs), then falls back to the quiz code → that quiz's **current live (lobby/active, non-test) session**. So a code only works *while a session is running* — the moment one ends, the code resolves to nothing until the next session opens.
+
+**Teams never carry across sessions.** `teams` rows belong to exactly one `quiz_session_id`, so a new session starts empty. Two guards keep an old device out: the quizzer's stored identity is re-checked on boot (`teamData.quiz_session_id !== session.id` → clear the store and show the join form as a fresh team), and `GET /teams/session/:id/device/:deviceId` is session-scoped so a returning device 404s into the join form. Old scores stay in History.
+
+**Starting a second session is guarded server-side.** `POST /quizzes/:id/start` returns **409** when a live non-test session already exists, unless `{ force: true }`. Starting over a live session ends it and opens an empty one — every team must rejoin and their sizes + ×2 picks are gone — so the Dashboard catches the 409, spells that out in a `confirm()`, and only then retries with `force`. (This was a real data-loss trap: a host who set teams up in the lobby and then pressed ▶ Start again silently lost the lot.) Test sessions bypass the guard since they never disturb a live one.
+
+### Per-session join codes + rejoin (legacy)
 Each started session gets its own rotating **`quiz_sessions.code`** (generated at start, kept across restarts, **preserved after it ends** for history lookup). Joining is resolved by **`GET /api/quizzes/resolve/:code`** → `{ quiz, session }`: it matches a **session code** first (any status, so an old/finished code resolves), then falls back to the **quiz code** → that quiz's current live (lobby/active, non-test) session. The slideshow lobby + QR and the admin Control deep links display the **session** code (falling back to the quiz code until it loads); the quiz code still works as a shortcut.
 
 `POST /api/teams/join` is a case-insensitive find-or-create matched on **session + team name only** (team size never affects identity, so a guest rejoins from any device). Existing team → `200` with `rejoined: true`; all answers/scores preserved. A **finished** session is read-only: it returns the existing team (`finished: true`) for review, or `404` if no team by that name — it never creates a ghost team.
@@ -369,6 +378,8 @@ Each team may nominate **one round to score ×2**. It's per-team, not global: te
 
 - **Team-side rules** (`POST /api/doubleup/choose`, public): the pick is changeable until the chosen round's answers lock; picking an already-locked round is rejected (409), and once the team's current pick locks the choice is frozen.
 - **Host-side override** (`POST /api/doubleup/admin-set`, **token-gated**): deliberately ignores those lock rules so the host can set or clear any team's power-up at any point — a paper team, a missed pick, or a correction. `roundId: null` clears it. The Control UI warns with a `confirm()` before applying a round that is already locked, since that changes a settled score.
+- **Editing teams on Mark Answers**: the "Teams & Manual Points" section carries the same controls per team — **size**, **×2 round**, a **📄 Paper** tick and the bonus ± buttons — so the host can fix everything mid-quiz from where they're actually working. Paper teams (`teams.is_paper`) are grouped under a *"📄 Paper teams — mark by hand"* divider at the end of every team list (manual-points, each question, Who Am I?), so hand-marked sheets are done in one pass.
+- **MCQ letters while marking**: the correct-answer line and each team's answer show the option letter (`B  Mercury`) — `getSessionAnswers` returns `options` + the round's effective `answer_mode` for this.
 - **Editing teams on Control** (`TeamsPanel` in `QuizControl.jsx`): shown in the **lobby** (expanded) and during a **live session** (collapsible so it doesn't crowd the slide controls). Per team: name, **size** (`TeamSizeInput` — commits on blur/Enter so "12" isn't saved as "1" mid-type), **×2 round** dropdown, and remove. Sizes go through `PUT /api/teams/:teamId`, which broadcasts **`team_updated`**; all three `LiveScoreboard` copies listen for it so a corrected size re-scores the handicap live (handicap is derived from `size` at aggregation time, so nothing stored needs rewriting).
 
 ### Quiz Testing (Test Quiz mode)
@@ -456,7 +467,7 @@ Both pages fetch `GET /rounds` (which aggregates each round's `round_questions`)
 It is a **warning only** — unlike the Quiz Builder's duplicate check it never blocks saving, since deliberately reusing a question across rounds is legal.
 
 ### Dynamic MCQ options
-The question editor now supports adding and removing MCQ options dynamically (minimum 2 options). Options are no longer capped at 4.
+The question editor now supports adding and removing MCQ options dynamically (minimum 2 options). **The correct option is ticked, not retyped**: each option row has a radio that copies its text into `questions.answer` (still the single source of truth for marking), the ticked row is highlighted green, and a read-out shows `B  Mercury`. A free-text box remains underneath for "both"-mode questions where teams may type instead of picking. Options are no longer capped at 4.
 
 ### Duplicate-aware question import (CSV + manual add)
 Both CSV import and adding a brand-new question manually run through one path in `QuestionManager.jsx`:
