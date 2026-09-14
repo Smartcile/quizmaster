@@ -49,5 +49,9 @@ temp/
 # Vite cache
 .vite/
 
-# Claude Code local settings (permissions are machine-specific)
-.claude/settings.local.json
+# AI assistant config / local instructions (keep local, never commit)
+CLAUDE.md
+AGENTS.md
+.claude/
+.cursor/
+.opencode/
