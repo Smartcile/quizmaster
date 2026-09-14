@@ -7,6 +7,8 @@ Real-time pub quiz platform with three synchronized surfaces:
 
 All synced live via WebSockets. Themed with a neon-dark futuristic aesthetic.
 
+> 📖 **New here?** Follow the **[Illustrated How-To-Use Guide](docs/HOW-TO-USE.md)** for a screenshot-by-screenshot walkthrough of running a quiz night — or jump straight to the [screenshot tour](#screenshots) below.
+
 ---
 
 ## Quick Start (Production — no rebuild)
@@ -53,6 +55,118 @@ docker-compose up -d --build
 ```
 
 Same URLs as above.
+
+---
+
+## Screenshots
+
+### 🖥 Admin Dashboard — `http://your-host:3001`
+
+**Sign in with `ADMIN_PASSWORD`**
+
+![Admin login](docs/images/admin-login.png)
+
+**Dashboard** — live session card, question/round/quiz metrics, difficulty & category charts, and every quiz with **Start Session** / **Test Quiz**
+
+![Admin dashboard](docs/images/admin-dashboard.png)
+
+**Question bank** — search/filter, difficulty & source badges, bulk delete, CSV import/export, and a **Kind** selector that morphs the editor into a Who/What Am I? clue builder
+
+| Standard question | Who / What Am I? |
+|---|---|
+| ![Questions](docs/images/admin-questions.png) | ![Who Am I editor](docs/images/admin-questions-whoami.png) |
+
+**Rounds** — drag questions into a round, set the round colour, and switch any "Both" question to Text/MCQ (🔀 T&M) or Name-the-Song/Finish-the-Lyrics (🎵 NTS/FTL) for that round
+
+| Round list | Round editor |
+|---|---|
+| ![Rounds](docs/images/admin-rounds.png) | ![Round editor](docs/images/admin-rounds-edit.png) |
+
+**Quiz Builder** — mix rounds and widgets in any order, attach a Who/What Am I?, pick a master theme, enable team-size handicap scoring
+
+![Quiz builder](docs/images/admin-quizzes.png)
+
+**Masters & Slides** — visual themes (background, text styles, placeholders) and per-slide-type content templates
+
+| Master themes | Master editor |
+|---|---|
+| ![Masters](docs/images/admin-masters.png) | ![Master editor](docs/images/admin-masters-edit.png) |
+
+**Media Library** — uploads with thumbnails, usage labels, folders, and in-browser crop / audio / video editors
+
+![Media library](docs/images/admin-media.png)
+
+**Control** — lobby with join code & team list, live slide navigation, lock/unlock answers, scoreboard reveal toggles, and portal quick-links
+
+| Lobby | Active |
+|---|---|
+| ![Control lobby](docs/images/admin-control-lobby.png) | ![Control active](docs/images/admin-control-active.png) |
+
+**Answer Marking** — per-team marking grid (0 / 0.5 / 1, click again to deselect), CSV export
+
+![Answer marking](docs/images/admin-marking.png)
+
+**History** — every finished session with team scores, handicap, Who-Am-I points, and CSV download
+
+![Quiz history](docs/images/admin-history.png)
+
+**Settings** — Question Repositories (GitHub CSV packs), Quiz Control & Testing, Danger Zone
+
+![Settings](docs/images/admin-settings.png)
+
+---
+
+### 🖥 Slideshow Viewer — `http://your-host:3002`
+
+| Lobby (join code + QR) | Intro |
+|---|---|
+| ![Slideshow lobby](docs/images/slideshow-lobby.png) | ![Intro](docs/images/slideshow-intro.png) |
+
+| Who Am I? clue | Round intro |
+|---|---|
+| ![Who Am I clue](docs/images/slideshow-whoami.png) | ![Round intro](docs/images/slideshow-round.png) |
+
+| Text question | Picture question |
+|---|---|
+| ![Question](docs/images/slideshow-question.png) | ![Picture question](docs/images/slideshow-question-image.png) |
+
+**Audio question** — never autoplays; the host triggers playback from Control (big screen only)
+
+![Audio question](docs/images/slideshow-question-audio.png)
+
+| Answer reveal | Live scoreboard |
+|---|---|
+| ![Answer reveal](docs/images/slideshow-answer.png) | ![Scoreboard](docs/images/slideshow-scoreboard.png) |
+
+| Rules widget | Custom page | End (reveals Who Am I?) |
+|---|---|---|
+| ![Rules](docs/images/slideshow-rules.png) | ![Custom page](docs/images/slideshow-custom.png) | ![End](docs/images/slideshow-end.png) |
+
+---
+
+### 📱 Quizzer Portal — `http://your-host:3003`
+
+| Join | Waiting room |
+|---|---|
+| ![Join](docs/images/quizzer-join.png) | ![Waiting](docs/images/quizzer-waiting.png) |
+
+| Text question | Multiple choice |
+|---|---|
+| ![Question](docs/images/quizzer-question.png) | ![MCQ](docs/images/quizzer-mcq.png) |
+
+| Who Am I? lock-in | Review before lock |
+|---|---|
+| ![Who Am I](docs/images/quizzer-whoami.png) | ![Review answers](docs/images/quizzer-review.png) |
+
+**Answer reveal** — the team's answer box glows **green** (full), **yellow** (half) or **red** (wrong / no answer)
+
+| Correct | Half mark |
+|---|---|
+| ![Reveal correct](docs/images/quizzer-reveal.png) | ![Reveal half](docs/images/quizzer-reveal-half.png) |
+
+**Live scoreboard on the phone** — with a **View my answers** shortcut when the quiz has a Review widget
+
+![Quizzer scoreboard](docs/images/quizzer-scoreboard.png)
 
 ---
 
@@ -183,7 +297,8 @@ API calls automatically use the same hostname the page was served from — no re
 - **Answer modes**:
   - `text` — free-text input only
   - `mcq` — multiple choice only
-  - `both` (hybrid) — teams can pick an MCQ option OR type a free answer
+  - `both` (hybrid) — the **Round builder** decides per round whether it plays as Text or MCQ (🔀 T&M toggle); the quizzer never chooses
+- **Who/What Am I?** authoring — the **Kind** selector turns the editor into a numbered clue list (each with its own points) plus a shared answer
 - Left-column list with **🔍 search** and category/difficulty filters
 - Click a question to load into the right-side editor (scrollable — the Save button is always reachable); "+ New" clears
 - **Dynamic MCQ options** — add as many options as you need, remove any (minimum 2 enforced)
@@ -219,14 +334,14 @@ API calls automatically use the same hostname the page was served from — no re
 ### Slideshow Viewer
 - Auto-detects quiz code from URL (path deep link `/CODE`, or `/?code=CODE`) or shows entry screen
 - **Lobby slide** with massive glowing join code, team counter, join URL
-- **Join QR code** fixed in the bottom-right corner (during lobby + active) — players scan it to open the quizzer with the code pre-filled
+- **Join QR code** fixed in the bottom-right corner on the lobby and the first (intro) slide — players scan it to open the quizzer with the code pre-filled
 - Renders all slide types: round intro, text Q, image/video/audio Q, MCQ, answer reveal, custom widgets
 - Auto-syncs with admin slide changes — no manual controls
 
 ### Quizzer Portal
 - Teams enter quiz code, team name, team size
 - **Waiting screen** if session is in lobby; auto-flips to playing when admin clicks Begin
-- Renders the current slide as: question (with text input / MCQ / both), waiting message, or answer reveal (showing their answer, correct answer, points awarded). On reveal, the team's answer box border **glows red** when marked wrong (0) and **glows yellow** for a half mark (0.5); a correct answer (1) stays neutral
+- Renders the current slide as: question (with text input / MCQ), waiting message, or answer reveal (showing their answer, correct answer, points awarded). On reveal, the team's answer box border **glows red** when marked wrong (0), **yellow** for a half mark (0.5) and **green** for a full mark (1); unanswered questions show "(no answer)" with the red glow once auto-zeroed
 - Answers auto-save as teams type
 - In-round navigation bar — jump to any unlocked question. The question the **host is currently showing** gets a distinct **amber/orange glow** (distinct from the guest's current cyan and the answered green)
 - **Review before lock** — the "Mark Your Answers" slide lists all answers. Tap any question to edit it; a "← Back to Review" button returns to the list
@@ -293,6 +408,8 @@ API calls automatically use the same hostname the page was served from — no re
 ---
 
 ## Using a Quiz (Walkthrough)
+
+> Every step below is illustrated with screenshots in the **[How-To-Use Guide](docs/HOW-TO-USE.md)**.
 
 1. **Log in** to the Admin Dashboard with `ADMIN_PASSWORD`.
 2. **Media** tab (optional) → Upload any images, videos, or audio you want to use in questions or slide masters.
