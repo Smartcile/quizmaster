@@ -657,6 +657,83 @@ body {
   flex: 1;
   margin: 0;
 }
+
+/* Text-list round — all answer inputs on one quizzer slide */
+.textlist-answers .mark-label {
+  color: var(--neon-cyan);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  font-size: 0.85rem;
+  margin-bottom: 6px;
+}
+.textlist-answers .mark-hint {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  margin-bottom: 12px;
+}
+.textlist-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0 4px;
+}
+.textlist-legend-item {
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(184, 41, 255, 0.18);
+  border: 1px solid rgba(184, 41, 255, 0.5);
+  color: var(--text-primary);
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+.textlist-input-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+.textlist-input-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: rgba(7, 9, 26, 0.4);
+}
+.textlist-input-num {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--gradient-primary, var(--neon-cyan));
+  color: #fff;
+  font-weight: 800;
+  font-size: 0.9rem;
+}
+.textlist-input-row .textlist-input-text {
+  flex: 1 1 0;
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  line-height: 1.3;
+}
+.textlist-input-row .answer-input,
+.textlist-input-row .textlist-select {
+  flex: 1 1 100%;
+  margin: 0;
+}
+.textlist-select {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  font-size: 1rem;
+}
 .reveal-label {
   color: var(--neon-cyan);
   font-size: 0.85rem;

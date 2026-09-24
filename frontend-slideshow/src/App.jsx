@@ -549,7 +549,7 @@ function AudioAnswerReveal({ label, mediaUrl, lyrics, answerText, revealSeconds 
   );
 }
 
-function SlideRenderer({ slide, slideIndex, playToken, sessionId, socket, scoresVisible = true, questionsById }) {
+export function SlideRenderer({ slide, slideIndex, playToken, sessionId, socket, scoresVisible = true, questionsById }) {
   if (!slide) return <div className="slide-empty"><h2>End of quiz</h2></div>;
 
   switch (slide.type) {
@@ -586,6 +586,35 @@ function SlideRenderer({ slide, slideIndex, playToken, sessionId, socket, scores
               </div>
             ))}
           </div>
+        </div>
+      );
+
+    case 'textlist':
+      return (
+        <div className="slide-textlist">
+          <h1 className="textlist-title">{slide.title}</h1>
+          {slide.listMode === 'match' && Array.isArray(slide.listOptions) && slide.listOptions.length > 0 && (
+            <div className="textlist-legend">
+              <span className="textlist-legend-label">Choose from:</span>
+              {slide.listOptions.map((o, i) => (
+                <span key={i} className="textlist-legend-item">{o}</span>
+              ))}
+            </div>
+          )}
+          <ol className="textlist-items">
+            {(slide.questions || []).map((q, i) => (
+              <li key={q.questionId ?? i} className="textlist-item">
+                <span className="textlist-item-num">{i + 1}</span>
+                <span className="textlist-item-text">{q.text}</span>
+              </li>
+            ))}
+          </ol>
+          {slide.listMode === 'order' && (
+            <p className="textlist-hint">Put these in the correct order on your device.</p>
+          )}
+          {slide.listMode === 'match' && (
+            <p className="textlist-hint">Match each item to one of the options on your device.</p>
+          )}
         </div>
       );
 

@@ -39,6 +39,9 @@ function getWhoami(quiz) {
 const questionsOf = (round) => (round.questions || []).filter(q => q && q.id);
 // An intermission round that should have its pictures printed on the answer sheet
 const printsPictures = (round) => round.style === 'intermission' && !!round.print_pictures;
+// A textlist round that should have its item list printed on the answer sheet
+// (reuses the same flag — the Round Builder relabels the toggle per style).
+const printsItems = (round) => round.style === 'textlist' && !!round.print_pictures;
 
 // ── join link + QR ────────────────────────────────────────────────────────────
 // Same rule as the Control page: QUIZZER_URL from /api/config, else the current
@@ -134,7 +137,7 @@ export async function downloadAnswerSheet(quiz) {
     doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(0);
     doc.text(String(quiz.name || 'Quiz'), M, y); y += 18;
     doc.setFontSize(12); doc.setFont('helvetica', 'normal');
-    doc.text(`Round ${ri + 1}: ${round.style === 'intermission' ? (round.display_title || round.name || '') : (round.name || '')}`, M, y); y += 6;
+    doc.text(`Round ${ri + 1}: ${(round.style === 'intermission' || round.style === 'textlist') ? (round.display_title || round.name || '') : (round.name || '')}`, M, y); y += 6;
     doc.setDrawColor(150); doc.line(M, y, PAGE_W - M, y); y += 16;
 
     drawJoinQr(doc, qr, joinUrl);
@@ -160,6 +163,12 @@ export async function downloadAnswerSheet(quiz) {
     // answer box, sized so the whole grid fits this page.
     if (printsPictures(round)) {
       drawPictureGrid(doc, y, pics.get(round.id) || [], round.grid_columns || 4);
+      return;
+    }
+
+    // Text-list round printed on paper: numbered item text + a write-in box.
+    if (printsItems(round)) {
+      drawTextList(doc, y, qs, round);
       return;
     }
 
@@ -287,6 +296,44 @@ function drawPictureGrid(doc, top, cells, cols) {
     doc.setTextColor(0);
     doc.setDrawColor(120);
     doc.rect(x + 12, y + imgH + 3, cellW - 12, ansH - 3);
+  });
+}
+
+// Numbered text-list round printed on paper: each item's text with a write-in
+// box on the right, plus the shared option legend for match mode. Sized to fit
+// the remaining page height.
+function drawTextList(doc, top, qs, round) {
+  let y = top;
+  const opts = Array.isArray(round.list_options) ? round.list_options : [];
+  if (round.list_mode === 'match' && opts.length) {
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(60);
+    doc.text(doc.splitTextToSize(`Options: ${opts.join('   ·   ')}`, CONTENT_W), M, y);
+    doc.setTextColor(0);
+    y += 14;
+  }
+  const n = qs.length;
+  if (n === 0) return;
+  const gap = 8;
+  let rowH = Math.floor((PAGE_H - M - y - gap * (n - 1)) / n);
+  rowH = Math.max(20, Math.min(58, rowH));
+  const textW = CONTENT_W * 0.62;
+  const boxX = M + textW + 10;
+  const boxW = PAGE_W - M - boxX;
+
+  qs.forEach((q, i) => {
+    doc.setDrawColor(120);
+    doc.rect(M, y, CONTENT_W, rowH);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(Math.min(11, rowH - 4));
+    doc.text(`${i + 1}.`, M + 6, y + rowH / 2 + 4);
+    doc.setFont('helvetica', 'normal');
+    const lines = doc.splitTextToSize(q.text || '', textW - 26).slice(0, 2);
+    const lineH = Math.min(11, rowH - 4) + 1;
+    const startY = y + rowH / 2 + 4 - (lines.length - 1) * lineH / 2;
+    doc.text(lines, M + 22, startY);
+    // write-in box
+    doc.setDrawColor(120);
+    doc.rect(boxX, y + 3, boxW, rowH - 6);
+    y += rowH + gap;
   });
 }
 
@@ -442,6 +489,21 @@ export async function downloadSlideshowPptx(quiz) {
           }
           slide.addText(String(i + 1), { x, y, w: 0.4, h: 0.3, align: 'center', fontSize: 12, bold: true, color: C.WHITE });
         });
+        break;
+      }
+      case 'textlist': {
+        slide.addText(String(s.title || 'Text Round'), { x: 0.5, y: 0.4, w: W - 1, h: 0.8, align: 'center', fontSize: 32, bold: true, color: C.CYAN });
+        const tqs = s.questions || [];
+        const topts = Array.isArray(s.listOptions) ? s.listOptions : [];
+        let listY = 1.4;
+        if (s.listMode === 'match' && topts.length) {
+          slide.addText(`Options: ${topts.join('  ·  ')}`, { x: 1, y: listY, w: W - 2, h: 0.5, align: 'center', fontSize: 18, color: C.PURPLE });
+          listY += 0.6;
+        }
+        slide.addText(
+          tqs.map((q, i) => ({ text: `${i + 1}.  ${q.text}`, options: { breakLine: true } })),
+          { x: 1, y: listY, w: W - 2, h: Math.max(1, 7.2 - listY), align: 'left', fontSize: 18, color: C.WHITE }
+        );
         break;
       }
       case 'whoami_clue':

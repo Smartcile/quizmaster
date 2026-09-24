@@ -477,6 +477,12 @@ export default function QuestionManager() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
+    // Pure-MCQ questions have no free-text box, so make sure an option was
+    // ticked (the radio group isn't a native required field).
+    if (!form.is_whoami && form.answer_mode === 'mcq' && !String(form.answer || '').trim()) {
+      setError('Tick the correct option.'); return;
+    }
+
     // Who/What Am I sets save straight to the question bank (no MCQ / duplicate
     // import path). Clues go in `options` as [{text,points}].
     if (form.is_whoami) {
@@ -993,15 +999,17 @@ export default function QuestionManager() {
                           </>
                         : 'Tick the correct option above'}
                     </div>
-                    {/* Keeps free-text answers possible for "both" questions, where
-                        teams may type instead of picking. */}
-                    <input
-                      type="text"
-                      placeholder="…or type it by hand"
-                      value={form.answer}
-                      onChange={(e) => setForm({ ...form, answer: e.target.value })}
-                      required
-                    />
+                    {/* Free-text is only offered for "both" questions, where teams
+                        may type instead of picking. Pure MCQ is tick-only. */}
+                    {form.answer_mode === 'both' && (
+                      <input
+                        type="text"
+                        placeholder="…or type it by hand"
+                        value={form.answer}
+                        onChange={(e) => setForm({ ...form, answer: e.target.value })}
+                        required
+                      />
+                    )}
                   </div>
                 ) : (
                   <label className="form-label">

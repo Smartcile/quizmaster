@@ -795,6 +795,20 @@ function SlidePreview({ slide }) {
           <p>{(slide.questions || []).length} picture{(slide.questions || []).length !== 1 ? 's' : ''} — all shown in one grid; teams answer all at once.</p>
         </div>
       );
+    case 'textlist':
+      return (
+        <div>
+          <p className="preview-label" style={{ color: '#b829ff' }}>📋 Text Round</p>
+          <h4>{slide.title}</h4>
+          <p>
+            {(slide.questions || []).length} item{(slide.questions || []).length !== 1 ? 's' : ''} — {slide.listMode === 'order'
+              ? 'put them in the correct order'
+              : slide.listMode === 'match'
+              ? 'match each to the shared options'
+              : 'type an answer for each'}.
+          </p>
+        </div>
+      );
     case 'question':
       return (
         <div>
@@ -854,6 +868,7 @@ function groupSlidesForControl(slides) {
         break;
       case 'round_intro':
       case 'intermission':
+      case 'textlist':
       case 'question':
       case 'mark_answers':
       case 'answer':
@@ -893,6 +908,8 @@ function MiniSlide({ slide }) {
       return <span className="mini-slide"><span className="mini-icon">🎯</span><span className="mini-text">{slide.title}</span></span>;
     case 'intermission':
       return <span className="mini-slide"><span className="mini-icon">🖼</span><span className="mini-text">{slide.title}</span></span>;
+    case 'textlist':
+      return <span className="mini-slide"><span className="mini-icon">📋</span><span className="mini-text">{slide.title}</span></span>;
     case 'question':
       return <span className="mini-slide"><span className="mini-kicker">Q{slide.questionNumber}</span><span className="mini-text">{slide.text}</span></span>;
     case 'mark_answers':
@@ -1018,8 +1035,8 @@ function TestHarness({ sessionId, quiz, slides, currentSlide, sessionStatus, soc
       }
     }
 
-    // Intermission picture round: all questions live on the one slide
-    if (slide.type === 'intermission') {
+    // Intermission picture round / text-list round: all questions live on the one slide
+    if (slide.type === 'intermission' || slide.type === 'textlist') {
       for (const q of (slide.questions || [])) {
         const qid = q.id ?? q.questionId;
         if (!qid) continue;

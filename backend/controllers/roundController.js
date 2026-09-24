@@ -68,16 +68,19 @@ function insertRoundQuestions(client, roundId, questions) {
 async function createRound(req, res) {
   try {
     const { name, background_color, background_image_url, format, questions,
-            style, display_title, grid_columns, print_pictures } = req.body;
+            style, display_title, grid_columns, print_pictures,
+            category, list_mode, list_options } = req.body;
     const client = await db.getClient();
     try {
       await client.query('BEGIN');
 
       const roundResult = await client.query(
-        `INSERT INTO rounds (name, background_color, background_image_url, format, style, display_title, grid_columns, print_pictures)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+        `INSERT INTO rounds (name, background_color, background_image_url, format, style, display_title, grid_columns, print_pictures, category, list_mode, list_options)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
         [name, background_color, background_image_url, format,
-         style || 'standard', display_title || null, grid_columns || 5, !!print_pictures]
+         style || 'standard', display_title || null, grid_columns || 5, !!print_pictures,
+         category || null, list_mode || 'plain',
+         JSON.stringify(Array.isArray(list_options) ? list_options : [])]
       );
       const roundId = roundResult.rows[0].id;
 
@@ -99,17 +102,21 @@ async function updateRound(req, res) {
   try {
     const { id } = req.params;
     const { name, background_color, background_image_url, format, questions,
-            style, display_title, grid_columns, print_pictures } = req.body;
+            style, display_title, grid_columns, print_pictures,
+            category, list_mode, list_options } = req.body;
     const client = await db.getClient();
     try {
       await client.query('BEGIN');
 
       const result = await client.query(
         `UPDATE rounds SET name = $1, background_color = $2, background_image_url = $3, format = $4,
-                           style = $5, display_title = $6, grid_columns = $7, print_pictures = $8
-         WHERE id = $9 RETURNING *`,
+                           style = $5, display_title = $6, grid_columns = $7, print_pictures = $8,
+                           category = $9, list_mode = $10, list_options = $11
+         WHERE id = $12 RETURNING *`,
         [name, background_color, background_image_url, format,
-         style || 'standard', display_title || null, grid_columns || 5, !!print_pictures, id]
+         style || 'standard', display_title || null, grid_columns || 5, !!print_pictures,
+         category || null, list_mode || 'plain',
+         JSON.stringify(Array.isArray(list_options) ? list_options : []), id]
       );
 
       if (result.rows.length === 0) {

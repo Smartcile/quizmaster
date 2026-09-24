@@ -251,6 +251,17 @@ ALTER TABLE rounds ADD COLUMN IF NOT EXISTS grid_columns INT DEFAULT 5;
 -- (intermission rounds only — teams then answer from the printed pictures).
 ALTER TABLE rounds ADD COLUMN IF NOT EXISTS print_pictures BOOLEAN DEFAULT FALSE;
 
+-- Optional round category — lets the Quiz Builder group rounds under
+-- collapsible headers (reuses the same labels as questions/categories).
+ALTER TABLE rounds ADD COLUMN IF NOT EXISTS category VARCHAR(100);
+
+-- Text-list round (style='textlist') config: how each item is answered.
+--   plain → free-text box; order → a rank number; match → pick from list_options
+-- list_options is the shared label list shown as a legend in match mode. The
+-- per-item correct value still lives in questions.answer.
+ALTER TABLE rounds ADD COLUMN IF NOT EXISTS list_mode VARCHAR(20) DEFAULT 'plain';
+ALTER TABLE rounds ADD COLUMN IF NOT EXISTS list_options JSONB DEFAULT '[]';
+
 -- Paper-only teams: no device, marked by hand from their sheet. Flagged from the
 -- Mark Answers / Control team lists so they can be grouped together for marking.
 ALTER TABLE teams ADD COLUMN IF NOT EXISTS is_paper BOOLEAN DEFAULT FALSE;

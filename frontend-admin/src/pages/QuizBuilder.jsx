@@ -124,6 +124,7 @@ export default function QuizBuilder() {
   const [name, setName]             = useState('');
   const [teamSizeScoring, setTeamSizeScoring] = useState(false);
   const [orderItems, setOrderItems] = useState([]);   // mixed rounds + widgets in build order
+  const [collapsedGroups, setCollapsedGroups] = useState(() => new Set()); // Available-Rounds group keys that are collapsed
   const [editingWidget, setEditingWidget] = useState(null);
   const [editingQuiz, setEditingQuiz]     = useState(null);
   const [error, setError]           = useState(null);
@@ -175,6 +176,29 @@ export default function QuizBuilder() {
     const usedIds = new Set(orderItems.filter(i => i.kind === 'round').map(i => i.roundId));
     return allRounds.filter(r => !usedIds.has(r.id));
   }, [allRounds, orderItems]);
+
+  // Available rounds grouped under their category (rounds with none fall under
+  // "Uncategorised"), so a long list can be collapsed. "Uncategorised" sorts last.
+  const roundGroups = useMemo(() => {
+    const map = new Map();
+    availableRounds.forEach(r => {
+      const key = (r.category || '').trim() || 'Uncategorised';
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(r);
+    });
+    return [...map.entries()].sort((a, b) => {
+      if (a[0] === 'Uncategorised') return 1;
+      if (b[0] === 'Uncategorised') return -1;
+      return a[0].localeCompare(b[0]);
+    });
+  }, [availableRounds]);
+
+  const toggleGroup = (key) => setCollapsedGroups(prev => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
+  const allGroupsCollapsed = roundGroups.length > 0 && roundGroups.every(([g]) => collapsedGroups.has(g));
 
   // Detect questions that appear more than once across the quiz — whether in
   // two different rounds OR twice within the same round. Each round only carries
@@ -412,26 +436,52 @@ export default function QuizBuilder() {
             <div className="dnd-panel-header">
               <h3>Available Rounds</h3>
               <p className="dnd-hint">Click to add — rounds and widgets can be freely mixed</p>
+              {availableRounds.length > 0 && (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm so-group-toggle-all"
+                  onClick={() => setCollapsedGroups(allGroupsCollapsed ? new Set() : new Set(roundGroups.map(([g]) => g)))}
+                >
+                  {allGroupsCollapsed ? 'Expand all' : 'Collapse all'}
+                </button>
+              )}
             </div>
 
             <div className="so-round-picker">
               {availableRounds.length === 0 ? (
                 <p className="dnd-empty">All rounds added.</p>
-              ) : availableRounds.map(r => {
-                const qc = (r.questions || []).filter(q => q?.id).length;
+              ) : roundGroups.map(([group, rounds]) => {
+                const collapsed = collapsedGroups.has(group);
                 return (
-                  <button
-                    key={r.id}
-                    type="button"
-                    className="so-round-chip"
-                    style={{ borderLeft: `3px solid ${r.background_color || '#00f0ff'}` }}
-                    onClick={() => addRound(r)}
-                    title={`Add "${r.name}" to quiz`}
-                  >
-                    <span className="so-chip-name">{r.name}</span>
-                    <span className="so-chip-meta">{qc} Q</span>
-                    <span className="so-chip-add">+</span>
-                  </button>
+                  <div key={group} className="so-round-group">
+                    <button
+                      type="button"
+                      className={`so-group-head ${collapsed ? 'collapsed' : ''}`}
+                      onClick={() => toggleGroup(group)}
+                      title={collapsed ? 'Expand' : 'Collapse'}
+                    >
+                      <span className="so-group-caret">{collapsed ? '▸' : '▾'}</span>
+                      <span className="so-group-name">{group}</span>
+                      <span className="so-group-count">{rounds.length}</span>
+                    </button>
+                    {!collapsed && rounds.map(r => {
+                      const qc = (r.questions || []).filter(q => q?.id).length;
+                      return (
+                        <button
+                          key={r.id}
+                          type="button"
+                          className="so-round-chip"
+                          style={{ borderLeft: `3px solid ${r.background_color || '#00f0ff'}` }}
+                          onClick={() => addRound(r)}
+                          title={`Add "${r.name}" to quiz`}
+                        >
+                          <span className="so-chip-name">{r.name}</span>
+                          <span className="so-chip-meta">{qc} Q</span>
+                          <span className="so-chip-add">+</span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 );
               })}
             </div>

@@ -438,6 +438,7 @@ export default function AnswerMarking({ sessionId, quiz }) {
               <span className="round-badge">{idx + 1}</span>
               {round.name}
               {round.style === 'intermission' && <span className="qm-tag qm-tag-cat">🖼 Picture</span>}
+              {round.style === 'textlist' && <span className="qm-tag qm-tag-cat">📋 Text</span>}
               <span className="round-q-count">{rqs.length} question{rqs.length !== 1 ? 's' : ''}</span>
               {locked && <span className="marking-locked-badge">🔒 locked</span>}
             </h3>

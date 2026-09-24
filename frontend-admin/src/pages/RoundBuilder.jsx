@@ -4,7 +4,8 @@ import { api } from '../services/api';
 
 // print_pictures defaults ON: a picture round almost always wants its grid on the
 // printed answer sheet. Untick it to save ink when the pictures are screen-only.
-const EMPTY = { name: '', background_color: '#0a0e1f', format: 'standard', style: 'standard', display_title: '', grid_columns: 5, print_pictures: true };
+// For a textlist round the same flag prints the item list instead.
+const EMPTY = { name: '', background_color: '#0a0e1f', format: 'standard', style: 'standard', display_title: '', grid_columns: 5, print_pictures: true, category: '', list_mode: 'plain', list_options: '' };
 
 const GRID_COLUMN_OPTIONS = [3, 4, 5];
 
@@ -79,7 +80,10 @@ export default function RoundBuilder() {
         style: r.style || 'standard',
         display_title: r.display_title || '',
         grid_columns: r.grid_columns || 5,
-        print_pictures: !!r.print_pictures
+        print_pictures: !!r.print_pictures,
+        category: r.category || '',
+        list_mode: r.list_mode || 'plain',
+        list_options: Array.isArray(r.list_options) ? r.list_options.join('\n') : ''
       },
       selectedQuestions: sortedQs.map(q => q.id),
       formatOverrides: overrides
@@ -111,7 +115,14 @@ export default function RoundBuilder() {
           : null;
         return { id, question_format_override: override, audio_form_override: audioOverride };
       });
-      const payload = { ...form, questions: questionsPayload };
+      const payload = {
+        ...form,
+        // list_options is edited as one-option-per-line text; only stored for textlist rounds.
+        list_options: form.style === 'textlist'
+          ? String(form.list_options || '').split('\n').map(s => s.trim()).filter(Boolean)
+          : [],
+        questions: questionsPayload
+      };
       if (editingId) await api.put(`/rounds/${editingId}`, payload);
       else await api.post('/rounds', payload);
       await loadAll();
@@ -162,7 +173,10 @@ export default function RoundBuilder() {
                     <div className="round-card-meta">
                       {r.style === 'intermission'
                         ? <span className="qm-tag qm-tag-cat" title={r.display_title || r.name}>🖼 Picture</span>
+                        : r.style === 'textlist'
+                        ? <span className="qm-tag qm-tag-cat" title={r.display_title || r.name}>📋 Text list</span>
                         : <span className="qm-tag qm-tag-cat">{r.format}</span>}
+                      {r.category && <span className="qm-tag qm-tag-cat" title="Category">{r.category}</span>}
                       <span className="qm-points">{qCount} Q</span>
                     </div>
                   </div>
@@ -319,7 +333,19 @@ function RoundEditorModal({ editing, editingId, init, questions, questionUsage, 
               <select value={form.style} onChange={(e) => setForm({ ...form, style: e.target.value })} title="Round style">
                 <option value="standard">Standard round</option>
                 <option value="intermission">Intermission (picture grid)</option>
+                <option value="textlist">Text list (order / match / list)</option>
               </select>
+              <input
+                type="text"
+                placeholder="Category (optional)"
+                value={form.category}
+                onChange={(e) => setForm({ ...form, category: e.target.value })}
+                list="round-category-list"
+                title="Groups this round in the Quiz Builder"
+              />
+              <datalist id="round-category-list">
+                {categories.map(c => <option key={c} value={c} />)}
+              </datalist>
               <input
                 type="color"
                 value={form.background_color}
@@ -361,6 +387,60 @@ function RoundEditorModal({ editing, editingId, init, questions, questionUsage, 
                   >
                     {Array.from({ length: selectedQuestions.length || 10 }).map((_, i) => (
                       <div key={i} className="intermission-preview-cell">{i + 1}</div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {form.style === 'textlist' && (
+              <div className="intermission-config textlist-config">
+                <div className="intermission-config-fields">
+                  <input
+                    type="text"
+                    placeholder={`On-screen title (default: ${form.name || 'round name'})`}
+                    value={form.display_title}
+                    onChange={(e) => setForm({ ...form, display_title: e.target.value })}
+                  />
+                  <select
+                    value={form.list_mode}
+                    onChange={(e) => setForm({ ...form, list_mode: e.target.value })}
+                    title="How teams answer each item"
+                  >
+                    <option value="plain">Plain text answers</option>
+                    <option value="order">Put them in order (type a rank)</option>
+                    <option value="match">Match to a shared option list</option>
+                  </select>
+                  <label className="intermission-print-toggle" title="Print the item list onto the Quizzer Answer Sheet PDF so teams can answer from paper">
+                    <input
+                      type="checkbox"
+                      checked={!!form.print_pictures}
+                      onChange={(e) => setForm({ ...form, print_pictures: e.target.checked })}
+                    />
+                    🖨 Print items on the answer sheet
+                  </label>
+                </div>
+                {form.list_mode === 'match' && (
+                  <label className="form-label textlist-options-editor">
+                    Shared options (one per line) — shown as a legend on screen
+                    <textarea
+                      rows={4}
+                      placeholder={"Small\nMedium\nLarge"}
+                      value={form.list_options}
+                      onChange={(e) => setForm({ ...form, list_options: e.target.value })}
+                    />
+                  </label>
+                )}
+                <div className="intermission-preview">
+                  <span className="intermission-preview-label">Items ({selectedQuestions.length})</span>
+                  <div className="textlist-preview">
+                    {selectedQuestions.length === 0 ? (
+                      <p className="dnd-empty" style={{ padding: '10px 0' }}>Add questions below.</p>
+                    ) : selectedQuestionObjs.map((q, i) => (
+                      <div key={q.id} className="textlist-preview-row">
+                        <span className="textlist-preview-num">{i + 1}</span>
+                        <span className="textlist-preview-text">{q.text}</span>
+                      </div>
                     ))}
                   </div>
                 </div>

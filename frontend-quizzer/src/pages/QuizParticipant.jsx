@@ -323,6 +323,60 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
       );
     }
 
+    if (slide.type === 'textlist') {
+      const locked = isLockedFor(slide.roundId);
+      return (
+        <div className="textlist-answers">
+          <p className="mark-label">{slide.title}</p>
+          <h2>{locked ? 'Round Locked' : 'Text Round'}</h2>
+          <p className="mark-hint">
+            {locked
+              ? 'Your answers are locked in.'
+              : slide.listMode === 'order'
+              ? 'Put the numbered items in the correct order.'
+              : slide.listMode === 'match'
+              ? 'Match each numbered item to one of the options.'
+              : 'Type an answer for each numbered item.'}
+          </p>
+          {slide.listMode === 'match' && Array.isArray(slide.listOptions) && slide.listOptions.length > 0 && (
+            <div className="textlist-legend">
+              {slide.listOptions.map((o, i) => (
+                <span key={i} className="textlist-legend-item">{o}</span>
+              ))}
+            </div>
+          )}
+          <div className="textlist-input-list">
+            {(slide.questions || []).map((q) => (
+              <div key={q.questionId} className="textlist-input-row">
+                <span className="textlist-input-num">{q.questionNumber}</span>
+                <span className="textlist-input-text">{q.text}</span>
+                {slide.listMode === 'match' ? (
+                  <select
+                    className="textlist-select"
+                    value={answers[q.questionId] || ''}
+                    onChange={(e) => submitAnswer(q.questionId, e.target.value)}
+                    disabled={locked}
+                  >
+                    <option value="">—</option>
+                    {(slide.listOptions || []).map((o, i) => <option key={i} value={o}>{o}</option>)}
+                  </select>
+                ) : (
+                  <input
+                    type={slide.listMode === 'order' ? 'number' : 'text'}
+                    className="answer-input textlist-input"
+                    placeholder={slide.listMode === 'order' ? '#' : `Answer ${q.questionNumber}`}
+                    value={answers[q.questionId] || ''}
+                    onChange={(e) => submitAnswer(q.questionId, e.target.value)}
+                    disabled={locked}
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
     if (slide.type === 'whoami_clue') {
       return (
         <WhoamiView
@@ -595,10 +649,10 @@ const splitNTS = (v) => { const i = (v || '').indexOf(NTS_SEP); return i === -1 
 const combineNTS = (a, s) => (a || s) ? `${a}${NTS_SEP}${s}` : '';
 
 // Normalise a round's questions into QuestionView-compatible slides, working for
-// both standard rounds (per-question slides) and intermission picture rounds
-// (all questions carried on the single intermission slide).
+// standard rounds (per-question slides), intermission picture rounds and text-list
+// rounds (all questions carried on the single grid/table slide).
 function roundQuestionsFromSlides(slides, roundId) {
-  const inter = slides.find(s => s.type === 'intermission' && s.roundId === roundId);
+  const inter = slides.find(s => (s.type === 'intermission' || s.type === 'textlist') && s.roundId === roundId);
   if (inter) {
     const qs = inter.questions || [];
     return qs.map(q => ({
@@ -722,8 +776,8 @@ export function AnswerReviewView({ title, slides, answers, scores }) {
   const groups = [];
   let cur = null;
   for (const s of slides) {
-    if (s.type === 'intermission') {
-      // Intermission rounds carry all their questions on one slide.
+    if (s.type === 'intermission' || s.type === 'textlist') {
+      // Grid/table rounds carry all their questions on one slide.
       groups.push({
         roundId: s.roundId,
         roundName: s.title,

@@ -515,6 +515,78 @@ html, body, #root {
   text-align: center;
 }
 
+/* Text-list round (order / match / plain) */
+.slide-textlist {
+  align-items: center;
+  justify-content: flex-start;
+  padding: 30px;
+}
+.slide-textlist .textlist-title {
+  font-size: 3rem;
+  font-weight: 800;
+  color: var(--neon-cyan);
+  text-shadow: 0 0 30px rgba(0, 240, 255, 0.4);
+  margin-bottom: 20px;
+  text-align: center;
+}
+.textlist-legend {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  margin-bottom: 18px;
+  font-size: 1.2rem;
+}
+.textlist-legend-label { color: var(--text-muted); }
+.textlist-legend-item {
+  padding: 6px 16px;
+  border-radius: 999px;
+  background: rgba(184, 41, 255, 0.18);
+  border: 1px solid rgba(184, 41, 255, 0.5);
+  color: #fff;
+  font-weight: 700;
+}
+.textlist-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  max-width: 1400px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px 28px;
+  align-content: start;
+  overflow-y: auto;
+  min-height: 0;
+}
+.textlist-item {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: rgba(0, 240, 255, 0.05);
+  border: 1px solid rgba(0, 240, 255, 0.2);
+}
+.textlist-item-num {
+  font-weight: 800;
+  font-size: 1.3rem;
+  color: var(--neon-cyan);
+  min-width: 2rem;
+}
+.textlist-item-text {
+  font-size: 1.5rem;
+  color: var(--text-primary);
+}
+.textlist-hint {
+  margin-top: 18px;
+  font-size: 1.1rem;
+  color: var(--text-muted);
+  letter-spacing: 1px;
+  text-align: center;
+}
+
 .slide-widget {
   background: linear-gradient(135deg, rgba(184, 41, 255, 0.15) 0%, rgba(255, 0, 225, 0.15) 100%);
   border-radius: var(--radius-lg);
