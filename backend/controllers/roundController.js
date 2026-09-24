@@ -19,7 +19,13 @@ const ROUND_QUESTIONS_AGG = `
 async function getAllRounds(req, res) {
   try {
     const result = await db.query(`
-      SELECT r.*, ${ROUND_QUESTIONS_AGG}
+      SELECT r.*, ${ROUND_QUESTIONS_AGG},
+        COALESCE((
+          SELECT json_agg(json_build_object('id', z.id, 'name', z.name, 'position', zqr.position, 'created_at', z.created_at) ORDER BY z.created_at DESC)
+          FROM quiz_rounds zqr
+          JOIN quizzes z ON z.id = zqr.quiz_id
+          WHERE zqr.round_id = r.id
+        ), '[]'::json) AS quizzes
       FROM rounds r
       LEFT JOIN round_questions rq ON r.id = rq.round_id
       LEFT JOIN questions q ON rq.question_id = q.id
@@ -69,18 +75,18 @@ async function createRound(req, res) {
   try {
     const { name, background_color, background_image_url, format, questions,
             style, display_title, grid_columns, print_pictures,
-            category, list_mode, list_options } = req.body;
+            category, list_mode, list_options, show_images } = req.body;
     const client = await db.getClient();
     try {
       await client.query('BEGIN');
 
       const roundResult = await client.query(
-        `INSERT INTO rounds (name, background_color, background_image_url, format, style, display_title, grid_columns, print_pictures, category, list_mode, list_options)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+        `INSERT INTO rounds (name, background_color, background_image_url, format, style, display_title, grid_columns, print_pictures, category, list_mode, list_options, show_images)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
         [name, background_color, background_image_url, format,
          style || 'standard', display_title || null, grid_columns || 5, !!print_pictures,
          category || null, list_mode || 'plain',
-         JSON.stringify(Array.isArray(list_options) ? list_options : [])]
+         JSON.stringify(Array.isArray(list_options) ? list_options : []), !!show_images]
       );
       const roundId = roundResult.rows[0].id;
 
@@ -103,7 +109,7 @@ async function updateRound(req, res) {
     const { id } = req.params;
     const { name, background_color, background_image_url, format, questions,
             style, display_title, grid_columns, print_pictures,
-            category, list_mode, list_options } = req.body;
+            category, list_mode, list_options, show_images } = req.body;
     const client = await db.getClient();
     try {
       await client.query('BEGIN');
@@ -111,12 +117,12 @@ async function updateRound(req, res) {
       const result = await client.query(
         `UPDATE rounds SET name = $1, background_color = $2, background_image_url = $3, format = $4,
                            style = $5, display_title = $6, grid_columns = $7, print_pictures = $8,
-                           category = $9, list_mode = $10, list_options = $11
-         WHERE id = $12 RETURNING *`,
+                           category = $9, list_mode = $10, list_options = $11, show_images = $12
+         WHERE id = $13 RETURNING *`,
         [name, background_color, background_image_url, format,
          style || 'standard', display_title || null, grid_columns || 5, !!print_pictures,
          category || null, list_mode || 'plain',
-         JSON.stringify(Array.isArray(list_options) ? list_options : []), id]
+         JSON.stringify(Array.isArray(list_options) ? list_options : []), !!show_images, id]
       );
 
       if (result.rows.length === 0) {

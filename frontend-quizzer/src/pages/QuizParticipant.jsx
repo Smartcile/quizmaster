@@ -349,6 +349,9 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
             {(slide.questions || []).map((q) => (
               <div key={q.questionId} className="textlist-input-row">
                 <span className="textlist-input-num">{q.questionNumber}</span>
+                {slide.showImages && q.mediaUrl && q.questionType === 'image' && (
+                  <img className="textlist-input-img" src={q.mediaUrl} alt="" />
+                )}
                 <span className="textlist-input-text">{q.text}</span>
                 {slide.listMode === 'match' ? (
                   <select

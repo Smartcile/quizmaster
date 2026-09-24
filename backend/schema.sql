@@ -261,6 +261,9 @@ ALTER TABLE rounds ADD COLUMN IF NOT EXISTS category VARCHAR(100);
 -- per-item correct value still lives in questions.answer.
 ALTER TABLE rounds ADD COLUMN IF NOT EXISTS list_mode VARCHAR(20) DEFAULT 'plain';
 ALTER TABLE rounds ADD COLUMN IF NOT EXISTS list_options JSONB DEFAULT '[]';
+-- Show each item's image next to its text on the on-screen/device list (the image
+-- is the question's media_url, so a textlist round can be a labelled picture list).
+ALTER TABLE rounds ADD COLUMN IF NOT EXISTS show_images BOOLEAN DEFAULT FALSE;
 
 -- Paper-only teams: no device, marked by hand from their sheet. Flagged from the
 -- Mark Answers / Control team lists so they can be grouped together for marking.

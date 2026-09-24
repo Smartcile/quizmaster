@@ -42,6 +42,10 @@ const printsPictures = (round) => round.style === 'intermission' && !!round.prin
 // A textlist round that should have its item list printed on the answer sheet
 // (reuses the same flag — the Round Builder relabels the toggle per style).
 const printsItems = (round) => round.style === 'textlist' && !!round.print_pictures;
+// Any round whose pictures need pre-loading for the answer sheet: an intermission
+// grid, or a textlist whose items show images.
+const needsSheetImages = (round) =>
+  printsPictures(round) || (printsItems(round) && !!round.show_images);
 
 // ── join link + QR ────────────────────────────────────────────────────────────
 // Same rule as the Control page: QUIZZER_URL from /api/config, else the current
@@ -124,7 +128,7 @@ export async function downloadAnswerSheet(quiz) {
   // Pre-load the pictures for any round that prints its grid (async work can't
   // happen mid-render). Keyed by round id → [{ questionId, img }].
   const pics = new Map();
-  for (const round of rounds.filter(printsPictures)) {
+  for (const round of rounds.filter(needsSheetImages)) {
     const loaded = await Promise.all(
       questionsOf(round).map(async q => ({ q, img: q.media_url ? await imageForPdf(q.media_url) : null }))
     );
@@ -168,7 +172,7 @@ export async function downloadAnswerSheet(quiz) {
 
     // Text-list round printed on paper: numbered item text + a write-in box.
     if (printsItems(round)) {
-      drawTextList(doc, y, qs, round);
+      drawTextList(doc, y, qs, round, pics.get(round.id) || []);
       return;
     }
 
@@ -300,9 +304,10 @@ function drawPictureGrid(doc, top, cells, cols) {
 }
 
 // Numbered text-list round printed on paper: each item's text with a write-in
-// box on the right, plus the shared option legend for match mode. Sized to fit
-// the remaining page height.
-function drawTextList(doc, top, qs, round) {
+// box on the right, plus the shared option legend for match mode. When the round
+// has show_images on, a thumbnail of each item's picture is printed to the left
+// of its text. Sized to fit the remaining page height.
+function drawTextList(doc, top, qs, round, pics) {
   let y = top;
   const opts = Array.isArray(round.list_options) ? round.list_options : [];
   if (round.list_mode === 'match' && opts.length) {
@@ -320,16 +325,37 @@ function drawTextList(doc, top, qs, round) {
   const boxX = M + textW + 10;
   const boxW = PAGE_W - M - boxX;
 
+  // Optional per-item thumbnail (only when the round is set to show images).
+  const withImages = !!round.show_images;
+  const imgById = new Map((pics || []).map(p => [p.q.id, p.img]));
+  const thumbW = withImages ? 46 : 0;
+  const textLeft = M + 22 + (withImages ? thumbW + 6 : 0);
+
   qs.forEach((q, i) => {
     doc.setDrawColor(120);
     doc.rect(M, y, CONTENT_W, rowH);
     doc.setFont('helvetica', 'bold'); doc.setFontSize(Math.min(11, rowH - 4));
     doc.text(`${i + 1}.`, M + 6, y + rowH / 2 + 4);
+
+    if (withImages) {
+      const im = imgById.get(q.id);
+      const th = rowH - 8;
+      if (im) {
+        let w = thumbW, h = w / (im.w / im.h || 1);
+        if (h > th) { h = th; w = h * (im.w / im.h || 1); }
+        doc.addImage(im.dataUrl, 'JPEG', M + 22 + (thumbW - w) / 2, y + (rowH - h) / 2, w, h);
+      } else {
+        doc.setDrawColor(190); doc.rect(M + 22, y + 4, thumbW, rowH - 8);
+      }
+      doc.setDrawColor(120);
+    }
+
     doc.setFont('helvetica', 'normal');
-    const lines = doc.splitTextToSize(q.text || '', textW - 26).slice(0, 2);
+    const textLimit = Math.max(40, (boxX - 8) - textLeft);
+    const lines = doc.splitTextToSize(q.text || '', textLimit).slice(0, 2);
     const lineH = Math.min(11, rowH - 4) + 1;
     const startY = y + rowH / 2 + 4 - (lines.length - 1) * lineH / 2;
-    doc.text(lines, M + 22, startY);
+    doc.text(lines, textLeft, startY);
     // write-in box
     doc.setDrawColor(120);
     doc.rect(boxX, y + 3, boxW, rowH - 6);
@@ -500,10 +526,27 @@ export async function downloadSlideshowPptx(quiz) {
           slide.addText(`Options: ${topts.join('  ·  ')}`, { x: 1, y: listY, w: W - 2, h: 0.5, align: 'center', fontSize: 18, color: C.PURPLE });
           listY += 0.6;
         }
-        slide.addText(
-          tqs.map((q, i) => ({ text: `${i + 1}.  ${q.text}`, options: { breakLine: true } })),
-          { x: 1, y: listY, w: W - 2, h: Math.max(1, 7.2 - listY), align: 'left', fontSize: 18, color: C.WHITE }
-        );
+        const areaH = Math.max(1, 7.2 - listY);
+        if (s.showImages) {
+          // One row per item: thumbnail on the left, text beside it.
+          const rowH = Math.min(1.5, areaH / Math.max(1, tqs.length));
+          const thumbW = rowH * 0.9;
+          tqs.forEach((q, i) => {
+            const ry = listY + i * rowH;
+            const tx = 1 + thumbW + 0.15;
+            if (q.mediaUrl && q.questionType === 'image') {
+              try {
+                slide.addImage({ path: q.mediaUrl, x: 1, y: ry, w: thumbW, h: rowH * 0.9, sizing: { type: 'contain', w: thumbW, h: rowH * 0.9 } });
+              } catch { /* missing file — the row still prints its text */ }
+            }
+            slide.addText(`${i + 1}.  ${q.text}`, { x: tx, y: ry, w: W - tx - 1, h: rowH, valign: 'middle', fontSize: 16, color: C.WHITE });
+          });
+        } else {
+          slide.addText(
+            tqs.map((q, i) => ({ text: `${i + 1}.  ${q.text}`, options: { breakLine: true } })),
+            { x: 1, y: listY, w: W - 2, h: areaH, align: 'left', fontSize: 18, color: C.WHITE }
+          );
+        }
         break;
       }
       case 'whoami_clue':

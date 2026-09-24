@@ -5,7 +5,7 @@ import { api } from '../services/api';
 // print_pictures defaults ON: a picture round almost always wants its grid on the
 // printed answer sheet. Untick it to save ink when the pictures are screen-only.
 // For a textlist round the same flag prints the item list instead.
-const EMPTY = { name: '', background_color: '#0a0e1f', format: 'standard', style: 'standard', display_title: '', grid_columns: 5, print_pictures: true, category: '', list_mode: 'plain', list_options: '' };
+const EMPTY = { name: '', background_color: '#0a0e1f', format: 'standard', style: 'standard', display_title: '', grid_columns: 5, print_pictures: true, category: '', list_mode: 'plain', list_options: '', show_images: false };
 
 const GRID_COLUMN_OPTIONS = [3, 4, 5];
 
@@ -24,6 +24,8 @@ export default function RoundBuilder() {
   const [editingId, setEditingId] = useState(null);
   const [editInit, setEditInit] = useState(null); // initial state passed into the modal
   const [error, setError] = useState(null);
+  const [groupByQuiz, setGroupByQuiz] = useState(true);
+  const [collapsedGroups, setCollapsedGroups] = useState(() => new Set());
 
   useEffect(() => { loadAll(); }, []);
 
@@ -39,6 +41,68 @@ export default function RoundBuilder() {
     }));
     return map;
   }, [rounds]);
+
+  // Group rounds under each quiz they belong to, in the quiz's running order.
+  // A round used in several quizzes appears in each group; rounds in no quiz
+  // fall under "Not in a quiz" (shown last). Groups are ordered newest-quiz-first
+  // to match the Quizzes list.
+  const roundGroups = useMemo(() => {
+    if (!groupByQuiz) return [];
+    const byQuiz = new Map();
+    const unassigned = [];
+    rounds.forEach(r => {
+      const quizzes = Array.isArray(r.quizzes) ? r.quizzes : [];
+      if (quizzes.length === 0) { unassigned.push(r); return; }
+      quizzes.forEach(qz => {
+        const key = String(qz.id);
+        if (!byQuiz.has(key)) byQuiz.set(key, { key, label: qz.name, createdAt: qz.created_at, entries: [] });
+        byQuiz.get(key).entries.push({ r, pos: qz.position ?? 0 });
+      });
+    });
+    const groups = [...byQuiz.values()]
+      .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+      .map(g => ({
+        key: g.key,
+        label: g.label,
+        rounds: g.entries.sort((a, b) => a.pos - b.pos).map(x => x.r),
+      }));
+    if (unassigned.length) groups.push({ key: '__none__', label: 'Not in a quiz', rounds: unassigned });
+    return groups;
+  }, [rounds, groupByQuiz]);
+
+  const toggleGroup = (key) => setCollapsedGroups(prev => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
+
+  const renderRoundCard = (r) => {
+    const qCount = (r.questions || []).filter(q => q && q.id).length;
+    return (
+      <div
+        key={r.id}
+        className="round-card"
+        style={{ borderTopColor: r.background_color || 'var(--neon-cyan)' }}
+      >
+        <div className="round-card-body" onClick={() => openEdit(r)}>
+          <h4 className="round-card-name">{r.name}</h4>
+          <div className="round-card-meta">
+            {r.style === 'intermission'
+              ? <span className="qm-tag qm-tag-cat" title={r.display_title || r.name}>🖼 Picture</span>
+              : r.style === 'textlist'
+              ? <span className="qm-tag qm-tag-cat" title={r.display_title || r.name}>📋 Text list</span>
+              : <span className="qm-tag qm-tag-cat">{r.format}</span>}
+            {r.category && <span className="qm-tag qm-tag-cat" title="Category">{r.category}</span>}
+            <span className="qm-points">{qCount} Q</span>
+          </div>
+        </div>
+        <div className="round-card-actions">
+          <button onClick={() => openEdit(r)} className="btn btn-sm btn-secondary">✏ Edit</button>
+          <button onClick={() => handleDelete(r.id)} className="btn btn-sm btn-danger">🗑 Delete</button>
+        </div>
+      </div>
+    );
+  };
 
   const loadAll = async () => {
     try {
@@ -83,7 +147,8 @@ export default function RoundBuilder() {
         print_pictures: !!r.print_pictures,
         category: r.category || '',
         list_mode: r.list_mode || 'plain',
-        list_options: Array.isArray(r.list_options) ? r.list_options.join('\n') : ''
+        list_options: Array.isArray(r.list_options) ? r.list_options.join('\n') : '',
+        show_images: !!r.show_images
       },
       selectedQuestions: sortedQs.map(q => q.id),
       formatOverrides: overrides
@@ -155,39 +220,54 @@ export default function RoundBuilder() {
       </div>
 
       <div className="panel">
-        <h3>Existing Rounds ({rounds.length})</h3>
+        <div className="panel-head-row">
+          <h3>Existing Rounds ({rounds.length})</h3>
+          {rounds.length > 0 && (
+            <div className="round-view-toggle">
+              <button
+                type="button"
+                className={`btn btn-sm ${groupByQuiz ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setGroupByQuiz(true)}
+                title="Group rounds by the quiz they belong to"
+              >
+                By quiz
+              </button>
+              <button
+                type="button"
+                className={`btn btn-sm ${!groupByQuiz ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setGroupByQuiz(false)}
+                title="Show every round in one flat list"
+              >
+                Flat list
+              </button>
+            </div>
+          )}
+        </div>
         {rounds.length === 0 ? (
           <p className="dnd-empty">No rounds yet. Click “Create Round” to build your first one.</p>
-        ) : (
-          <div className="round-grid">
-            {rounds.map(r => {
-              const qCount = (r.questions || []).filter(q => q && q.id).length;
+        ) : groupByQuiz ? (
+          <div className="round-groups">
+            {roundGroups.map(g => {
+              const isCollapsed = collapsedGroups.has(g.key);
               return (
-                <div
-                  key={r.id}
-                  className="round-card"
-                  style={{ borderTopColor: r.background_color || 'var(--neon-cyan)' }}
-                >
-                  <div className="round-card-body" onClick={() => openEdit(r)}>
-                    <h4 className="round-card-name">{r.name}</h4>
-                    <div className="round-card-meta">
-                      {r.style === 'intermission'
-                        ? <span className="qm-tag qm-tag-cat" title={r.display_title || r.name}>🖼 Picture</span>
-                        : r.style === 'textlist'
-                        ? <span className="qm-tag qm-tag-cat" title={r.display_title || r.name}>📋 Text list</span>
-                        : <span className="qm-tag qm-tag-cat">{r.format}</span>}
-                      {r.category && <span className="qm-tag qm-tag-cat" title="Category">{r.category}</span>}
-                      <span className="qm-points">{qCount} Q</span>
-                    </div>
-                  </div>
-                  <div className="round-card-actions">
-                    <button onClick={() => openEdit(r)} className="btn btn-sm btn-secondary">✏ Edit</button>
-                    <button onClick={() => handleDelete(r.id)} className="btn btn-sm btn-danger">🗑 Delete</button>
-                  </div>
+                <div key={g.key} className="round-group">
+                  <button
+                    type="button"
+                    className={`so-group-head ${isCollapsed ? 'collapsed' : ''}`}
+                    onClick={() => toggleGroup(g.key)}
+                    title={isCollapsed ? 'Expand' : 'Collapse'}
+                  >
+                    <span className="so-group-caret">{isCollapsed ? '▸' : '▾'}</span>
+                    <span className="so-group-name">{g.label}</span>
+                    <span className="so-group-count">{g.rounds.length}</span>
+                  </button>
+                  {!isCollapsed && <div className="round-grid">{g.rounds.map(renderRoundCard)}</div>}
                 </div>
               );
             })}
           </div>
+        ) : (
+          <div className="round-grid">{rounds.map(renderRoundCard)}</div>
         )}
       </div>
 
@@ -419,6 +499,14 @@ function RoundEditorModal({ editing, editingId, init, questions, questionUsage, 
                     />
                     🖨 Print items on the answer sheet
                   </label>
+                  <label className="intermission-print-toggle" title="Show each item's image next to its text — on the screen, the phones and the printed answer sheet">
+                    <input
+                      type="checkbox"
+                      checked={!!form.show_images}
+                      onChange={(e) => setForm({ ...form, show_images: e.target.checked })}
+                    />
+                    🖼 Show item images
+                  </label>
                 </div>
                 {form.list_mode === 'match' && (
                   <label className="form-label textlist-options-editor">
@@ -439,6 +527,9 @@ function RoundEditorModal({ editing, editingId, init, questions, questionUsage, 
                     ) : selectedQuestionObjs.map((q, i) => (
                       <div key={q.id} className="textlist-preview-row">
                         <span className="textlist-preview-num">{i + 1}</span>
+                        {form.show_images && q.type === 'image' && q.media_url && (
+                          <img className="textlist-preview-thumb" src={q.media_url} alt="" />
+                        )}
                         <span className="textlist-preview-text">{q.text}</span>
                       </div>
                     ))}

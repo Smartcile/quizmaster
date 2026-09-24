@@ -92,6 +92,27 @@ describe('buildSlides — round expansion', () => {
     expect(match.questions[0]).toMatchObject({ questionId: 401, text: 'Luxembourg', answer: 'Small' });
   });
 
+  it('carries the textlist show_images flag onto its slide', () => {
+    const quiz = {
+      name: 'x', code: 'XXXXXX',
+      items: [{
+        kind: 'round', id: 1, name: 'Pic List', style: 'textlist', show_images: true, list_mode: 'plain',
+        questions: [{ id: 1, text: 'One', type: 'image', media_url: '/u/1.jpg', answer: 'a', points: 1 }],
+      }],
+    };
+    const slide = buildSlides(quiz).find(s => s.type === 'textlist');
+    expect(slide.showImages).toBe(true);
+    expect(slide.questions[0]).toMatchObject({ mediaUrl: '/u/1.jpg', questionType: 'image' });
+  });
+
+  it('defaults showImages to false when the round does not set it', () => {
+    const quiz = {
+      name: 'x', code: 'XXXXXX',
+      items: [{ kind: 'round', id: 1, name: 'Plain List', style: 'textlist', questions: [{ id: 1, text: 'One', type: 'text', answer: 'a' }] }],
+    };
+    expect(buildSlides(quiz).find(s => s.type === 'textlist').showImages).toBe(false);
+  });
+
   it('inserts mark_answers after the questions and before the reveals', () => {
     const slides = buildSlides(makeQuiz());
     const markIdx = slides.findIndex(s => s.type === 'mark_answers' && s.roundId === 10);

@@ -66,6 +66,7 @@ export function buildSlides(quiz) {
           gridColumns: round.grid_columns || 5,
           listMode: round.list_mode || 'plain',
           listOptions: Array.isArray(round.list_options) ? round.list_options : [],
+          showImages: !!round.show_images,
           questions: questions.map((q, i) => ({
             questionId: q.id,
             questionNumber: i + 1,

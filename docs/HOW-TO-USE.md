@@ -100,9 +100,14 @@ Go to **Rounds** and click **+ Create Round** (or Edit an existing one). Drag qu
 
 ![Rounds](images/admin-rounds.png)
 
+The list of rounds can be grouped **By quiz** (the default) or shown as a **Flat list**, using the toggle at the top-right of the panel. Grouped view puts each quiz's rounds under a collapsible header (newest quiz first); a round used in more than one quiz appears under each, and rounds not used in any quiz appear under **Not in a quiz** last.
+
 Inside the round editor you can also:
 
 - Set the **round colour** (the slideshow's round intro uses it)
+- Choose a **round style** — **Standard**, **Intermission** (picture grid) or **Text list**. Intermission rounds show all their pictures in one numbered grid; text-list rounds show a numbered list the team answers in order, matches to options, or fills in.
+- For a **text list**: pick how items are answered, tick **🖨 Print items on the answer sheet** to print the list on the Quizzer Answer Sheet PDF, and tick **🖼 Show item images** to show each item's picture beside its text on the screen, the phones and the printed answer sheet.
+- For an **intermission** round: set a display title, grid width, and tick **🖨 Print pictures on the answer sheet**.
 - Switch any **🔀 T&M** ("Both" answer-mode) question to **Text** or **MCQ** *for this round*
 - Switch any **🎵 NTS/FTL** audio question to **Name the Song** or **Finish the Lyrics** *for this round*
 

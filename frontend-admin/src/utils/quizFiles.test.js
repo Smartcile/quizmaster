@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 // Capture generator output without real PDF/PPTX/QR/canvas work.
-const h = vi.hoisted(() => ({ docs: [], autoTable: vi.fn(), pptx: [] }));
+const h = vi.hoisted(() => ({ docs: [], autoTable: vi.fn(), pptx: [], slides: [] }));
 
 vi.mock('jspdf', () => {
   class Doc {
@@ -32,7 +32,7 @@ vi.mock('pptxgenjs', () => {
   }
   class Pptx {
     constructor() { this.layout = ''; this.ShapeType = { rect: 'rect' }; this.writeFile = vi.fn(() => Promise.resolve()); h.pptx.push(this); }
-    addSlide() { return new Slide(); }
+    addSlide() { const s = new Slide(); h.slides.push(s); return s; }
   }
   return { default: Pptx };
 });
@@ -54,6 +54,7 @@ const quiz = {
 beforeEach(() => {
   h.docs.length = 0;
   h.pptx.length = 0;
+  h.slides.length = 0;
   h.autoTable.mockClear();
 });
 
@@ -90,6 +91,43 @@ describe('downloadAnswerSheet', () => {
   });
 });
 
+describe('downloadAnswerSheet — text-list images', () => {
+  const imgQuiz = {
+    name: 'Pic List', code: 'PIC123',
+    items: [{
+      kind: 'round', id: 5, name: 'Pic Round', style: 'textlist', display_title: 'Pictures',
+      print_pictures: true, show_images: true, list_mode: 'plain',
+      questions: [
+        { id: 51, text: 'Item one', answer: 'a', type: 'image', media_url: '/uploads/pic1.jpg', points: 1 },
+        { id: 52, text: 'Item two', answer: 'b', type: 'image', media_url: '/uploads/pic2.jpg', points: 1 },
+      ],
+    }],
+  };
+
+  // jsdom has no real image decoder / canvas — stub both so imageForPdf resolves.
+  beforeEach(() => {
+    vi.stubGlobal('Image', class {
+      naturalWidth = 100;
+      naturalHeight = 80;
+      set src(_v) { queueMicrotask(() => this.onload && this.onload()); }
+    });
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ fillStyle: '', fillRect() {}, drawImage() {} });
+    vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/jpeg;base64,AAAA');
+  });
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+  it('prints a picture for each item when show_images is on', async () => {
+    await downloadAnswerSheet(imgQuiz);
+    expect(h.docs.at(-1).addImage).toHaveBeenCalledTimes(2);
+  });
+
+  it('prints no pictures when show_images is off', async () => {
+    const off = { ...imgQuiz, items: [{ ...imgQuiz.items[0], show_images: false }] };
+    await downloadAnswerSheet(off);
+    expect(h.docs.at(-1).addImage).not.toHaveBeenCalled();
+  });
+});
+
 describe('downloadSlideshowPptx', () => {
   it('builds a deck from buildSlides and writes the file', async () => {
     await downloadSlideshowPptx(quiz);
@@ -97,5 +135,18 @@ describe('downloadSlideshowPptx', () => {
     expect(pptx.writeFile).toHaveBeenCalledWith({ fileName: 'ABC123-slideshow.pptx' });
     // intro + round1(intro,q,mark,answer) + round2(...) + end = 10 slides
     expect(pptx.writeFile).toHaveBeenCalledTimes(1);
+  });
+
+  it('adds item images to a textlist slide when show_images is on', async () => {
+    const picList = {
+      name: 'Pic List', code: 'PIC123',
+      items: [{
+        kind: 'round', id: 1, name: 'Pics', style: 'textlist', show_images: true, list_mode: 'plain',
+        questions: [{ id: 1, text: 'One', type: 'image', media_url: '/u/1.jpg', answer: 'a' }],
+      }],
+    };
+    await downloadSlideshowPptx(picList);
+    const listSlide = h.slides.find(s => s.addText.mock.calls.some(c => c[0] === 'Pics'));
+    expect(listSlide.addImage).toHaveBeenCalledWith(expect.objectContaining({ path: '/u/1.jpg' }));
   });
 });

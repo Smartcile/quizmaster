@@ -605,6 +605,9 @@ export function SlideRenderer({ slide, slideIndex, playToken, sessionId, socket,
             {(slide.questions || []).map((q, i) => (
               <li key={q.questionId ?? i} className="textlist-item">
                 <span className="textlist-item-num">{i + 1}</span>
+                {slide.showImages && q.mediaUrl && q.questionType === 'image' && (
+                  <img className="textlist-item-img" src={q.mediaUrl} alt={`Item ${i + 1}`} />
+                )}
                 <span className="textlist-item-text">{q.text}</span>
               </li>
             ))}

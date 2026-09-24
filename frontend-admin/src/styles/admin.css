@@ -841,6 +841,15 @@ select {
   border-radius: 4px;
 }
 .textlist-preview-num { font-weight: 700; color: var(--neon-cyan); font-size: 0.75rem; flex-shrink: 0; }
+.textlist-preview-thumb {
+  width: 34px;
+  height: 34px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+  align-self: center;
+}
 .textlist-preview-text { font-size: 0.85rem; color: var(--text-primary); }
 
 .cat-add-form {
@@ -1326,6 +1335,11 @@ select {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  /* Cap each panel so its scrollable child (round picker / order list) actually
+     scrolls instead of the whole panel growing past the split and spilling over
+     the content below it. */
+  max-height: 55vh;
+  min-height: 0;
 }
 
 .dnd-panel-header {
@@ -1472,6 +1486,27 @@ select {
   gap: 14px;
   margin-top: 14px;
 }
+
+/* Grouping the round list by quiz (Rounds page) */
+.panel-head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.panel-head-row h3 { margin: 0; }
+.round-view-toggle {
+  display: flex;
+  gap: 6px;
+}
+.round-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin-top: 14px;
+}
+.round-group .round-grid { margin-top: 10px; }
 
 .round-card {
   background: var(--bg-card);

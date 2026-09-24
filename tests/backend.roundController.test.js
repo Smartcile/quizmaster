@@ -17,7 +17,7 @@ describe('createRound', () => {
     await createRound({
       body: {
         name: 'Geo', style: 'textlist', list_mode: 'match', list_options: ['Small', 'Large'],
-        category: 'Geography', questions: [{ id: 1, question_format_override: 'multichoice' }, { id: 2 }],
+        category: 'Geography', show_images: true, questions: [{ id: 1, question_format_override: 'multichoice' }, { id: 2 }],
       },
     }, res);
 
@@ -25,6 +25,7 @@ describe('createRound', () => {
     expect(ins[1][8]).toBe('Geography');
     expect(ins[1][9]).toBe('match');
     expect(ins[1][10]).toBe(JSON.stringify(['Small', 'Large']));
+    expect(ins[1][11]).toBe(true);   // show_images carried
 
     const rq = client.query.mock.calls.filter(c => /INSERT INTO round_questions/i.test(c[0]));
     expect(rq).toHaveLength(2);
@@ -60,6 +61,20 @@ describe('getAllRounds / getRound / deleteRound', () => {
     const res = mockRes();
     await getAllRounds({}, res);
     expect(res.body).toEqual([{ id: 1 }]);
+  });
+
+  it('adds each round\'s quiz membership via a correlated json_agg', async () => {
+    db.query.mockResolvedValue({ rows: [{ id: 1, quizzes: [{ id: 7, name: 'Friday Quiz', position: 2, created_at: '2026-01-01' }] }] });
+    const res = mockRes();
+    await getAllRounds({}, res);
+
+    const sql = db.query.mock.calls[0][0];
+    expect(sql).toMatch(/quiz_rounds\s+zqr/i);
+    expect(sql).toMatch(/JOIN quizzes z/i);
+    expect(sql).toMatch(/json_agg/i);
+    expect(sql).toMatch(/AS quizzes/i);
+    // rows (including the quizzes array) pass straight through
+    expect(res.body).toEqual([{ id: 1, quizzes: [{ id: 7, name: 'Friday Quiz', position: 2, created_at: '2026-01-01' }] }]);
   });
 
   it('404s a missing round', async () => {
