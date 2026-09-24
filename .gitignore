@@ -49,6 +49,9 @@ temp/
 # Vite cache
 .vite/
 
+# Test coverage output
+coverage/
+
 # AI assistant config / local instructions (keep local, never commit)
 CLAUDE.md
 AGENTS.md
