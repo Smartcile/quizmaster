@@ -516,3 +516,24 @@ CREATE TABLE IF NOT EXISTS double_up_choices (
   UNIQUE (team_id)
 );
 CREATE INDEX IF NOT EXISTS idx_double_up_choices_session ON double_up_choices(session_id);
+
+-- ============================================================
+-- Paper answer-sheet photos (additive)
+-- ============================================================
+-- A photo of a team's hand-written answer sheet, uploaded from the marking page
+-- (typically a phone camera). `round_id` scopes the photo to one round so the AI
+-- transcription can map its numbered rows to that round's questions.
+-- `transcribed_text` keeps the last AI reading for audit; the real answers are
+-- written into the normal `answers` table so auto-marking runs unchanged.
+CREATE TABLE IF NOT EXISTS team_photos (
+  id               SERIAL PRIMARY KEY,
+  team_id          INT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+  round_id         INT REFERENCES rounds(id) ON DELETE SET NULL,
+  filename         TEXT NOT NULL,
+  url              TEXT NOT NULL,
+  transcribed_text TEXT,
+  transcribed_at   TIMESTAMP,
+  created_at       TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_team_photos_team_id ON team_photos(team_id);
+CREATE INDEX IF NOT EXISTS idx_team_photos_round_id ON team_photos(round_id);

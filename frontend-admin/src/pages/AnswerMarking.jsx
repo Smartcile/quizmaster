@@ -17,6 +17,12 @@ export default function AnswerMarking({ sessionId, quiz }) {
   const [powerups, setPowerups] = useState({});   // teamId → chosen ×2 round id
   // Per-question (all teams) or team-by-team (one paper sheet at a time).
   const [viewMode, setViewMode] = useState('question');
+  // Answer-sheet photos: [{ id, team_id, round_id, url, ... }]
+  const [photos, setPhotos] = useState([]);
+  const [aiConfigured, setAiConfigured] = useState(false);
+  const [photoBusy, setPhotoBusy] = useState(null);  // photo id being transcribed
+  const [photoError, setPhotoError] = useState(null);
+  const [photoViewer, setPhotoViewer] = useState(null); // full-size url
   const socket = useWebSocket();
 
   const slides = useMemo(() => buildSlides(quiz), [quiz]);
@@ -35,14 +41,18 @@ export default function AnswerMarking({ sessionId, quiz }) {
     if (!sessionId) return;
     setLoading(true);
     try {
-      const [result, wa, dup] = await Promise.all([
+      const [result, wa, dup, ph, conf] = await Promise.all([
         api.get(`/answers/session/${sessionId}`),
         api.get(`/whoami/session/${sessionId}`).catch(() => ({ whoami: null, guesses: [] })),
-        api.get(`/doubleup/session/${sessionId}`).catch(() => ({ choices: [] }))
+        api.get(`/doubleup/session/${sessionId}`).catch(() => ({ choices: [] })),
+        api.get(`/teams/session/${sessionId}/photos`).catch(() => []),
+        api.get('/config').catch(() => ({}))
       ]);
       setData(result);
       setWhoami(wa);
       setPowerups(Object.fromEntries((dup?.choices || []).map(c => [c.team_id, Number(c.round_id)])));
+      setPhotos(Array.isArray(ph) ? ph : []);
+      setAiConfigured(Boolean(conf?.deepseekEnabled));
     } catch (err) {
       console.error('Failed to load marking data:', err);
     } finally {
@@ -211,6 +221,48 @@ export default function AnswerMarking({ sessionId, quiz }) {
     }
   };
 
+  // ── Answer-sheet photos (paper teams) ─────────────────────────────────────
+  const uploadTeamPhoto = async (team, round, file) => {
+    if (!file) return;
+    setPhotoError(null);
+    const fd = new FormData();
+    fd.append('file', file);
+    if (round?.id != null) fd.append('roundId', round.id);
+    try {
+      const photo = await api.upload(`/teams/${team.id}/photos`, fd);
+      setPhotos(prev => [...prev, photo]);
+    } catch (err) {
+      console.error('Photo upload failed:', err);
+      setPhotoError(err.message || 'Photo upload failed');
+    }
+  };
+
+  const deleteTeamPhoto = async (photo) => {
+    if (!confirm('Remove this answer-sheet photo?')) return;
+    try {
+      await api.delete(`/teams/photos/${photo.id}`);
+      setPhotos(prev => prev.filter(p => p.id !== photo.id));
+    } catch (err) {
+      console.error('Failed to remove photo:', err);
+      setPhotoError(err.message || 'Failed to remove photo');
+    }
+  };
+
+  // Photo → text via the backend's AI service, then the normal auto-mark path.
+  const transcribePhoto = async (photo) => {
+    setPhotoBusy(photo.id);
+    setPhotoError(null);
+    try {
+      await api.post(`/teams/photos/${photo.id}/transcribe`, {});
+      await loadData();
+    } catch (err) {
+      console.error('Transcription failed:', err);
+      setPhotoError(err.message || 'Transcription failed');
+    } finally {
+      setPhotoBusy(null);
+    }
+  };
+
   // ── Admin team management (mirrors the Control lobby controls) ────────────
   const addTeam = async (name, size) => {
     await api.post('/teams', { sessionId, name, size });
@@ -348,6 +400,61 @@ export default function AnswerMarking({ sessionId, quiz }) {
   // Paper teams first here — this view exists primarily to hand-mark paper sheets.
   const teamViewOrder = [...paperTeams, ...deviceTeams];
 
+  // Photo strip for one team + round: thumbnails, optional AI transcription and a
+  // camera/file input (capture=environment opens the rear camera on a phone).
+  const renderPhotoStrip = (team, round) => {
+    const roundId = round?.id != null ? Number(round.id) : null;
+    const teamPhotos = photos.filter(
+      p => Number(p.team_id) === Number(team.id) &&
+        (roundId == null ? p.round_id == null : Number(p.round_id) === roundId)
+    );
+    return (
+      <div className="team-photo-strip">
+        {teamPhotos.map(p => (
+          <div key={p.id} className="team-photo">
+            <img
+              src={p.url}
+              alt={`${team.name} answer sheet`}
+              className="team-photo-thumb"
+              onClick={() => setPhotoViewer(p.url)}
+              title="Tap to enlarge"
+            />
+            <div className="team-photo-actions">
+              {aiConfigured && (
+                <button
+                  className="btn btn-xs btn-secondary"
+                  disabled={photoBusy === p.id}
+                  onClick={() => transcribePhoto(p)}
+                  title="Read the handwriting into the answer boxes and auto-mark"
+                >
+                  {photoBusy === p.id ? '…' : '✨ Transcribe'}
+                </button>
+              )}
+              <button
+                className="btn btn-xs btn-danger"
+                onClick={() => deleteTeamPhoto(p)}
+                title="Remove this photo"
+              >✕</button>
+            </div>
+          </div>
+        ))}
+        <label className="team-photo-add" title="Photograph this team's answer sheet for this round">
+          <span>📷</span>
+          <input
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = '';
+              uploadTeamPhoto(team, round, file);
+            }}
+          />
+        </label>
+      </div>
+    );
+  };
+
   const renderTeamView = () => {
     if (teams.length === 0) {
       return <p className="marking-empty">No teams have joined this session yet.</p>;
@@ -402,6 +509,7 @@ export default function AnswerMarking({ sessionId, quiz }) {
                 <span className="marking-q-text">{round.name}</span>
                 {locked && <span className="marking-locked-badge">🔒 locked</span>}
               </div>
+              {renderPhotoStrip(t, round)}
               <div className="marking-team-rows">
                 {rqs.map(q => {
                   const ansText = getAnswer(t.id, q.id);
@@ -526,6 +634,13 @@ export default function AnswerMarking({ sessionId, quiz }) {
           <button onClick={loadData}   className="btn btn-secondary btn-sm" disabled={loading}>↻ Refresh</button>
         </div>
       </div>
+
+      {photoError && (
+        <p className="marking-photo-error">
+          <span>⚠ {photoError}</span>
+          <button className="btn btn-xs btn-secondary" onClick={() => setPhotoError(null)}>Dismiss</button>
+        </p>
+      )}
 
       {teams.length === 0 && (
         <p className="marking-empty">No teams have joined this session yet.</p>
@@ -746,6 +861,17 @@ export default function AnswerMarking({ sessionId, quiz }) {
 
       {rounds.length === 0 && data && (
         <p className="marking-empty">No rounds found for this session.</p>
+      )}
+
+      {photoViewer && (
+        <div
+          className="photo-viewer"
+          role="dialog"
+          aria-label="Answer sheet photo"
+          onClick={() => setPhotoViewer(null)}
+        >
+          <img src={photoViewer} alt="Answer sheet" />
+        </div>
       )}
     </div>
   );

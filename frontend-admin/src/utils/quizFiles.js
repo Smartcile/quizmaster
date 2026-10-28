@@ -154,12 +154,12 @@ export async function downloadAnswerSheet(quiz) {
     doc.text(roundLines, M, y); y += roundLines.length * 14 + 6;
     doc.setDrawColor(150); doc.line(M, y, PAGE_W - M, y); y += 16;
 
-    if (ri === 0) {
-      doc.setFontSize(10);
-      doc.text('Team:', M, y); doc.rect(M + 34, y - 9, 210, 15);
-      doc.text('Size:', M + 258, y); doc.rect(M + 288, y - 9, 45, 15);
-      y += 24;
-    }
+    // Team + size on every page: a round is often printed/handed out on its own,
+    // and the host fills the name in on paper while going round the room.
+    doc.setFontSize(10);
+    doc.text('Team:', M, y); doc.rect(M + 34, y - 9, 210, 15);
+    doc.text('Size:', M + 258, y); doc.rect(M + 288, y - 9, 45, 15);
+    y += 24;
 
     // Who Am I? — one clue is revealed before each round, so give every page that
     // has a clue its own guess area, labelled with that clue's number and value.

@@ -41,6 +41,12 @@ services:
       QUIZZER_URL: ${QUIZZER_URL:-}
       SLIDESHOW_URL: ${SLIDESHOW_URL:-}
       ADMIN_URL: ${ADMIN_URL:-}
+      # Optional AI photo marking (DeepSeek). Leave the key blank to disable the
+      # "Transcribe photo" action. The model must be vision-capable on an
+      # OpenAI-compatible endpoint; base URL defaults to https://api.deepseek.com.
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-}
     # Backend is reached internally via the Docker network from the frontend
     # nginx proxies. No host port needed unless you want direct API access.
     depends_on:
