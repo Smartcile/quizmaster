@@ -16,6 +16,9 @@ import { api } from '../services/api';
 const M = 40;                 // page margin (pt)
 const PAGE_W = 595, PAGE_H = 842;   // A4 portrait in pt
 const CONTENT_W = PAGE_W - M * 2;
+// Answer-sheet join QR sits in the top-right; content that would overlap it
+// (the Who Am I? box) is pushed below this y.
+const QR_SAFE_Y = M + 80;
 
 const safe = (s) => String(s || 'quiz').replace(/[^a-z0-9_-]+/gi, '_');
 const norm = (s) => String(s ?? '').toLowerCase().trim().replace(/\s+/g, ' ').replace(/^the\s+/, '');
@@ -135,30 +138,40 @@ export async function downloadAnswerSheet(quiz) {
     pics.set(round.id, loaded);
   }
 
+  // Leave room on the right for the join QR so long quiz/round names wrap
+  // instead of running under it or off the page.
+  const HEADER_W = CONTENT_W - 96;
+
   rounds.forEach((round, ri) => {
     if (ri > 0) doc.addPage();
     let y = M;
     doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(0);
-    doc.text(String(quiz.name || 'Quiz'), M, y); y += 18;
+    const titleLines = doc.splitTextToSize(String(quiz.name || 'Quiz'), HEADER_W);
+    doc.text(titleLines, M, y); y += titleLines.length * 18;
     doc.setFontSize(12); doc.setFont('helvetica', 'normal');
-    doc.text(`Round ${ri + 1}: ${(round.style === 'intermission' || round.style === 'textlist') ? (round.display_title || round.name || '') : (round.name || '')}`, M, y); y += 6;
+    const roundLabel = `Round ${ri + 1}: ${(round.style === 'intermission' || round.style === 'textlist') ? (round.display_title || round.name || '') : (round.name || '')}`;
+    const roundLines = doc.splitTextToSize(roundLabel, HEADER_W);
+    doc.text(roundLines, M, y); y += roundLines.length * 14 + 6;
     doc.setDrawColor(150); doc.line(M, y, PAGE_W - M, y); y += 16;
 
-    drawJoinQr(doc, qr, joinUrl);
-
-    if (ri === 0) {
-      doc.setFontSize(10);
-      doc.text('Team:', M, y); doc.rect(M + 34, y - 9, 210, 15);
-      doc.text('Size:', M + 258, y); doc.rect(M + 288, y - 9, 45, 15);
-      y += 24;
-    }
+    // Team + size on every page: a round is often printed/handed out on its own,
+    // and the host fills the name in on paper while going round the room.
+    doc.setFontSize(10);
+    doc.text('Team:', M, y); doc.rect(M + 34, y - 9, 210, 15);
+    doc.text('Size:', M + 258, y); doc.rect(M + 288, y - 9, 45, 15);
+    y += 24;
 
     // Who Am I? — one clue is revealed before each round, so give every page that
     // has a clue its own guess area, labelled with that clue's number and value.
     // (buildSlides pairs round i with clue i, bounded by the clue count.)
     if (whoami && ri < whoami.clues.length) {
+      // Keep the tinted box clear of the QR + join URL in the top-right corner.
+      y = Math.max(y, QR_SAFE_Y);
       y = drawWhoamiBox(doc, y, whoami, ri);
     }
+
+    // Draw the join QR last so a later box can never paint over it.
+    drawJoinQr(doc, qr, joinUrl);
 
     const qs = questionsOf(round);
     if (qs.length === 0) return;
@@ -181,7 +194,8 @@ export async function downloadAnswerSheet(quiz) {
     let gap = 8;
     let rowH = Math.floor((bottom - y - gap * (qs.length - 1)) / qs.length);
     if (rowH < 26) { gap = 4; rowH = Math.floor((bottom - y - gap * (qs.length - 1)) / qs.length); }
-    rowH = Math.max(13, Math.min(56, rowH));
+    if (rowH < 16) { gap = 2; rowH = Math.floor((bottom - y - gap * (qs.length - 1)) / qs.length); }
+    rowH = Math.max(10, Math.min(56, rowH));
 
     const numW = 22;
     const boxX = M + numW;
@@ -225,7 +239,13 @@ function drawJoinQr(doc, qr, joinUrl) {
   doc.setFont('helvetica', 'normal'); doc.setFontSize(6); doc.setTextColor(90);
   doc.text('Scan to join', x + size / 2, M + size - 6, { align: 'center' });
   const url = String(joinUrl || '').replace(/^https?:\/\//, '');
-  doc.text(doc.splitTextToSize(url, size + 40), x + size / 2, M + size + 2, { align: 'center' });
+  // A URL has no spaces to wrap on, so shrink the font until it fits under the
+  // QR rather than letting it run off the right edge.
+  if (typeof doc.getTextWidth === 'function') {
+    let fs = 6;
+    while (fs > 3 && doc.getTextWidth(url) > size) { fs -= 0.25; doc.setFontSize(fs); }
+  }
+  doc.text(url, x + size / 2, M + size + 2, { align: 'center' });
   doc.setTextColor(0);
 }
 
@@ -234,26 +254,39 @@ function drawJoinQr(doc, qr, joinUrl) {
 function drawWhoamiBox(doc, y, whoami, clueIdx) {
   const clue = whoami.clues[clueIdx] || {};
   const pts = clue.points ?? '';
-  const H = 34;
+  const padX = 6;
+  const innerW = CONTENT_W - padX * 2;
+
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(60);
+  const title = `${(whoami.title || 'WHO AM I?').toUpperCase()} — CLUE ${clueIdx + 1}${pts !== '' ? ` (${pts} pt)` : ''}`;
+  const titleLines = doc.splitTextToSize(title, innerW);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
+  const noteLines = doc.splitTextToSize(
+    'Only your first correct guess scores — the earlier the clue, the more it is worth.',
+    innerW
+  );
+
+  const titleH = titleLines.length * 9;
+  const noteH = noteLines.length * 8;
+  const H = titleH + noteH + 28;
+
   doc.setFillColor(245, 245, 250);
   doc.setDrawColor(140);
   doc.rect(M, y - 10, CONTENT_W, H, 'FD');
 
   doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(60);
-  doc.text(
-    `${(whoami.title || 'WHO AM I?').toUpperCase()} — CLUE ${clueIdx + 1}${pts !== '' ? ` (${pts} pt)` : ''}`,
-    M + 6, y
-  );
+  doc.text(titleLines, M + padX, y);
   doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
-  doc.text('Only your first correct guess scores — the earlier the clue, the more it is worth.', M + 6, y + 8);
+  doc.text(noteLines, M + padX, y + titleH + 2);
 
   // Guess line
+  const guessY = y + titleH + noteH + 10;
   doc.setFontSize(8); doc.setTextColor(0);
-  doc.text('Guess:', M + 6, y + 19);
+  doc.text('Guess:', M + padX, guessY);
   doc.setDrawColor(120);
-  doc.line(M + 34, y + 19, PAGE_W - M - 8, y + 19);
+  doc.line(M + 34, guessY, PAGE_W - M - 8, guessY);
   doc.setTextColor(0);
-  return y + H + 8;
+  return y + titleH + noteH + 26;
 }
 
 // Numbered picture grid + a write-in box per picture, scaled to fit one page.
@@ -264,8 +297,9 @@ function drawPictureGrid(doc, top, cells, cols) {
   const gap = 8, ansH = 16, capH = 11;
   const rows = Math.ceil(n / cols);
   const cellW = (CONTENT_W - gap * (cols - 1)) / cols;
-  const cellH = Math.max(48, (PAGE_H - M - top - gap * (rows - 1)) / rows);
-  const imgH = cellH - ansH - capH - 4;
+  // Never force a minimum cell height that would push the last row off the page.
+  const cellH = Math.max(20, (PAGE_H - M - top - gap * (rows - 1)) / rows);
+  const imgH = Math.max(4, cellH - ansH - capH - 4);
 
   // Only the picture is printed — the question text stays on the screen.
   cells.forEach(({ img }, i) => {
@@ -312,15 +346,18 @@ function drawTextList(doc, top, qs, round, pics) {
   const opts = Array.isArray(round.list_options) ? round.list_options : [];
   if (round.list_mode === 'match' && opts.length) {
     doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(60);
-    doc.text(doc.splitTextToSize(`Options: ${opts.join('   ·   ')}`, CONTENT_W), M, y);
+    const legend = doc.splitTextToSize(`Options: ${opts.join('   ·   ')}`, CONTENT_W);
+    doc.text(legend, M, y);
     doc.setTextColor(0);
-    y += 14;
+    // Advance by the legend's real line count so item rows never overlap it.
+    y += legend.length * 11 + 4;
   }
   const n = qs.length;
   if (n === 0) return;
-  const gap = 8;
+  let gap = 8;
   let rowH = Math.floor((PAGE_H - M - y - gap * (n - 1)) / n);
-  rowH = Math.max(20, Math.min(58, rowH));
+  if (rowH < 24) { gap = 4; rowH = Math.floor((PAGE_H - M - y - gap * (n - 1)) / n); }
+  rowH = Math.max(16, Math.min(58, rowH));
   const textW = CONTENT_W * 0.62;
   const boxX = M + textW + 10;
   const boxW = PAGE_W - M - boxX;
@@ -351,9 +388,19 @@ function drawTextList(doc, top, qs, round, pics) {
     }
 
     doc.setFont('helvetica', 'normal');
+    const fontSize = Math.max(6, Math.min(11, rowH - 4));
+    doc.setFontSize(fontSize);
     const textLimit = Math.max(40, (boxX - 8) - textLeft);
-    const lines = doc.splitTextToSize(q.text || '', textLimit).slice(0, 2);
-    const lineH = Math.min(11, rowH - 4) + 1;
+    const lineH = fontSize * 1.15;
+    const maxLines = Math.max(1, Math.floor((rowH - 4) / lineH));
+    let lines = doc.splitTextToSize(q.text || '', textLimit);
+    if (lines.length > maxLines) {
+      // Only truncate when the row genuinely can't fit the text, and mark it.
+      lines = lines.slice(0, maxLines);
+      const last = lines[maxLines - 1];
+      const trimmed = last.replace(/\s*\S*$/, '');
+      lines[maxLines - 1] = `${trimmed || last}…`;
+    }
     const startY = y + rowH / 2 + 4 - (lines.length - 1) * lineH / 2;
     doc.text(lines, textLeft, startY);
     // write-in box
@@ -380,14 +427,18 @@ export function downloadQuestionsAnswers(quiz) {
   if (whoami) {
     doc.addPage(); let y = M;
     doc.setFont('helvetica', 'bold'); doc.setFontSize(16);
-    doc.text(`${whoami.title} - Answer`, M, y); y += 24;
+    const t = doc.splitTextToSize(`${whoami.title} - Answer`, CONTENT_W);
+    doc.text(t, M, y); y += t.length * 18 + 6;
     doc.setFontSize(13); doc.setTextColor(0, 120, 0);
-    doc.text(`Answer: ${whoami.answer || ''}`, M, y); y += 22; doc.setTextColor(0);
+    const a = doc.splitTextToSize(`Answer: ${whoami.answer || ''}`, CONTENT_W);
+    doc.text(a, M, y); y += a.length * 15 + 4; doc.setTextColor(0);
     doc.setFont('helvetica', 'normal'); doc.setFontSize(11);
     whoami.clues.forEach((c, i) => {
-      if (y > PAGE_H - 50) { doc.addPage(); y = M; }
       const cl = doc.splitTextToSize(`Clue ${i + 1} (${c.points ?? ''} pt): ${c.text || ''}`, CONTENT_W);
-      doc.text(cl, M, y); y += cl.length * 14 + 4;
+      const needed = cl.length * 14 + 4;
+      // Break before the clue if the whole (wrapped) clue wouldn't fit.
+      if (y + needed > PAGE_H - M) { doc.addPage(); y = M; }
+      doc.text(cl, M, y); y += needed;
     });
   }
   doc.save(`${safe(quiz.code)}-questions-answers.pdf`);
@@ -397,36 +448,44 @@ export function downloadQuestionsAnswers(quiz) {
 function renderRoundQA(doc, quiz, round, ri) {
   const qs = questionsOf(round);
   const B = { title: 11, opt: 10, ans: 10, lhTitle: 14, lhOpt: 14, lhAns: 13, qGap: 12 };
-  const headerH = 60;
-  const avail = PAGE_H - headerH - M;
 
-  // Estimate the content height at full size (wrap widths are fixed)
-  const estimate = () => {
-    let h = 0;
+  // Draw the (wrapped) header first, then use the actual remaining height for
+  // the fit. The old code assumed a 60pt header but the header really ends at
+  // ~82pt, so content ended ~22pt below the printable area and got clipped.
+  let y = M;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.setTextColor(0);
+  const titleLines = doc.splitTextToSize(`${quiz.name || 'Quiz'} - Answers`, CONTENT_W);
+  doc.text(titleLines, M, y); y += titleLines.length * 18 + 2;
+  doc.setFontSize(13); doc.setFont('helvetica', 'normal');
+  const roundLines = doc.splitTextToSize(`Round ${ri + 1}: ${round.name || ''}`, CONTENT_W);
+  doc.text(roundLines, M, y); y += roundLines.length * 15 + 6;
+  doc.setDrawColor(150); doc.line(M, y, PAGE_W - M, y); y += 16;
+  const contentTop = y;
+  const avail = PAGE_H - M - contentTop;
+
+  // Measure the content at full size, splitting the height into the parts that
+  // scale with the font (wrapped text + gaps) and the fixed per-question padding.
+  const measure = () => {
+    let fixed = 0, scaled = 0;
     qs.forEach((q, qi) => {
       doc.setFontSize(B.title);
-      h += doc.splitTextToSize(`${qi + 1}. ${q.text || ''}   (${q.points ?? 1} pt)`, CONTENT_W).length * B.lhTitle + 2;
+      scaled += doc.splitTextToSize(`${qi + 1}. ${q.text || ''}   (${q.points ?? 1} pt)`, CONTENT_W).length * B.lhTitle;
+      fixed += 2;
       if (hasOptions(q)) {
         doc.setFontSize(B.opt);
         q.options.filter(o => String(o).trim()).forEach((opt, oi) => {
-          h += doc.splitTextToSize(`${String.fromCharCode(65 + oi)}. ${opt}`, CONTENT_W - 36).length * B.lhOpt;
+          scaled += doc.splitTextToSize(`${String.fromCharCode(65 + oi)}. ${opt}`, CONTENT_W - 36).length * B.lhOpt;
         });
-        h += 2;
+        fixed += 2;
       }
       doc.setFontSize(B.ans);
-      h += doc.splitTextToSize(`Answer: ${q.answer || ''}`, CONTENT_W - 14).length * B.lhAns + B.qGap;
+      scaled += doc.splitTextToSize(`Answer: ${q.answer || ''}`, CONTENT_W - 14).length * B.lhAns + B.qGap;
     });
-    return h;
+    return { fixed, scaled };
   };
-  const needed = estimate();
-  const s = needed > avail ? Math.max(0.5, avail / needed) : 1;
-
-  let y = M;
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.setTextColor(0);
-  doc.text(`${quiz.name || 'Quiz'} - Answers`, M, y); y += 20;
-  doc.setFontSize(13); doc.setFont('helvetica', 'normal');
-  doc.text(`Round ${ri + 1}: ${round.name || ''}`, M, y); y += 6;
-  doc.setDrawColor(150); doc.line(M, y, PAGE_W - M, y); y += 16;
+  const { fixed, scaled } = measure();
+  // Solve scaled*s + fixed = avail so the fixed padding can't push past the page.
+  const s = scaled > 0 ? Math.min(1, Math.max(0.2, (avail - fixed) / scaled)) : 1;
 
   qs.forEach((q, qi) => {
     doc.setFont('helvetica', 'bold'); doc.setFontSize(B.title * s); doc.setTextColor(0);
@@ -439,8 +498,11 @@ function renderRoundQA(doc, quiz, round, ri) {
         const correct = norm(opt) === norm(q.answer);
         const line = `${String.fromCharCode(65 + oi)}. ${opt}${correct ? '   (correct)' : ''}`;
         const ol = doc.splitTextToSize(line, CONTENT_W - 36);
-        if (correct) { doc.setFillColor(255, 241, 118); doc.rect(M + 14, y - 9 * s, CONTENT_W - 28, B.lhOpt * s * ol.length, 'F'); doc.setFont('helvetica', 'bold'); }
-        else doc.setFont('helvetica', 'normal');
+        if (correct) {
+          doc.setFillColor(255, 241, 118);
+          doc.rect(M + 14, y - 9 * s, CONTENT_W - 28, B.opt * 1.15 * s * ol.length, 'F');
+          doc.setFont('helvetica', 'bold');
+        } else doc.setFont('helvetica', 'normal');
         doc.text(ol, M + 18, y); y += ol.length * B.lhOpt * s;
       });
       y += 2;
@@ -458,19 +520,31 @@ export function downloadMarkingForm(quiz) {
   const doc = new jsPDF({ unit: 'pt', format: 'a4', orientation: 'landscape' });
   const rounds = getRounds(quiz);
   const TEAMS = 12;
-  if (rounds.length === 0) { doc.text('This quiz has no rounds.', 30, 30); doc.save(`${safe(quiz.code)}-marking-form.pdf`); return; }
+  const TOP = 44, BOTTOM = 24;
+  if (rounds.length === 0) { doc.text('This quiz has no rounds.', M, M); doc.save(`${safe(quiz.code)}-marking-form.pdf`); return; }
 
   doc.setFont('helvetica', 'bold'); doc.setFontSize(14); doc.setTextColor(0);
-  doc.text(`${quiz.name || 'Quiz'} - Marking sheet`, 30, 30);
+  doc.text(`${quiz.name || 'Quiz'} - Marking sheet`, M, 30);
 
   const head = [['Team', ...rounds.map((r, i) => r.name || `Round ${i + 1}`), 'Total']];
   const body = Array.from({ length: TEAMS }, () => ['', ...rounds.map(() => ''), '']);
+
+  // Landscape A4 is 842 x 595. Fit all 12 rows on the single page: shrink the
+  // row height and header font when there are lots of round columns so the grid
+  // never spills onto a second page.
+  const availH = 595 - TOP - BOTTOM;
+  const headH = rounds.length > 8 ? 34 : 24;
+  const rowH = Math.max(18, Math.min(30, (availH - headH) / TEAMS));
   autoTable(doc, {
-    head, body, startY: 44,
+    head, body, startY: TOP,
+    margin: { left: M, right: M, top: M, bottom: BOTTOM },
     theme: 'grid',
-    styles: { minCellHeight: 30, fontSize: 10, halign: 'center', valign: 'middle', lineColor: [120, 120, 140] },
-    headStyles: { fillColor: [40, 40, 64], textColor: [255, 255, 255] },
-    columnStyles: { 0: { halign: 'left', cellWidth: 150 } }
+    styles: { minCellHeight: rowH, fontSize: 10, halign: 'center', valign: 'middle', lineColor: [120, 120, 140] },
+    headStyles: {
+      fillColor: [40, 40, 64], textColor: [255, 255, 255],
+      fontSize: rounds.length > 10 ? 8 : 10
+    },
+    columnStyles: { 0: { halign: 'left', cellWidth: rounds.length > 8 ? 110 : 150 } }
   });
   doc.save(`${safe(quiz.code)}-marking-form.pdf`);
 }
