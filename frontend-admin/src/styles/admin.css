@@ -750,7 +750,6 @@ select {
 .round-modal-body { display: flex; flex-direction: column; gap: 16px; }
 .round-modal-body .builder-form-inline input,
 .round-modal-body .builder-form-inline select { flex: 1 1 180px; }
-.round-modal-body .dnd-split { max-height: 58vh; }
 
 /* Intermission (picture-grid) round config + live layout preview */
 .intermission-config {
@@ -1325,7 +1324,6 @@ select {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 20px;
-  max-height: 55vh;
 }
 
 .dnd-panel {
@@ -1507,6 +1505,15 @@ select {
   margin-top: 14px;
 }
 .round-group .round-grid { margin-top: 10px; }
+
+/* Long round lists (grouped or flat) scroll inside the panel instead of
+   stretching the page to thousands of pixels. */
+.round-groups,
+.panel > .round-grid {
+  max-height: calc(100vh - 240px);
+  overflow-y: auto;
+  padding-right: 6px;
+}
 
 .round-card {
   background: var(--bg-card);

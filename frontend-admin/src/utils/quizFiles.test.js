@@ -7,17 +7,31 @@ vi.mock('jspdf', () => {
   class Doc {
     constructor(opts) {
       this.opts = opts;
-      this.text = vi.fn();
+      this._fontSize = 10;
+      this._maxY = 0;
+      this.text = vi.fn((txt, x, y) => {
+        const lines = Array.isArray(txt) ? Math.max(1, txt.length) : 1;
+        const bottom = y + (lines - 1) * this._fontSize * 1.15;
+        if (bottom > this._maxY) this._maxY = bottom;
+      });
       this.addPage = vi.fn();
       this.setFont = vi.fn();
-      this.setFontSize = vi.fn();
+      this.setFontSize = vi.fn((s) => { this._fontSize = s; });
       this.setTextColor = vi.fn();
       this.setDrawColor = vi.fn();
       this.setFillColor = vi.fn();
       this.rect = vi.fn();
       this.line = vi.fn();
       this.addImage = vi.fn();
-      this.splitTextToSize = (t) => [String(t)];
+      // Rough word/character wrapping so multi-line layout can be exercised.
+      this.splitTextToSize = (t, w) => {
+        const str = String(t);
+        const per = w ? Math.max(1, Math.floor(w / 5)) : 1000;
+        const out = [];
+        for (let i = 0; i < str.length; i += per) out.push(str.slice(i, i + per));
+        return out.length ? out : [''];
+      };
+      this.getTextWidth = (t) => String(t).length * 3;
       this.save = vi.fn();
       h.docs.push(this);
     }
@@ -77,6 +91,25 @@ describe('downloadQuestionsAnswers', () => {
     expect(doc.addPage).toHaveBeenCalledTimes(1);
     expect(doc.text).toHaveBeenCalled();
     expect(doc.save).toHaveBeenCalledWith('ABC123-questions-answers.pdf');
+  });
+
+  it('shrinks a dense round so nothing is drawn past the printable area', () => {
+    const dense = {
+      name: 'Dense Quiz', code: 'D1',
+      items: [{
+        kind: 'round', id: 1, name: 'Big Round', style: 'standard',
+        questions: Array.from({ length: 40 }, (_, i) => ({
+          id: i + 1,
+          text: `A long question text that wraps onto several lines in the PDF for question ${i + 1}`,
+          answer: 'Some answer text',
+          type: 'text', points: 1,
+        })),
+      }],
+    };
+    downloadQuestionsAnswers(dense);
+    const doc = h.docs.at(-1);
+    // A4 portrait is 842pt tall with a 40pt margin → printable bottom is 802.
+    expect(doc._maxY).toBeLessThanOrEqual(802.5);
   });
 });
 
