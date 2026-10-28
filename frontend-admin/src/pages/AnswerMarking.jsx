@@ -15,6 +15,8 @@ export default function AnswerMarking({ sessionId, quiz }) {
   // Manual expand/collapse overrides — a user click always wins over auto state.
   const [collapseOverride, setCollapseOverride] = useState({});
   const [powerups, setPowerups] = useState({});   // teamId → chosen ×2 round id
+  // Per-question (all teams) or team-by-team (one paper sheet at a time).
+  const [viewMode, setViewMode] = useState('question');
   const socket = useWebSocket();
 
   const slides = useMemo(() => buildSlides(quiz), [quiz]);
@@ -336,6 +338,158 @@ export default function AnswerMarking({ sessionId, quiz }) {
     return String(current) === String(marked) ? null : { marked };
   };
 
+  // ── Team-by-team view ─────────────────────────────────────────────────────
+  // One card per team, all of that team's answers in round order with the correct
+  // answer beside each. Built for paper sheets: mark a whole team in one pass
+  // instead of scrolling the same team through every question.
+  const questionsByRound = new Map(
+    rounds.map(r => [r.id, questions.filter(q => q.round_id === r.id)])
+  );
+  // Paper teams first here — this view exists primarily to hand-mark paper sheets.
+  const teamViewOrder = [...paperTeams, ...deviceTeams];
+
+  const renderTeamView = () => {
+    if (teams.length === 0) {
+      return <p className="marking-empty">No teams have joined this session yet.</p>;
+    }
+    // The mark()/markWhoami()/PointsInput pieces are shared with the question
+    // view, so optimistic updates, deselection and live broadcasts all just work.
+    const scoreButtons = (t, q) => {
+      const score = getScore(t.id, q.id);
+      return (
+        <div className="marking-score-btns">
+          {scoreOptions(q.points).map(pts => (
+            <button
+              key={pts}
+              onClick={() => mark(t.id, q.id, score === pts ? null : pts)}
+              className={`score-btn ${score === pts ? 'score-btn-active' : ''}`}
+              title={score === pts ? 'Click to remove mark' : `Award ${pts} point${pts !== 1 ? 's' : ''}`}
+            >
+              {pts}
+            </button>
+          ))}
+          <PointsInput
+            awarded={score}
+            onSet={(v) => mark(t.id, q.id, v)}
+            title="Type any number of points for this answer (blank clears it)"
+          />
+          {score !== null && (
+            <span className={`score-pill ${score >= fullPoints(q.points) ? 'pill-full' : score > 0 ? 'pill-half' : 'pill-zero'}`}>
+              {score}pt
+            </span>
+          )}
+        </div>
+      );
+    };
+
+    return teamViewOrder.map(t => (
+      <div key={t.id} className="marking-round marking-team-card">
+        <h3 className="marking-round-title">
+          <span className="round-badge">T</span>
+          {t.name}
+          {t.is_paper && <span className="paper-tag" title="Paper team">📄</span>}
+          <span className="round-q-count">size {t.size ?? '—'}</span>
+        </h3>
+
+        {rounds.map((round, ri) => {
+          const rqs = questionsByRound.get(round.id) || [];
+          if (rqs.length === 0) return null;
+          const locked = lockedRounds.has(round.id);
+          return (
+            <div key={round.id} className="marking-question">
+              <div className="marking-q-header">
+                <span className="round-badge">{ri + 1}</span>
+                <span className="marking-q-text">{round.name}</span>
+                {locked && <span className="marking-locked-badge">🔒 locked</span>}
+              </div>
+              <div className="marking-team-rows">
+                {rqs.map(q => {
+                  const ansText = getAnswer(t.id, q.id);
+                  const letter  = optionLetter(q, ansText);
+                  const correctLetter = optionLetter(q, q.answer);
+                  const changed = answerChangedSinceMark(t.id, q.id);
+                  return (
+                    <div key={q.id} className={`marking-team-row marking-team-question ${changed ? 'answer-changed' : ''}`}>
+                      <span className="marking-q-num">Q{q.order}</span>
+                      <span className="marking-q-text">
+                        {q.text || (q.type === 'image' ? `(picture ${q.order})` : '(no question text)')}
+                      </span>
+                      <span className="marking-q-answer">
+                        {correctLetter && <span className="mcq-letter-tag">{correctLetter}</span>}
+                        {q.answer}
+                      </span>
+                      <span className={`marking-answer-text ${!ansText ? 'no-answer' : ''}`}>
+                        {letter && <span className="mcq-letter-tag">{letter}</span>}
+                        {ansText || '(no answer)'}
+                        {changed && (
+                          <span
+                            className="answer-changed-flag"
+                            title={`You marked "${changed.marked || '(blank)'}" — they've since changed it. Re-check this one.`}
+                          >
+                            ⚠ changed since marked
+                          </span>
+                        )}
+                      </span>
+                      {scoreButtons(t, q)}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+
+        {whoami?.whoami && (() => {
+          const g = (whoami.guesses || []).find(x => x.team_id === t.id);
+          const possible = g?.points_possible != null ? parseFloat(g.points_possible) : null;
+          const awarded  = g?.points_awarded  != null ? parseFloat(g.points_awarded)  : null;
+          return (
+            <div className="marking-question">
+              <div className="marking-q-header">
+                <span className="round-badge">🕵</span>
+                <span className="marking-q-text">{whoami.whoami.title}</span>
+                <span className="marking-q-answer">{whoami.whoami.answer || '(no answer set)'}</span>
+              </div>
+              <div className="marking-team-rows">
+                <div className="marking-team-row marking-team-question">
+                  <span className="marking-q-num">WAI</span>
+                  <span className={`marking-answer-text ${!g?.guess_text ? 'no-answer' : ''}`}>
+                    {g?.guess_text || '(no guess)'}
+                    {g?.locked_clue_index != null && (
+                      <em className="whoami-mark-clue"> · locked on clue {g.locked_clue_index + 1}</em>
+                    )}
+                  </span>
+                  <div className="marking-score-btns">
+                    <button
+                      onClick={() => markWhoami(t.id, awarded === 0 ? null : 0)}
+                      className={`score-btn ${awarded === 0 ? 'score-btn-active' : ''}`}
+                      title="Award 0"
+                    >0</button>
+                    {possible != null && possible > 0 && (
+                      <button
+                        onClick={() => markWhoami(t.id, awarded === possible ? null : possible)}
+                        className={`score-btn ${awarded === possible ? 'score-btn-active' : ''}`}
+                        title={`Award the full ${possible} points for the clue they locked on`}
+                      >{possible}</button>
+                    )}
+                    <PointsInput
+                      awarded={awarded}
+                      onSet={(v) => markWhoami(t.id, v)}
+                      title="Type any number of points for this guess (blank clears it)"
+                    />
+                    {awarded != null && (
+                      <span className={`score-pill ${awarded > 0 ? 'pill-full' : 'pill-zero'}`}>{awarded}pt</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+      </div>
+    ));
+  };
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="answer-marking">
@@ -344,6 +498,22 @@ export default function AnswerMarking({ sessionId, quiz }) {
       <div className="marking-header">
         <h2>Answer Marking {loading && <span className="marking-refreshing">↻</span>}</h2>
         <div className="marking-csv-bar">
+          <div className="round-view-toggle">
+            <button
+              type="button"
+              className={`btn btn-sm ${viewMode === 'question' ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => setViewMode('question')}
+            >
+              By question
+            </button>
+            <button
+              type="button"
+              className={`btn btn-sm ${viewMode === 'team' ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => setViewMode('team')}
+            >
+              By team
+            </button>
+          </div>
           <select
             value={csvRoundId}
             onChange={e => setCsvRound(e.target.value)}
@@ -415,7 +585,7 @@ export default function AnswerMarking({ sessionId, quiz }) {
         </div>
       )}
 
-      {rounds.map((round, idx) => {
+      {viewMode === 'question' && rounds.map((round, idx) => {
         const rqs = questions.filter(q => q.round_id === round.id);
         const collapsed = isCollapsed(round.id);
         const locked    = lockedRounds.has(round.id);
@@ -518,8 +688,10 @@ export default function AnswerMarking({ sessionId, quiz }) {
         );
       })}
 
+      {viewMode === 'team' && renderTeamView()}
+
       {/* ── Who Am I? marking ── */}
-      {whoami?.whoami && (
+      {viewMode === 'question' && whoami?.whoami && (
         <div className="marking-round marking-whoami">
           <div className="marking-divider"><span>🕵 Who Am I?</span></div>
           <h3 className="marking-round-title">
