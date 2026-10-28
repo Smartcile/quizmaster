@@ -41,18 +41,16 @@ export default function AnswerMarking({ sessionId, quiz }) {
     if (!sessionId) return;
     setLoading(true);
     try {
-      const [result, wa, dup, ph, conf] = await Promise.all([
+      const [result, wa, dup, ph] = await Promise.all([
         api.get(`/answers/session/${sessionId}`),
         api.get(`/whoami/session/${sessionId}`).catch(() => ({ whoami: null, guesses: [] })),
         api.get(`/doubleup/session/${sessionId}`).catch(() => ({ choices: [] })),
-        api.get(`/teams/session/${sessionId}/photos`).catch(() => []),
-        api.get('/config').catch(() => ({}))
+        api.get(`/teams/session/${sessionId}/photos`).catch(() => [])
       ]);
       setData(result);
       setWhoami(wa);
       setPowerups(Object.fromEntries((dup?.choices || []).map(c => [c.team_id, Number(c.round_id)])));
       setPhotos(Array.isArray(ph) ? ph : []);
-      setAiConfigured(Boolean(conf?.deepseekEnabled));
     } catch (err) {
       console.error('Failed to load marking data:', err);
     } finally {
@@ -61,6 +59,14 @@ export default function AnswerMarking({ sessionId, quiz }) {
   }, [sessionId]);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  // AI availability is fixed for the life of the deployment — check it once
+  // instead of on every marking refresh (answer_submitted fires on each keystroke).
+  useEffect(() => {
+    api.get('/config')
+      .then(c => setAiConfigured(Boolean(c?.deepseekEnabled)))
+      .catch(() => {});
+  }, []);
 
   // ── Live show position + lock state ────────────────────────────────────────
   // Join the session room from this page too (the shared socket may not have
