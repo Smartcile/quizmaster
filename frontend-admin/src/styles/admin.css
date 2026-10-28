@@ -3663,6 +3663,65 @@ input[type="checkbox"] {
 /* The shared answer text is nowrap; paper answers can be long, so allow wrapping. */
 .marking-team-question .marking-answer-text { flex: 1 1 180px; white-space: normal; }
 
+/* Answer-sheet photos + AI transcription */
+.marking-photo-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: rgba(248, 113, 113, .12);
+  border: 1px solid rgba(248, 113, 113, .4);
+  color: #fca5a5;
+  border-radius: var(--radius-sm);
+  padding: .5rem .75rem;
+  margin-bottom: .75rem;
+}
+.team-photo-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 0 10px;
+}
+.team-photo { display: flex; flex-direction: column; gap: 4px; align-items: center; }
+.team-photo-thumb {
+  width: 84px;
+  height: 84px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  cursor: zoom-in;
+  background: #000;
+}
+.team-photo-actions { display: flex; gap: 4px; flex-wrap: wrap; justify-content: center; }
+.team-photo-add {
+  width: 84px;
+  height: 84px;
+  border: 1px dashed var(--border-glow);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.6rem;
+  cursor: pointer;
+  color: var(--neon-cyan);
+  background: rgba(0, 240, 255, .04);
+}
+.team-photo-add:hover { background: rgba(0, 240, 255, .1); }
+.team-photo-add input { display: none; }
+.photo-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 1300;
+  background: rgba(0, 0, 0, .9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  cursor: zoom-out;
+}
+.photo-viewer img { max-width: 100%; max-height: 100%; border-radius: 8px; }
+
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ── (original rule continues) ─── */
@@ -5093,4 +5152,27 @@ input[type="checkbox"] {
   font-size: .68rem;
   color: var(--text-secondary);
   white-space: nowrap;
+}
+
+/* =====================================================
+   PHONE / PWA (admin used on a phone for paper marking)
+   ===================================================== */
+@media (max-width: 700px) {
+  /* Respect the notch / home indicator when installed as a PWA. */
+  .admin-main { padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+  .admin-main { padding-left: calc(16px + env(safe-area-inset-left)); padding-right: calc(16px + env(safe-area-inset-right)); }
+
+  .marking-header { flex-direction: column; align-items: stretch; gap: 10px; }
+  .marking-csv-bar { flex-wrap: wrap; }
+  .marking-csv-bar > * { flex: 1 1 auto; }
+  .marking-q-header { flex-wrap: wrap; gap: 6px; }
+  .marking-team-row { flex-wrap: wrap; gap: 8px; }
+  .marking-team-question .marking-q-text,
+  .marking-team-question .marking-q-answer,
+  .marking-team-question .marking-answer-text { flex-basis: 100%; }
+  .marking-score-btns { flex-wrap: wrap; }
+  /* Bigger tap targets for marking on a phone. */
+  .score-btn { min-height: 38px; min-width: 38px; }
+  .team-photo-thumb, .team-photo-add { width: 96px; height: 96px; }
+  .photo-viewer { padding: 8px; }
 }

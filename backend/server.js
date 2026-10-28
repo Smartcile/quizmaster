@@ -83,6 +83,9 @@ app.get('/api/config', (req, res) => {
     quizzerUrl:   process.env.QUIZZER_URL   || null,
     slideshowUrl: process.env.SLIDESHOW_URL || null,
     adminUrl:     process.env.ADMIN_URL     || null,
+    // Boolean only — never expose the key. Lets the marking page show/hide the
+    // "Transcribe photo" action.
+    deepseekEnabled: Boolean(process.env.DEEPSEEK_API_KEY),
   });
 });
 

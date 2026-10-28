@@ -408,5 +408,6 @@ module.exports = {
   markAnswer,
   getSessionAnswers,
   exportAnswersCSV,
-  awardBrowniePoints
+  awardBrowniePoints,
+  maybeAutoMark
 };
