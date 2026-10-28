@@ -3657,6 +3657,19 @@ input[type="checkbox"] {
   padding: .75rem 0;
 }
 
+/* Team-by-team marking view: one card per team, all their answers in order. */
+.marking-team-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: .6rem .8rem;
+  margin-bottom: 1rem;
+}
+.marking-team-card .marking-round-title { margin-bottom: .6rem; }
+.marking-team-card .marking-question { margin-bottom: .5rem; }
+.marking-team-question .marking-q-text { flex: 1 1 220px; }
+/* The shared answer text is nowrap; paper answers can be long, so allow wrapping. */
+.marking-team-question .marking-answer-text { flex: 1 1 180px; white-space: normal; }
+
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ── (original rule continues) ─── */

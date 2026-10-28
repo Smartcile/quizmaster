@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 vi.mock('../services/api', () => ({ api: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() } }));
 vi.mock('../hooks/useWebSocket', () => ({ useWebSocket: () => null }));
@@ -71,5 +72,19 @@ describe('AnswerMarking', () => {
     });
     render(<AnswerMarking sessionId={5} quiz={{}} />);
     expect((await screen.findAllByText(/Who Am I\?/)).length).toBeGreaterThan(0);
+  });
+
+  it('switches to a team-by-team view with the correct answer beside each team answer', async () => {
+    mockApi(baseData);
+    const user = userEvent.setup();
+    const { container } = render(<AnswerMarking sessionId={5} quiz={{}} />);
+    await screen.findByText('Capital of France?');
+    await user.click(screen.getByRole('button', { name: 'By team' }));
+
+    expect(container.querySelector('.marking-team-card')).toBeTruthy();
+    // Correct answer + the team's own answer, both visible in the team card.
+    expect(screen.getAllByText('Paris').length).toBeGreaterThan(1);
+    // Score buttons are shared with the question view.
+    expect(screen.getAllByRole('button', { name: '2' }).length).toBeGreaterThan(0);
   });
 });
