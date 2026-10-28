@@ -52,7 +52,7 @@ async function transcribeAnswerSheet(imagePath, questionCount) {
   if (!key) throw new Error('AI marking is not configured (DEEPSEEK_API_KEY is unset).');
 
   const base = String(process.env.DEEPSEEK_BASE_URL || DEFAULT_BASE).replace(/\/+$/, '');
-  const model = process.env.DEEPSEEK_MODEL || 'deepseek-vl2';
+  const model = process.env.DEEPSEEK_MODEL || 'deepseek-flash';
   const mime = mimeFor(imagePath);
   const b64 = fs.readFileSync(imagePath).toString('base64');
 
