@@ -3373,7 +3373,9 @@ input[type="checkbox"] {
 
 .answer-marking {
   padding: 1.5rem;
-  max-width: 960px;
+  width: 100%;
+  /* Use the full screen — the per-row points controls stay pinned to the right. */
+  max-width: none;
 }
 
 .marking-header {
@@ -3616,8 +3618,11 @@ input[type="checkbox"] {
 .marking-score-btns {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: .35rem;
   flex-shrink: 0;
+  /* Pin the points controls to the right edge of the row on wide screens. */
+  margin-left: auto;
 }
 .score-btn {
   width: 2.1rem;
@@ -5182,4 +5187,142 @@ input[type="checkbox"] {
   .score-btn { min-height: 38px; min-width: 38px; }
   .team-photo-thumb, .team-photo-add { width: 96px; height: 96px; }
   .photo-viewer { padding: 8px; }
+}
+
+/* =====================================================
+   MOBILE APP SHELL — compact top bar + slide-in drawer
+   (replaces the old static block of nav buttons on phones)
+   ===================================================== */
+.mobile-topbar { display: none; }
+.nav-close { display: none; }
+.nav-backdrop { display: none; }
+
+@media (max-width: 700px) {
+  .mobile-topbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    height: calc(52px + env(safe-area-inset-top));
+    padding: env(safe-area-inset-top) calc(12px + env(safe-area-inset-right)) 0 calc(12px + env(safe-area-inset-left));
+    background: rgba(10, 14, 31, 0.94);
+    backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border);
+  }
+  .mobile-menu-btn {
+    flex: 0 0 40px;
+    width: 40px;
+    height: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.35rem;
+    line-height: 1;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-primary);
+    cursor: pointer;
+  }
+  .mobile-menu-btn:active { background: var(--bg-hover); }
+  .mobile-topbar-title {
+    flex: 1;
+    min-width: 0;
+    font-size: 1.05rem;
+    font-weight: 700;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-primary);
+  }
+  .mobile-session-dot {
+    flex: 0 0 auto;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--neon-green);
+    box-shadow: 0 0 8px var(--neon-green);
+  }
+  .mobile-session-dot.is-test { background: #8b9dc3; box-shadow: none; }
+
+  /* The sidebar becomes a drawer off the left edge. */
+  .admin-nav {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: min(88vw, 330px);
+    height: 100dvh;
+    max-height: 100dvh;
+    padding: calc(18px + env(safe-area-inset-top)) 16px calc(18px + env(safe-area-inset-bottom));
+    transform: translateX(-105%);
+    transition: transform 0.22s ease;
+    z-index: 1100;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    box-shadow: 12px 0 40px rgba(0, 0, 0, 0.5);
+  }
+  .admin-nav.nav-open { transform: translateX(0); }
+
+  .nav-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .nav-header h1 { font-size: 1.15rem; margin-bottom: 0; }
+  .nav-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 36px;
+    width: 36px;
+    height: 36px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-muted);
+    font-size: 1rem;
+    cursor: pointer;
+  }
+  .nav-close:hover { color: var(--text-primary); border-color: var(--border-glow); }
+
+  .nav-menu { flex-wrap: nowrap; gap: 4px; }
+  .nav-menu li { flex: 0 0 auto; width: 100%; }
+  .nav-menu button { padding: 13px 14px; font-size: 1rem; }
+
+  .nav-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 1050;
+    background: rgba(0, 0, 0, 0.55);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+  .nav-backdrop.show { opacity: 1; pointer-events: auto; }
+
+  .admin-main {
+    margin-left: 0;
+    padding: 16px;
+    padding-top: calc(52px + env(safe-area-inset-top) + 14px);
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
+    padding-left: calc(16px + env(safe-area-inset-left));
+    padding-right: calc(16px + env(safe-area-inset-right));
+  }
+
+  /* Keep the active-session block tidy in the drawer. */
+  .nav-temp-group { margin: 8px 0 0; }
+  .active-quiz-banner { margin-top: 4px; }
+
+  /* More room for the marking rows on a narrow screen. */
+  .answer-marking { padding: .5rem; }
+
+  body.nav-locked { overflow: hidden; }
 }

@@ -51,4 +51,24 @@ describe('Admin App — auth gate + nav', () => {
     expect(await screen.findByText('STUB_DASHBOARD')).toBeInTheDocument();
     expect(screen.queryByText('STUB_LOGIN')).not.toBeInTheDocument();
   });
+
+  it('opens the mobile drawer, locks the page, and closes it on navigation', async () => {
+    verifyAdminToken.mockResolvedValue(true);
+    const user = userEvent.setup();
+    const { container } = render(<App />);
+    await screen.findByText('STUB_DASHBOARD');
+
+    const nav = () => container.querySelector('.admin-nav');
+    expect(nav().className).not.toMatch(/nav-open/);
+
+    await user.click(screen.getByRole('button', { name: 'Open menu' }));
+    expect(nav().className).toMatch(/nav-open/);
+    expect(document.body.classList.contains('nav-locked')).toBe(true);
+
+    // Choosing a page closes the drawer and unlocks scrolling.
+    await user.click(screen.getByRole('button', { name: 'Media' }));
+    expect(nav().className).not.toMatch(/nav-open/);
+    expect(document.body.classList.contains('nav-locked')).toBe(false);
+    expect(screen.getByText('STUB_MEDIA')).toBeInTheDocument();
+  });
 });
