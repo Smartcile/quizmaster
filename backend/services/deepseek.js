@@ -26,7 +26,9 @@ function buildPrompt(count) {
   return [
     'You are transcribing a hand-written pub quiz answer sheet.',
     `The sheet has ${count} numbered answer rows, in order (1 to ${count}).`,
-    'For each row return the hand-written answer exactly as written.',
+    'The photo may be rotated or taken at an angle — mentally orient it so the numbers read left-to-right, then top-to-bottom.',
+    'Ignore screen/browser chrome, toolbars, printed question text and anything outside the numbered answer boxes.',
+    'For each row return only the hand-written answer exactly as written.',
     'If a row has lettered tick boxes and one is ticked, return just that letter (A/B/C/...).',
     'If a row is blank or unreadable, return an empty string for it.',
     'Do not invent answers and do not add explanations.',
