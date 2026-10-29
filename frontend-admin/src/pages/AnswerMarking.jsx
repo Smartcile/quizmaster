@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '../services/api';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { buildSlides } from '../utils/buildSlides';
+import { compressImage } from '../utils/compressImage';
 import { AddTeamForm } from './QuizControl';
 
 export default function AnswerMarking({ sessionId, quiz }) {
@@ -21,6 +22,7 @@ export default function AnswerMarking({ sessionId, quiz }) {
   const [photos, setPhotos] = useState([]);
   const [aiConfigured, setAiConfigured] = useState(false);
   const [photoBusy, setPhotoBusy] = useState(null);  // photo id being transcribed
+  const [photoUploading, setPhotoUploading] = useState(null); // "teamId:roundId" being prepared
   const [photoError, setPhotoError] = useState(null);
   const [photoViewer, setPhotoViewer] = useState(null); // full-size url
   const socket = useWebSocket();
@@ -230,16 +232,23 @@ export default function AnswerMarking({ sessionId, quiz }) {
   // ── Answer-sheet photos (paper teams) ─────────────────────────────────────
   const uploadTeamPhoto = async (team, round, file) => {
     if (!file) return;
+    const key = `${team.id}:${round?.id ?? ''}`;
     setPhotoError(null);
-    const fd = new FormData();
-    fd.append('file', file);
-    if (round?.id != null) fd.append('roundId', round.id);
+    setPhotoUploading(key);
     try {
+      // Compress first — phone photos are 5–10 MB and slow to upload/send to the
+      // vision model. Falls back to the original if decoding isn't possible.
+      const prepared = await compressImage(file);
+      const fd = new FormData();
+      fd.append('file', prepared, prepared.name || 'photo.jpg');
+      if (round?.id != null) fd.append('roundId', round.id);
       const photo = await api.upload(`/teams/${team.id}/photos`, fd);
       setPhotos(prev => [...prev, photo]);
     } catch (err) {
       console.error('Photo upload failed:', err);
       setPhotoError(err.message || 'Photo upload failed');
+    } finally {
+      setPhotoUploading(null);
     }
   };
 
@@ -444,19 +453,25 @@ export default function AnswerMarking({ sessionId, quiz }) {
             </div>
           </div>
         ))}
-        <label className="team-photo-add" title="Photograph this team's answer sheet for this round">
-          <span>📷</span>
-          <input
-            type="file"
-            accept="image/*"
-            capture="environment"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              e.target.value = '';
-              uploadTeamPhoto(team, round, file);
-            }}
-          />
-        </label>
+        {photoUploading === `${team.id}:${roundId ?? ''}` ? (
+          <div className="team-photo-add is-busy" title="Preparing photo…">
+            <span className="team-photo-spin">⟳</span>
+          </div>
+        ) : (
+          <label className="team-photo-add" title="Photograph this team's answer sheet for this round">
+            <span>📷</span>
+            <input
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = '';
+                uploadTeamPhoto(team, round, file);
+              }}
+            />
+          </label>
+        )}
       </div>
     );
   };

@@ -3721,6 +3721,8 @@ input[type="checkbox"] {
 }
 .team-photo-add:hover { background: rgba(0, 240, 255, .1); }
 .team-photo-add input { display: none; }
+.team-photo-add.is-busy { cursor: default; opacity: .85; }
+.team-photo-spin { display: inline-block; font-size: 1.4rem; animation: spin 1s linear infinite; }
 .photo-viewer {
   position: fixed;
   inset: 0;
