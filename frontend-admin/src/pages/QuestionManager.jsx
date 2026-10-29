@@ -3,6 +3,7 @@ import { api } from '../services/api';
 import MediaPicker from '../components/MediaPicker';
 import AudioEditor from '../components/AudioEditor';
 import VideoEditor from '../components/VideoEditor';
+import ImageCropEditor from '../components/ImageCropEditor';
 
 // Map an uploaded file's MIME type to a question media type.
 const mimeToType = (mime) =>
@@ -289,6 +290,7 @@ export default function QuestionManager() {
   const [mediaPickerOpen, setMediaPickerOpen] = useState(false);
   const [audioEditorOpen, setAudioEditorOpen] = useState(false);
   const [videoEditorOpen, setVideoEditorOpen] = useState(false);
+  const [imageCropOpen, setImageCropOpen] = useState(false);
   const [mediaByUrl, setMediaByUrl] = useState({}); // url → full media record (lyrics, ftl…)
   const [rounds, setRounds] = useState([]); // for the "already in a round" label
   const [managedCategories, setManagedCategories] = useState([]);
@@ -382,11 +384,20 @@ export default function QuestionManager() {
     setForm(prev => ({ ...prev, media_url: data.url, type: 'video' }));
   };
 
+  // The crop editor saved a close-up as a NEW file. Point the question at the
+  // crop (the clue); the full original stays in the Media Library.
+  const handleImageCropped = (data) => {
+    setImageCropOpen(false);
+    if (!data?.url) return;
+    setMediaByUrl(prev => ({ ...prev, [data.url]: data }));
+    setForm(prev => ({ ...prev, media_url: data.url, type: 'image' }));
+  };
+
   // Build a file object for the audio/video editor from the current selection.
   const currentMediaFile = () =>
     mediaByUrl[form.media_url] || {
       url: form.media_url,
-      mime_type: form.type === 'video' ? 'video/mp4' : 'audio/mpeg',
+      mime_type: form.type === 'video' ? 'video/mp4' : form.type === 'image' ? 'image/jpeg' : 'audio/mpeg',
       original_name: (form.media_url || '').split('/').pop()
     };
 
@@ -1052,6 +1063,11 @@ export default function QuestionManager() {
                             ✂ Cut down / trim
                           </button>
                         )}
+                        {form.type === 'image' && (
+                          <button type="button" className="btn btn-secondary btn-sm" onClick={() => setImageCropOpen(true)} title="Pick the part of the picture teams should see as the clue — the original is kept">
+                            🔍 Crop close-up
+                          </button>
+                        )}
                         <button type="button" className="btn btn-danger btn-sm" onClick={() => setForm({ ...form, media_url: '' })}>
                           ✕
                         </button>
@@ -1060,6 +1076,11 @@ export default function QuestionManager() {
                       <button type="button" className="qm-media-btn" onClick={() => setMediaPickerOpen(true)}>
                         📁 Select / upload {form.type}
                       </button>
+                    )}
+                    {form.type === 'image' && (
+                      <p className="help-text" style={{ marginTop: 6 }}>
+                        Upload the full picture, then use <strong>Crop close-up</strong> to choose the clue area. The original stays in the Media Library; the crop becomes this question's image.
+                      </p>
                     )}
                   </div>
                 )}
@@ -1188,6 +1209,15 @@ export default function QuestionManager() {
           file={currentMediaFile()}
           onClose={() => setVideoEditorOpen(false)}
           onSaved={handleVideoEdited}
+        />
+      )}
+
+      {imageCropOpen && form.media_url && (
+        <ImageCropEditor
+          file={currentMediaFile()}
+          preview={{ columns: 5 }}
+          onClose={() => setImageCropOpen(false)}
+          onSaved={handleImageCropped}
         />
       )}
 

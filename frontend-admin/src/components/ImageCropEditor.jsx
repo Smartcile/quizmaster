@@ -14,7 +14,11 @@ const STAGE_W = 560, STAGE_H = 420;
 // In-browser image cropper/resizer. Pick an aspect preset (or free), drag the
 // box to move / drag the corner to resize, then export the crop at full source
 // resolution and upload as a NEW media file (the original is kept).
-export default function ImageCropEditor({ file, onClose, onSaved }) {
+//
+// Pass `preview` (e.g. { columns: 5, number: 3 }) to show a live mock of the
+// crop as a picture-round grid cell — that is how it looks on the question
+// slide for an intermission round.
+export default function ImageCropEditor({ file, onClose, onSaved, preview }) {
   const [img, setImg] = useState(null);          // HTMLImageElement
   const [disp, setDisp] = useState({ w: 0, h: 0 }); // displayed image size
   const [crop, setCrop] = useState(null);        // { x, y, w, h } in display px
@@ -23,7 +27,11 @@ export default function ImageCropEditor({ file, onClose, onSaved }) {
   const [saving, setSaving] = useState(false);
 
   const wrapRef = useRef(null);
+  const previewRef = useRef(null);
   const dragRef = useRef(null); // { mode, startX, startY, orig }
+
+  const previewNumber = preview?.number || 1;
+  const previewColumns = preview?.columns || 5;
 
   const aspect = PRESETS.find(p => p.key === aspectKey)?.ratio ?? null;
 
@@ -61,6 +69,30 @@ export default function ImageCropEditor({ file, onClose, onSaved }) {
     if (disp.w) setCrop(centeredCrop(disp.w, disp.h, aspect));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aspectKey]);
+
+  // Draw the crop into a square grid cell the way the slideshow does it
+  // (object-fit: cover, centred).
+  useEffect(() => {
+    if (!preview || !img || !crop) return;
+    const canvas = previewRef.current;
+    let ctx;
+    try { ctx = canvas?.getContext?.('2d'); } catch { return; } // jsdom has no canvas
+    if (!ctx) return;
+    const T = canvas.clientWidth || 220;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = T * dpr;
+    canvas.height = T * dpr;
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, T, T);
+
+    const sx = crop.x * (img.naturalWidth / disp.w);
+    const sy = crop.y * (img.naturalHeight / disp.h);
+    const sw = crop.w * (img.naturalWidth / disp.w);
+    const sh = crop.h * (img.naturalHeight / disp.h);
+    const scale = Math.max(T / sw, T / sh);
+    const dw = sw * scale, dh = sh * scale;
+    ctx.drawImage(img, sx, sy, sw, sh, (T - dw) / 2, (T - dh) / 2, dw, dh);
+  }, [preview, img, crop, disp]);
 
   const clampBox = useCallback((box) => {
     let { x, y, w, h } = box;
@@ -122,7 +154,7 @@ export default function ImageCropEditor({ file, onClose, onSaved }) {
       const blob = await new Promise((resolve) => canvas.toBlob(resolve, type, 0.92));
       if (!blob) throw new Error('Could not render the crop.');
       const base = (file.original_name || file.filename || 'image').replace(/\.[^.]+$/, '');
-      const suggested = `${base}-${aspectKey}`;
+      const suggested = preview ? `${base}-clue` : `${base}-${aspectKey}`;
       const name = window.prompt('Save the cropped image as (name shown in the Media Library):', suggested);
       if (name === null) { setSaving(false); return; } // cancelled
       const newFile = new File([blob], `${suggested}.${ext}`, { type });
@@ -149,7 +181,7 @@ export default function ImageCropEditor({ file, onClose, onSaved }) {
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h3>✂ Crop / resize — {file.original_name || file.filename}</h3>
+          <h3>{preview ? '✂ Clue close-up' : '✂ Crop / resize'} — {file.original_name || file.filename}</h3>
           <button onClick={onClose} className="btn-close">×</button>
         </div>
         <div className="modal-body">
@@ -178,6 +210,20 @@ export default function ImageCropEditor({ file, onClose, onSaved }) {
             <p className="help-text">
               Output: {Math.round(crop.w * img.naturalWidth / disp.w)} × {Math.round(crop.h * img.naturalHeight / disp.h)} px
             </p>
+          )}
+
+          {preview && (
+            <div className="ic-preview">
+              <p className="ic-preview-label">Question slide preview — picture-round cell</p>
+              <div className="ic-preview-cell" data-testid="crop-slide-preview">
+                <canvas ref={previewRef} width="220" height="220" data-testid="crop-preview-canvas" />
+                <span className="ic-preview-num">{previewNumber}</span>
+                {!img && <span className="ic-preview-empty">Select a crop</span>}
+              </div>
+              <p className="help-text">
+                Shown with the same square cover-fit as the {previewColumns}-column picture grid on the slideshow.
+              </p>
+            </div>
           )}
         </div>
         <div className="modal-footer">
