@@ -33,7 +33,7 @@ async function loadQuizWithRoundsAndWidgets(id) {
       COALESCE(
         (SELECT json_agg(json_build_object(
           'id', q.id, 'text', q.text, 'type', q.type, 'answer', q.answer,
-          'media_url', q.media_url, 'points', q.points, 'category', q.category,
+          'media_url', q.media_url, 'answer_media_url', q.answer_media_url, 'points', q.points, 'category', q.category,
           'options', q.options, 'difficulty', q.difficulty,
           'answer_mode', CASE rq.question_format_override
             WHEN 'standard'    THEN 'text'

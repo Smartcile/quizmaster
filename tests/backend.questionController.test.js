@@ -103,6 +103,16 @@ describe('createQuestion', () => {
     await createQuestion({ body: { text: 'Q', answer: 'a', type: 'text', audio_form: 'finish_the_lyrics' } }, mockRes());
     expect(insertParams()[13]).toBeNull();
   });
+
+  it('stores the full picture for a close-up answer reveal', async () => {
+    db.query.mockResolvedValue({ rows: [{ id: 1 }] });
+    await createQuestion({
+      body: { text: 'What is this?', answer: 'Bread', type: 'image', media_url: '/u/clue.jpg', answer_media_url: '/u/full.jpg' },
+    }, mockRes());
+    const [sql, params] = db.query.mock.calls.find(c => /INSERT INTO questions/i.test(c[0]));
+    expect(sql).toContain('answer_media_url');
+    expect(params[17]).toBe('/u/full.jpg');
+  });
 });
 
 describe('updateQuestion', () => {

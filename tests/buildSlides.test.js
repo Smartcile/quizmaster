@@ -132,6 +132,14 @@ describe('buildSlides — round expansion', () => {
     expect(std.intermission).toBe(false);
     expect(std.roundName).toBe('Round One');
   });
+
+  it('carries the full picture onto a close-up answer reveal', () => {
+    const slides = buildSlides(makeQuiz());
+    const cropped = slides.find(s => s.type === 'answer' && s.questionId === 201);
+    expect(cropped).toMatchObject({ mediaUrl: '/u/1.jpg', answerMediaUrl: '/u/full-1.jpg' });
+    const plain = slides.find(s => s.type === 'answer' && s.questionId === 202);
+    expect(plain.answerMediaUrl).toBeNull();
+  });
 });
 
 describe('buildSlides — edge cases', () => {

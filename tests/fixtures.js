@@ -18,7 +18,7 @@ export function makeQuiz() {
       {
         kind: 'round', id: 20, name: 'Picture Round', style: 'intermission', display_title: 'Name the Picture', grid_columns: 4,
         questions: [
-          { id: 201, text: 'p1', type: 'image', media_url: '/u/1.jpg', answer: 'cat', points: 1 },
+          { id: 201, text: 'p1', type: 'image', media_url: '/u/1.jpg', answer_media_url: '/u/full-1.jpg', answer: 'cat', points: 1 },
           { id: 202, text: 'p2', type: 'image', media_url: '/u/2.jpg', answer: 'dog', points: 1 },
         ],
       },

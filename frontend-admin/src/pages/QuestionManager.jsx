@@ -48,6 +48,7 @@ const EMPTY_FORM = {
   type: 'text',
   points: 1,
   media_url: '',
+  answer_media_url: '',
   category: '',
   difficulty: 'medium',
   answer_mode: 'text',
@@ -344,7 +345,7 @@ export default function QuestionManager() {
     if (!f?.url) return;
     setMediaByUrl(prev => ({ ...prev, [f.url]: f }));
     setForm(prev => {
-      let next = { ...prev, media_url: f.url, type: mimeToType(f.mime_type) };
+      let next = { ...prev, media_url: f.url, answer_media_url: '', type: mimeToType(f.mime_type) };
       if (setFinishLyrics) next.audio_form = 'finish_the_lyrics';
       if (next.type === 'audio' && next.audio_form) next = applyAudioForm(next, next.audio_form, f);
       // Pull the track's stored lyrics into the reveal lyrics box (only when it's
@@ -386,8 +387,9 @@ export default function QuestionManager() {
   };
 
   // The crop editor saved a close-up as a NEW file. Point the question at the
-  // crop (the clue); the full original stays in the Media Library. A blank
-  // Answer is filled from the source picture's name.
+  // crop (the clue); the full original stays in the Media Library and is kept
+  // as answer_media_url so the answer reveal can show the whole picture. A
+  // blank Answer is filled from the source picture's name.
   const handleImageCropped = (data, extra) => {
     setImageCropOpen(false);
     if (!data?.url) return;
@@ -396,6 +398,7 @@ export default function QuestionManager() {
       ...prev,
       media_url: data.url,
       type: 'image',
+      answer_media_url: extra?.sourceUrl || prev.answer_media_url || '',
       answer: prev.answer?.trim() ? prev.answer : (extra?.answerName || prev.answer)
     }));
   };
@@ -469,6 +472,7 @@ export default function QuestionManager() {
       type: q.type || 'text',
       points: q.points ?? 1,
       media_url: q.media_url || '',
+      answer_media_url: q.answer_media_url || '',
       category: q.category || '',
       difficulty: q.difficulty || 'medium',
       answer_mode: q.answer_mode || (q.type === 'mcq' ? 'mcq' : 'text'),
@@ -539,6 +543,8 @@ export default function QuestionManager() {
 
     const payload = {
       ...form,
+      // Only a picture question can carry a separate answer-reveal picture.
+      answer_media_url: form.type === 'image' ? (form.answer_media_url || null) : null,
       options: (form.answer_mode === 'mcq' || form.answer_mode === 'both') ? form.options.filter(o => o.trim()) : []
     };
     // Editing an existing question saves directly — no duplicate check needed.
@@ -1080,7 +1086,7 @@ export default function QuestionManager() {
                             🔍 Crop close-up
                           </button>
                         )}
-                        <button type="button" className="btn btn-danger btn-sm" onClick={() => setForm({ ...form, media_url: '' })}>
+                        <button type="button" className="btn btn-danger btn-sm" onClick={() => setForm({ ...form, media_url: '', answer_media_url: '' })}>
                           ✕
                         </button>
                       </div>

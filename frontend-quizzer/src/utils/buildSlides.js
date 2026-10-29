@@ -133,6 +133,7 @@ export function buildSlides(quiz) {
           answer: q.answer,
           points: q.points,
           mediaUrl: q.media_url,
+          answerMediaUrl: q.answer_media_url || null,
           questionType: q.type,
           intermission: round.style === 'intermission',
           audioForm: q.audio_form || null,

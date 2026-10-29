@@ -720,10 +720,11 @@ export function SlideRenderer({ slide, slideIndex, playToken, sessionId, socket,
       return (
         <div className="slide-answer">
           <p className="answer-label">{slide.roundName} · {slide.intermission ? `Picture ${slide.questionNumber}` : `Q${slide.questionNumber}`}</p>
-          {slide.intermission && slide.mediaUrl && (
+          {/* A close-up question carries the full picture for the reveal. */}
+          {slide.intermission && (slide.answerMediaUrl || slide.mediaUrl) && (
             <div className="answer-media">
-              {slide.questionType === 'image' && <img src={slide.mediaUrl} alt="Answer" />}
-              {slide.questionType === 'video' && <video controls src={slide.mediaUrl} />}
+              {slide.questionType === 'image' && <img src={slide.answerMediaUrl || slide.mediaUrl} alt="Answer" />}
+              {slide.questionType === 'video' && <video controls src={slide.answerMediaUrl || slide.mediaUrl} />}
             </div>
           )}
           {slide.text && <h3 className="answer-question">{slide.text}</h3>}

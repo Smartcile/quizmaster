@@ -210,6 +210,10 @@ CREATE TABLE IF NOT EXISTS slides (
 -- approved: human sign-off before a question enters a live quiz
 ALTER TABLE questions ADD COLUMN IF NOT EXISTS approved BOOLEAN NOT NULL DEFAULT FALSE;
 
+-- answer_media_url: the full/original picture shown on the answer reveal for a
+-- close-up (intermission) question - the clue itself lives in media_url.
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS answer_media_url TEXT;
+
 -- question_format: how this question may be presented
 -- 'standard'    — open text answer only
 -- 'multichoice' — MCQ options only

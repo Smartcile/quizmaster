@@ -53,4 +53,20 @@ describe('SlideRenderer', () => {
     expect(screen.getByText('Paris')).toBeInTheDocument();
     expect(screen.getByText('Capital?')).toBeInTheDocument();
   });
+
+  it('shows the full picture on a close-up answer reveal', () => {
+    renderSlide({
+      type: 'answer', roundName: 'Pics', questionNumber: 1, answer: 'Bread', intermission: true,
+      questionType: 'image', mediaUrl: '/u/clue.jpg', answerMediaUrl: '/u/full.jpg',
+    });
+    expect(screen.getByAltText('Answer')).toHaveAttribute('src', '/u/full.jpg');
+  });
+
+  it('falls back to the question image when there is no answer picture', () => {
+    renderSlide({
+      type: 'answer', roundName: 'Pics', questionNumber: 1, answer: 'Bread', intermission: true,
+      questionType: 'image', mediaUrl: '/u/only.jpg',
+    });
+    expect(screen.getByAltText('Answer')).toHaveAttribute('src', '/u/only.jpg');
+  });
 });

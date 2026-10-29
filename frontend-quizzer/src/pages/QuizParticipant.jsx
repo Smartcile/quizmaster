@@ -461,15 +461,17 @@ export default function QuizParticipant({ quiz, sessionId, team, currentSlide, s
       // Show the box whenever the team answered OR a score exists (auto-zero for
       // unanswered questions then glows red as "(no answer)").
       const showYour = (myAns !== undefined && myAns !== '') || myScore !== undefined;
+      // A close-up question shows the full picture on the reveal.
+      const revealMedia = slide.answerMediaUrl || slide.mediaUrl;
       return (
         <div className="reveal-card">
           <p className="reveal-label">{slide.roundName} · {slide.intermission ? `Picture ${slide.questionNumber}` : `Question ${slide.questionNumber}`}</p>
-          {slide.intermission && slide.mediaUrl && slide.questionType === 'image' && (
+          {slide.intermission && revealMedia && slide.questionType === 'image' && (
             <img
               className="reveal-media is-zoomable"
-              src={slide.mediaUrl}
+              src={revealMedia}
               alt={`Picture ${slide.questionNumber}`}
-              onClick={() => setZoom({ url: slide.mediaUrl, type: 'image', label: `Picture ${slide.questionNumber}` })}
+              onClick={() => setZoom({ url: revealMedia, type: 'image', label: `Picture ${slide.questionNumber}` })}
             />
           )}
           {slide.text && <h2 className="reveal-question">{slide.text}</h2>}

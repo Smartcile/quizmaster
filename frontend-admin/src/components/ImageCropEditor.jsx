@@ -206,8 +206,9 @@ export default function ImageCropEditor({ file, onClose, onSaved, preview }) {
       });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json().catch(() => null);
-      // A clue crop can name the answer after the source picture.
-      onSaved?.(data, preview ? { answerName: clueAnswerName(file) } : undefined);
+      // A clue crop can name the answer after the source picture, and keeps
+      // the full picture for the answer reveal.
+      onSaved?.(data, preview ? { answerName: clueAnswerName(file), sourceUrl: file.url } : undefined);
     } catch (err) {
       setError('Save failed: ' + err.message);
     } finally {
