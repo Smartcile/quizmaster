@@ -15,6 +15,9 @@ export default function AnswerMarking({ sessionId, quiz }) {
   const [lockedRounds,    setLockedRounds]    = useState(new Set());
   // Manual expand/collapse overrides — a user click always wins over auto state.
   const [collapseOverride, setCollapseOverride] = useState({});
+  // By-team view: whole team cards and each team's rounds fold away on click.
+  const [collapsedTeams,      setCollapsedTeams]      = useState(() => new Set());
+  const [collapsedTeamRounds, setCollapsedTeamRounds] = useState(() => new Set());
   const [powerups, setPowerups] = useState({});   // teamId → chosen ×2 round id
   // Per-question (all teams) or team-by-team (one paper sheet at a time).
   const [viewMode, setViewMode] = useState('question');
@@ -119,6 +122,14 @@ export default function AnswerMarking({ sessionId, quiz }) {
 
   const toggleRound = (roundId) =>
     setCollapseOverride(prev => ({ ...prev, [roundId]: !isCollapsed(roundId) }));
+
+  const toggleInSet = (setter, key) => setter(prev => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
+  const toggleTeamCard  = (teamId) => toggleInSet(setCollapsedTeams, teamId);
+  const toggleTeamRound = (teamId, roundId) => toggleInSet(setCollapsedTeamRounds, `${teamId}:${roundId}`);
 
   // Apply a single mark to local state immediately — no full reload required.
   // points === null means the score was removed (deselected).
@@ -510,28 +521,44 @@ export default function AnswerMarking({ sessionId, quiz }) {
       );
     };
 
-    return teamViewOrder.map(t => (
-      <div key={t.id} className="marking-round marking-team-card">
-        <h3 className="marking-round-title">
+    return teamViewOrder.map(t => {
+      const teamCollapsed = collapsedTeams.has(t.id);
+      return (
+      <div key={t.id} className={`marking-round marking-team-card ${teamCollapsed ? 'marking-round-collapsed' : ''}`}>
+        <h3
+          className="marking-round-title marking-round-toggle"
+          onClick={() => toggleTeamCard(t.id)}
+          title={teamCollapsed ? 'Expand this team' : 'Collapse this team'}
+        >
+          <span className="marking-chevron">{teamCollapsed ? '▸' : '▾'}</span>
           <span className="round-badge">T</span>
           {t.name}
           {t.is_paper && <span className="paper-tag" title="Paper team">📄</span>}
           <span className="round-q-count">size {t.size ?? '—'}</span>
         </h3>
 
-        {rounds.map((round, ri) => {
+        {!teamCollapsed && rounds.map((round, ri) => {
           const rqs = questionsByRound.get(round.id) || [];
           if (rqs.length === 0) return null;
           const locked = lockedRounds.has(round.id);
+          const roundKey = `${t.id}:${round.id}`;
+          const roundCollapsed = collapsedTeamRounds.has(roundKey);
           return (
             <div key={round.id} className="marking-question">
-              <div className="marking-q-header">
+              <div
+                className="marking-q-header marking-round-toggle"
+                onClick={() => toggleTeamRound(t.id, round.id)}
+                title={roundCollapsed ? 'Expand this round' : 'Collapse this round'}
+              >
+                <span className="marking-chevron">{roundCollapsed ? '▸' : '▾'}</span>
                 <span className="round-badge">{ri + 1}</span>
                 <span className="marking-q-text">{round.name}</span>
                 {locked && <span className="marking-locked-badge">🔒 locked</span>}
               </div>
-              {renderPhotoStrip(t, round)}
-              <div className="marking-team-rows">
+              {!roundCollapsed && (
+                <>
+                  {renderPhotoStrip(t, round)}
+                  <div className="marking-team-rows">
                 {rqs.map(q => {
                   const ansText = getAnswer(t.id, q.id);
                   const letter  = optionLetter(q, ansText);
@@ -563,12 +590,14 @@ export default function AnswerMarking({ sessionId, quiz }) {
                     </div>
                   );
                 })}
-              </div>
+                  </div>
+                </>
+              )}
             </div>
           );
         })}
 
-        {whoami?.whoami && (() => {
+        {!teamCollapsed && whoami?.whoami && (() => {
           const g = (whoami.guesses || []).find(x => x.team_id === t.id);
           const possible = g?.points_possible != null ? parseFloat(g.points_possible) : null;
           const awarded  = g?.points_awarded  != null ? parseFloat(g.points_awarded)  : null;
@@ -616,7 +645,8 @@ export default function AnswerMarking({ sessionId, quiz }) {
           );
         })()}
       </div>
-    ));
+      );
+    });
   };
 
   // ── Render ────────────────────────────────────────────────────────────────

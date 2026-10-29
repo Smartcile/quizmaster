@@ -303,7 +303,7 @@ And the host can show it on the Control screen itself with the **👁 This scree
 **Mark Answers** has two views:
 
 - **By question** — every team under each question, with the correct answer beside it. Click **0 / 0.5 / 1** (scaled to the question's value) to score; click the active value again to deselect. A free-entry box awards any number.
-- **By team** — one card per team with all their answers in round order and the correct answer beside each. Paper teams (📄) come first, so a stack of hand-marked sheets can be done in one pass.
+- **By team** — one card per team with all their answers in round order and the correct answer beside each. Paper teams (📄) come first, so a stack of hand-marked sheets can be done in one pass. Click a team's heading to fold its whole card away, and click a round heading inside it to fold just that round.
 
 ![Answer marking](images/admin-marking.png)
 

@@ -87,4 +87,35 @@ describe('AnswerMarking', () => {
     // Score buttons are shared with the question view.
     expect(screen.getAllByRole('button', { name: '2' }).length).toBeGreaterThan(0);
   });
+
+  it('collapses and expands a team card in the team view', async () => {
+    mockApi(baseData);
+    const user = userEvent.setup();
+    const { container } = render(<AnswerMarking sessionId={5} quiz={{}} />);
+    await screen.findByText('Capital of France?');
+    await user.click(screen.getByRole('button', { name: 'By team' }));
+
+    await user.click(screen.getByTitle('Collapse this team'));
+    expect(container.querySelector('.marking-team-question')).toBeFalsy();
+    expect(container.querySelector('.marking-round-collapsed')).toBeTruthy();
+
+    await user.click(screen.getByTitle('Expand this team'));
+    expect(container.querySelector('.marking-team-question')).toBeTruthy();
+  });
+
+  it('collapses and expands an individual round inside a team card', async () => {
+    mockApi(baseData);
+    const user = userEvent.setup();
+    const { container } = render(<AnswerMarking sessionId={5} quiz={{}} />);
+    await screen.findByText('Capital of France?');
+    await user.click(screen.getByRole('button', { name: 'By team' }));
+
+    await user.click(screen.getByTitle('Collapse this round'));
+    expect(screen.queryByText('Capital of France?')).not.toBeInTheDocument();
+    // The team header stays put.
+    expect(container.querySelector('.marking-team-card')).toBeTruthy();
+
+    await user.click(screen.getByTitle('Expand this round'));
+    expect(screen.getByText('Capital of France?')).toBeInTheDocument();
+  });
 });
