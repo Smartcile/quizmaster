@@ -92,6 +92,22 @@ Set the **Kind** selector to *Who / What Am I?* — the editor becomes a numbere
 
 ![Who Am I editor](images/admin-questions-whoami.png)
 
+### Picture close-ups (intermission clues)
+
+For a "what is this?" picture round you show a tight crop, not the whole photo:
+
+1. Set **Media type** to *Image* and choose the **full picture** with **Select / upload image**.
+2. Click **Crop close-up** on the media row.
+3. Drag any of the four corners to shape the box — it can shrink right down for a tight clue. The **Question slide preview** underneath shows exactly how the crop will land in the picture grid.
+4. Click **Save as new file**. The crop is saved as `<name>-clue`, the original stays in the Media Library, and the question now uses the crop.
+
+Two handy extras:
+
+- A blank **Answer** is filled from the picture's own file name, with the upload timestamp and `-clue` suffix stripped — `1785377179707-Baguette-clue.jpg` becomes `Baguette`.
+- The **answer reveal** puts the **full original picture** back on screen, so teams see what the close-up actually was.
+
+**New questions remember your settings.** After saving a question, the next **+ New** starts with the same media type, category, difficulty, points, answer mode and audio form already picked. The text, answer, media, options and clues always start blank.
+
 ---
 
 ## 5. Assemble rounds
@@ -100,7 +116,7 @@ Go to **Rounds** and click **+ Create Round** (or Edit an existing one). Drag qu
 
 ![Rounds](images/admin-rounds.png)
 
-The list of rounds can be grouped **By quiz** (the default) or shown as a **Flat list**, using the toggle at the top-right of the panel. Grouped view puts each quiz's rounds under a collapsible header (newest quiz first); a round used in more than one quiz appears under each, and rounds not used in any quiz appear under **Not in a quiz** last.
+The list of rounds can be grouped **By quiz** (the default) or shown as a **Flat list**, using the toggle at the top-right of the panel. Grouped view puts each quiz's rounds under a collapsible header (newest quiz first); a round used in more than one quiz appears under each, and rounds not used in any quiz appear under **Not in a quiz** last. Groups start **collapsed** — click a quiz name to expand its rounds, and click again to collapse it.
 
 Inside the round editor you can also:
 
@@ -258,6 +274,8 @@ Each answer slide shows the question and the correct answer on the big screen…
 |---|---|
 | ![Reveal correct](images/quizzer-reveal.png) | ![Reveal half](images/quizzer-reveal-half.png) |
 
+Picture-round **close-ups** reveal the **full original picture**, not the crop, so teams can see what it actually was.
+
 You can override any score at any time from **Mark Answers** (see [section 15](#15-marking-answers-admin)).
 
 ---
@@ -298,6 +316,7 @@ Correct answers are auto-marked the moment they're submitted, so you usually onl
 - If the server has `DEEPSEEK_API_KEY` configured, a **✨ Transcribe** button appears on the photo. It reads the numbered rows, maps MCQ tick letters to the option text, writes the team's answers and auto-marks them.
 - Transcription works on **locked** rounds too — useful when you mark the paper after the round has closed.
 - Photos are compressed in the browser (upright, long edge ≤1600px) before upload. Photos uploaded before this change keep their original size — delete and re-upload for the faster path.
+- **Name the Song** rows print two boxes on the answer sheet — **ARTIST** and **SONG** — and the AI merges them into `Artist - Song`, so each half scores on its own.
 
 ---
 
