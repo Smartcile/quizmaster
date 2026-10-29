@@ -25,7 +25,9 @@ export default function RoundBuilder() {
   const [editInit, setEditInit] = useState(null); // initial state passed into the modal
   const [error, setError] = useState(null);
   const [groupByQuiz, setGroupByQuiz] = useState(true);
-  const [collapsedGroups, setCollapsedGroups] = useState(() => new Set());
+  // Groups start collapsed so the list is a short set of quiz headings; click
+  // one to reveal its rounds.
+  const [expandedGroups, setExpandedGroups] = useState(() => new Set());
 
   useEffect(() => { loadAll(); }, []);
 
@@ -70,7 +72,7 @@ export default function RoundBuilder() {
     return groups;
   }, [rounds, groupByQuiz]);
 
-  const toggleGroup = (key) => setCollapsedGroups(prev => {
+  const toggleGroup = (key) => setExpandedGroups(prev => {
     const next = new Set(prev);
     if (next.has(key)) next.delete(key); else next.add(key);
     return next;
@@ -248,7 +250,7 @@ export default function RoundBuilder() {
         ) : groupByQuiz ? (
           <div className="round-groups">
             {roundGroups.map(g => {
-              const isCollapsed = collapsedGroups.has(g.key);
+              const isCollapsed = !expandedGroups.has(g.key);
               return (
                 <div key={g.key} className="round-group">
                   <button

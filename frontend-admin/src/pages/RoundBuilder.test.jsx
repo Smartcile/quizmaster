@@ -63,7 +63,10 @@ describe('RoundBuilder — round style + category', () => {
       if (path === '/questions/categories') return Promise.resolve(['Geography']);
       return Promise.resolve([]);
     });
+    const user = userEvent.setup();
     render(<RoundBuilder />);
+    // Groups start collapsed — open the unassigned group to see the round.
+    await user.click(await screen.findByRole('button', { name: /Not in a quiz/i }));
     expect(await screen.findByText('Geo List')).toBeInTheDocument();
     expect(screen.getByText('📋 Text list')).toBeInTheDocument();
     expect(screen.getByText('Geography')).toBeInTheDocument();
@@ -91,11 +94,10 @@ describe('RoundBuilder — rounds grouped by quiz', () => {
 
   it('groups by quiz (newest first), shows shared rounds in each, and puts unassigned last', async () => {
     mockRounds();
+    const user = userEvent.setup();
     render(<RoundBuilder />);
 
-    expect(await screen.findByText('Alpha Round')).toBeInTheDocument();
-
-    const friday = screen.getByRole('button', { name: /Friday Quiz/i });
+    const friday = await screen.findByRole('button', { name: /Friday Quiz/i });
     const sunday = screen.getByRole('button', { name: /Sunday Quiz/i });
     const none   = screen.getByRole('button', { name: /Not in a quiz/i });
 
@@ -103,33 +105,36 @@ describe('RoundBuilder — rounds grouped by quiz', () => {
     expect(friday.compareDocumentPosition(sunday) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(sunday.compareDocumentPosition(none)   & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
+    for (const group of [friday, sunday, none]) await user.click(group);
+
     // The shared round appears under both quizzes; the orphan only under "Not in a quiz".
     expect(screen.getAllByText('Shared Round')).toHaveLength(2);
     expect(screen.getByText('Orphan Round')).toBeInTheDocument();
   });
 
-  it('collapses and expands a quiz group', async () => {
+  it('starts with every quiz group collapsed and expands on click', async () => {
     mockRounds();
     const user = userEvent.setup();
     render(<RoundBuilder />);
-    expect(await screen.findByText('Alpha Round')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: /Friday Quiz/i }));
-    // Friday group's rounds are hidden…
+    const friday = await screen.findByRole('button', { name: /Friday Quiz/i });
+    // Rounds stay hidden until their group is clicked.
     expect(screen.queryByText('Alpha Round')).not.toBeInTheDocument();
-    // …but the shared round remains visible under the Sunday group.
-    expect(screen.getAllByText('Shared Round')).toHaveLength(1);
+    expect(screen.queryByText('Shared Round')).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: /Friday Quiz/i }));
+    await user.click(friday);
     expect(screen.getByText('Alpha Round')).toBeInTheDocument();
-    expect(screen.getAllByText('Shared Round')).toHaveLength(2);
+    expect(screen.getByText('Shared Round')).toBeInTheDocument();
+
+    await user.click(friday);
+    expect(screen.queryByText('Alpha Round')).not.toBeInTheDocument();
   });
 
   it('Flat list shows every round once with no group headers', async () => {
     mockRounds();
     const user = userEvent.setup();
     render(<RoundBuilder />);
-    expect(await screen.findByText('Alpha Round')).toBeInTheDocument();
+    await screen.findByRole('button', { name: /Friday Quiz/i });
 
     await user.click(screen.getByRole('button', { name: 'Flat list' }));
 
