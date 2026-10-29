@@ -5197,7 +5197,8 @@ input[type="checkbox"] {
 .nav-close { display: none; }
 .nav-backdrop { display: none; }
 
-@media (max-width: 700px) {
+/* Tablets + landscape phones too, not just narrow portrait phones. */
+@media (max-width: 1024px) {
   .mobile-topbar {
     display: flex;
     align-items: center;
