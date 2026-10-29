@@ -282,11 +282,22 @@ And the host can show it on the Control screen itself with the **👁 This scree
 
 ## 15. Marking answers (admin)
 
-**Mark Answers** lists every question with each team's answer and the correct one. Click **0 / 0.5 / 1** to score; click the active value again to deselect it. Correct answers are auto-marked the moment they're submitted, so you usually only touch the edge cases.
+**Mark Answers** has two views:
+
+- **By question** — every team under each question, with the correct answer beside it. Click **0 / 0.5 / 1** (scaled to the question's value) to score; click the active value again to deselect. A free-entry box awards any number.
+- **By team** — one card per team with all their answers in round order and the correct answer beside each. Paper teams (📄) come first, so a stack of hand-marked sheets can be done in one pass.
 
 ![Answer marking](images/admin-marking.png)
 
-A **Who Am I?** section appears per team when the quiz has one, letting you override the auto-marked guess.
+Correct answers are auto-marked the moment they're submitted, so you usually only touch the edge cases. A **Who Am I?** section appears per team when the quiz has one.
+
+### Paper sheets & AI transcription
+
+- Tick **Paper** on a team (Teams & Manual Points on this page, or the Control page) to group it with the hand-marked teams.
+- In **By team**, press **📷** under a team + round to photograph that sheet (opens the rear camera on a phone). Tap the thumbnail to enlarge it while marking.
+- If the server has `DEEPSEEK_API_KEY` configured, a **✨ Transcribe** button appears on the photo. It reads the numbered rows, maps MCQ tick letters to the option text, writes the team's answers and auto-marks them.
+- Transcription works on **locked** rounds too — useful when you mark the paper after the round has closed.
+- Photos are compressed in the browser (upright, long edge ≤1600px) before upload. Photos uploaded before this change keep their original size — delete and re-upload for the faster path.
 
 ---
 
@@ -336,3 +347,5 @@ Bot count/sizes, accuracy mixes, preview layout and auto-clean live in **Setting
 - **Slide index out of sync** — `buildSlides` must be identical in all three frontends; never edit one copy only.
 - **Backups** — dump the database and back up the `backend_uploads` Docker volume together.
 - **First-time login** — change `ADMIN_PASSWORD` and set a long random `JWT_SECRET` before exposing the dashboard.
+- **AI Transcribe button missing** — set `DEEPSEEK_API_KEY` (plus optional `DEEPSEEK_BASE_URL` / `DEEPSEEK_MODEL=deepseek-flash`) on the backend, recreate it, then check `GET /api/config` for `"deepseekEnabled": true`. The model must accept image input.
+- **Phone / PWA** — on a phone or tablet the sidebar becomes a burger button (top-left) that opens the left drawer. Install with your browser's **Add to Home Screen**; if an update doesn't appear, close/reopen the app or remove and re-add the icon.

@@ -102,7 +102,7 @@ Same URLs as above.
 |---|---|
 | ![Control lobby](docs/images/admin-control-lobby.png) | ![Control active](docs/images/admin-control-active.png) |
 
-**Answer Marking** — per-team marking grid (0 / 0.5 / 1, click again to deselect), CSV export
+**Answer Marking** — mark by question or by team, adjust any score, attach paper-sheet photos and (optionally) transcribe them with AI, CSV export
 
 ![Answer marking](docs/images/admin-marking.png)
 
@@ -215,6 +215,9 @@ Health checks: postgres has `pg_isready`, backend has `/api/health`. Frontends `
 | `ADMIN_URL` | *(auto)* | Full public URL of admin dashboard (e.g. `https://admin.website.com`) |
 | `SLIDESHOW_URL` | *(auto)* | Full public URL of slideshow (e.g. `https://show.website.com`) |
 | `QUIZZER_URL` | *(auto)* | Full public URL of quizzer (e.g. `https://answer.website.com`) |
+| `DEEPSEEK_API_KEY` | *(unset)* | Optional — enables AI transcription of paper answer-sheet photos |
+| `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | Optional — OpenAI-compatible vision endpoint |
+| `DEEPSEEK_MODEL` | `deepseek-flash` | Optional — must be a vision-capable model (`deepseek-v4-pro` is text-only) |
 
 ### Portal URLs (join links & on-screen labels)
 
@@ -226,6 +229,25 @@ Health checks: postgres has `pg_isready`, backend has `/api/health`. Frontends `
 - **After changing these, recreate the backend container** (`docker-compose up -d`). No frontend rebuild is required.
 
 > If your join links show `localhost:3003` (or the wrong host), it means these vars never reached the backend — make sure they're set in `.env` and your compose file is recent enough to pass them through (they live in the `backend` service `environment:` block).
+
+### AI photo marking (optional)
+
+Mark Answers can read a photo of a hand-written answer sheet and fill in the team's answers (then the normal auto-marking scores them).
+
+1. Set on the **backend** (`.env`, or the stack environment in Portainer):
+   ```env
+   DEEPSEEK_API_KEY=sk-...
+   DEEPSEEK_BASE_URL=https://api.deepseek.com
+   DEEPSEEK_MODEL=deepseek-flash
+   ```
+2. Recreate the backend so it picks up the vars (`docker-compose up -d`).
+3. Check `GET /api/config` → `"deepseekEnabled": true`.
+
+Notes:
+- The key **never** reaches the browser; `/api/config` only exposes a boolean.
+- The model must accept image input. `deepseek-flash` does; `deepseek-v4-pro` is text-only.
+- Photos are **compressed in the browser** (EXIF orientation applied, long edge ≤1600px, JPEG q0.82) before upload, so phone photos upload and transcribe quickly.
+- Transcription works on **locked** rounds too — it writes the answers and re-runs auto-marking.
 
 ### Security note
 
@@ -367,15 +389,23 @@ API calls automatically use the same hostname the page was served from — no re
 | Masters & Slides | Edit visual themes and slide content templates |
 | **Media** | Upload and manage images/video/audio; view usage labels and exact references per file |
 | Control | Live slide navigation, lock/unlock, portal links (lobby + active) |
-| Mark Answers | Per-team marking grid, 0 / 0.5 / 1 pt, re-click to deselect, CSV export |
+| Mark Answers | By question **or by team**, 0 / 0.5 / 1 + free entry, paper-sheet photos, optional AI transcription, CSV export |
 | **History** | All finished sessions — dates, scores, Handicap column, CSV download |
 | **Settings** | Collapsible settings sections. **Question Repositories**: pull question packs from GitHub CSV repos |
 
 ### Answer Marking
+- **By question** (all teams under each question) or **By team** (one card per team, all their answers in round order with the correct answer beside each — paper teams first)
 - Lists each team's answer per question with the correct answer
-- One-click 0 / 0.5 / 1 point scoring — click the **active** score button again to **deselect** and remove the mark entirely
+- One-click 0 / 0.5 / 1 point scoring (scaled to the question's value) — click the **active** score button again to **deselect**; a free-entry box awards any number
 - Real-time broadcast to all clients via WebSocket
+- **Paper answer sheets**: 📷 attach a photo per team + round (rear camera on a phone), tap to enlarge, delete. Photos are compressed before upload.
+- **✨ Transcribe** (when `DEEPSEEK_API_KEY` is configured): reads the numbered rows, maps MCQ letters to the option text, writes the team's answers and auto-marks. Works on locked rounds.
 - Download answers + scores as CSV (full session or per round)
+
+### Mobile / PWA
+- The admin dashboard is installable: add it to your phone's home screen (manifest + service worker; the API/socket traffic is never cached).
+- At ≤1024px the sidebar becomes a **fixed top bar with a burger menu** that opens the left drawer (full nav, live/test group, session banner, sign out). Desktop keeps the normal sidebar.
+- Mark Answers uses the full screen width with its score controls pinned to the right; tap targets are enlarged on phones.
 
 ### Live Scoreboard (per-round breakdown)
 - Shows the **whole quiz structure as columns**: `Team | Starting | Round 1 | Round 2 | … | <Who Am I?/Puzzle> | Total` — round columns use the actual round names
@@ -516,12 +546,15 @@ quizmaster/
 │   ├── sockets.js             # IO singleton (avoids circular require)
 │   ├── middleware/auth.js     # JWT login + token verification
 │   ├── controllers/           # Question / round / quiz / team / answer / master / slide logic
+│   │   └── teamPhotoController.js  # Paper-sheet photos + AI transcription
 │   ├── routes/
+│   ├── services/deepseek.js   # OpenAI-compatible vision transcription (optional)
 │   ├── websocket/handlers.js  # Slide changes, answer locks, marking
 │   ├── utils/                 # Code generator, seed script
 │   └── Dockerfile
-├── frontend-admin/            # React dashboard
+├── frontend-admin/            # React dashboard (installable PWA)
 │   ├── nginx.conf             # Reverse-proxies /api → backend
+│   ├── public/                # manifest.webmanifest, sw.js, app icons
 │   ├── src/
 │   │   ├── pages/             # Login, Dashboard, QuestionManager, RoundBuilder,
 │   │   │                      # QuizBuilder, QuizControl, AnswerMarking,
@@ -530,6 +563,7 @@ quizmaster/
 │   │   ├── services/api.js    # Token-aware HTTP client
 │   │   ├── hooks/useWebSocket.js
 │   │   ├── utils/buildSlides.js  # Shared slide-list logic (keep in sync!)
+│   │   ├── utils/compressImage.js # EXIF-aware answer-sheet photo compression
 │   │   ├── utils/autoShrink.js   # Auto-scaling text helper
 │   │   └── styles/admin.css   # Neon dark theme
 │   └── Dockerfile             # Multi-stage: node build → nginx serve
@@ -544,7 +578,7 @@ quizmaster/
 
 The `backend/schema.sql` file is idempotent and runs on every startup. New columns are added via `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` so existing installs auto-migrate.
 
-Key tables: `questions`, `rounds`, `round_questions`, `quizzes`, `quiz_rounds`, `quiz_widgets`, `quiz_sessions`, `teams`, `answers`, `scores`, `brownie_points`, `slide_masters`, `slides`, `categories`, `media_files`.
+Key tables: `questions`, `rounds`, `round_questions`, `quizzes`, `quiz_rounds`, `quiz_widgets`, `quiz_sessions`, `teams`, `answers`, `scores`, `brownie_points`, `slide_masters`, `slides`, `categories`, `media_files`, `team_photos`.
 
 Notable columns:
 
@@ -557,6 +591,7 @@ Notable columns:
 | `quiz_sessions` | `locked_round_ids JSONB` | persisted lock state, replayed on reconnect |
 | `scores` | `auto_marked BOOLEAN` | set true by auto-mark; false = manually marked; protects manual scores from auto-reset |
 | `media_files` | `filename`, `url`, `mime_type`, `size_bytes` | tracks all uploaded media; checked for usage before deletion |
+| `team_photos` | `team_id`, `round_id`, `url`, `transcribed_text` | paper answer-sheet photos; cascades with the team, keeps the last AI reading |
 
 ---
 
@@ -569,3 +604,8 @@ Notable columns:
 - **Schema migrations**: Adding new columns is safe (uses `IF NOT EXISTS`). Removing or renaming would require a manual migration.
 - **WebSocket reconnection**: All three surfaces auto-rejoin their room on every `connect` event. The server responds with a `session_state` event that carries the current slide index, session status, and locked round IDs — so a brief network drop is invisible to participants.
 - **Drag-and-drop library**: The admin quiz builder uses `@dnd-kit` (`@dnd-kit/core`, `@dnd-kit/sortable`). Requires `DndContext`, `SortableContext`, and `useSortable` — does not require `StrictMode` workarounds.
+- **AI Transcribe button missing**: `GET /api/config` is returning `deepseekEnabled: false`, so `DEEPSEEK_API_KEY` isn't reaching the backend. Put it in the stack/`.env`, make sure the compose `backend` service passes `DEEPSEEK_*` through, then recreate the backend.
+- **AI model errors**: the model must accept image input. `deepseek-flash` does; `deepseek-v4-pro` is text-only.
+- **Paper photos**: new uploads are compressed in the browser (EXIF orientation applied, long edge ≤1600px, JPEG q0.82). Photos uploaded before this change stay at their original size — delete and re-upload to get the faster path.
+- **Locked rounds**: transcription is deliberately allowed while a round is locked; it writes the answers and re-runs auto-marking.
+- **PWA shows the old layout**: the service worker caches the app shell. Fully close and reopen the installed app; if it persists, remove and re-add the home-screen icon.
