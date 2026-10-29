@@ -10,6 +10,50 @@ const PRESETS = [
 ];
 
 const STAGE_W = 560, STAGE_H = 420;
+const MIN_CROP = 8; // display px — small enough for a tight close-up
+
+// Resize a crop box by dragging one corner. The opposite corner stays put, the
+// box never leaves `bounds`, and an aspect ratio (when set) is preserved.
+export function resizeRect(orig, mode, dx, dy, { aspect = null, bounds, min = MIN_CROP }) {
+  const east = mode.includes('e');
+  const west = mode.includes('w');
+  const south = mode.includes('s');
+  const north = mode.includes('n');
+
+  const ax = west ? orig.x + orig.w : orig.x;   // anchor = opposite corner
+  const ay = north ? orig.y + orig.h : orig.y;
+  const maxW = west ? ax : bounds.w - ax;
+  const maxH = north ? ay : bounds.h - ay;
+
+  let w = orig.w + (east ? dx : 0) - (west ? dx : 0);
+  let h = orig.h + (south ? dy : 0) - (north ? dy : 0);
+  w = Math.max(min, Math.min(w, maxW));
+  h = Math.max(min, Math.min(h, maxH));
+
+  if (aspect) {
+    // Drive the size from whichever axis moved most, then fit the pair inside
+    // the stage without distorting the ratio.
+    if (Math.abs(w - orig.w) >= Math.abs(h - orig.h)) h = w / aspect;
+    else w = h * aspect;
+    const fit = Math.min(1, maxW / w, maxH / h);
+    w *= fit; h *= fit;
+  }
+
+  return { x: west ? ax - w : ax, y: north ? ay - h : ay, w, h };
+}
+
+// "Baguette.jpg" -> "Baguette"; strips an upload timestamp prefix and the
+// "-clue" suffix so the picture's own name can be used as the answer.
+export function clueAnswerName(file) {
+  const raw = String(file?.display_name || file?.original_name || file?.filename || '')
+    .replace(/\.[^.]+$/, '');
+  const cleaned = raw
+    .replace(/^\d{10,}[-_ ]?/, '')
+    .replace(/[-_ ]?clue$/i, '')
+    .replace(/[-_]+/g, ' ')
+    .trim();
+  return cleaned || raw;
+}
 
 // In-browser image cropper/resizer. Pick an aspect preset (or free), drag the
 // box to move / drag the corner to resize, then export the crop at full source
@@ -96,8 +140,8 @@ export default function ImageCropEditor({ file, onClose, onSaved, preview }) {
 
   const clampBox = useCallback((box) => {
     let { x, y, w, h } = box;
-    w = Math.max(20, Math.min(w, disp.w));
-    h = Math.max(20, Math.min(h, disp.h));
+    w = Math.max(MIN_CROP, Math.min(w, disp.w));
+    h = Math.max(MIN_CROP, Math.min(h, disp.h));
     x = Math.max(0, Math.min(x, disp.w - w));
     y = Math.max(0, Math.min(y, disp.h - h));
     return { x, y, w, h };
@@ -118,14 +162,7 @@ export default function ImageCropEditor({ file, onClose, onSaved, preview }) {
     if (d.mode === 'move') {
       setCrop(clampBox({ ...d.orig, x: d.orig.x + dx, y: d.orig.y + dy }));
     } else {
-      let w = d.orig.w + dx;
-      let h = aspect ? w / aspect : d.orig.h + dy;
-      if (aspect) {
-        // keep within bounds
-        if (d.orig.x + w > disp.w) { w = disp.w - d.orig.x; h = w / aspect; }
-        if (d.orig.y + h > disp.h) { h = disp.h - d.orig.y; w = h * aspect; }
-      }
-      setCrop(clampBox({ x: d.orig.x, y: d.orig.y, w, h }));
+      setCrop(resizeRect(d.orig, d.mode, dx, dy, { aspect, bounds: disp }));
     }
   };
 
@@ -169,7 +206,8 @@ export default function ImageCropEditor({ file, onClose, onSaved, preview }) {
       });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json().catch(() => null);
-      onSaved?.(data);
+      // A clue crop can name the answer after the source picture.
+      onSaved?.(data, preview ? { answerName: clueAnswerName(file) } : undefined);
     } catch (err) {
       setError('Save failed: ' + err.message);
     } finally {
@@ -202,7 +240,10 @@ export default function ImageCropEditor({ file, onClose, onSaved, preview }) {
             {crop && (
               <div className="ic-crop" style={{ left: crop.x, top: crop.y, width: crop.w, height: crop.h }}
                    onPointerDown={onPointerDown('move')}>
-                <span className="ic-handle" onPointerDown={onPointerDown('resize')} />
+                {['nw', 'ne', 'sw', 'se'].map(pos => (
+                  <span key={pos} className={`ic-handle ic-handle-${pos}`}
+                        onPointerDown={onPointerDown(pos)} />
+                ))}
               </div>
             )}
           </div>

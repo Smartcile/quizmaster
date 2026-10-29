@@ -4904,6 +4904,7 @@ input[type="checkbox"] {
   position: relative; margin: 0 auto; max-width: 100%;
   background: rgba(0,0,0,0.35); border: 1px solid var(--border); border-radius: 8px;
   overflow: hidden; user-select: none; touch-action: none;
+  flex: 0 0 auto; /* never squeeze the stage — the crop coords assume its full size */
 }
 .ic-stage img { display: block; pointer-events: none; }
 .ic-crop {
@@ -4911,9 +4912,15 @@ input[type="checkbox"] {
   box-shadow: 0 0 0 9999px rgba(7,9,26,0.55); cursor: move;
 }
 .ic-handle {
-  position: absolute; right: -8px; bottom: -8px; width: 16px; height: 16px;
-  background: var(--neon-cyan); border-radius: 3px; cursor: nwse-resize;
+  position: absolute; width: 18px; height: 18px;
+  background: var(--neon-cyan); border-radius: 3px;
+  box-shadow: 0 0 0 2px rgba(7, 9, 26, 0.65);
+  touch-action: none;
 }
+.ic-handle-nw { left: -9px;  top: -9px;    cursor: nwse-resize; }
+.ic-handle-ne { right: -9px; top: -9px;    cursor: nesw-resize; }
+.ic-handle-sw { left: -9px;  bottom: -9px; cursor: nesw-resize; }
+.ic-handle-se { right: -9px; bottom: -9px; cursor: nwse-resize; }
 
 /* Live "question slide" preview of a clue crop (picture rounds) */
 .ic-preview { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-top: 4px; }

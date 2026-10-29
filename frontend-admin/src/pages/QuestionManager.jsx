@@ -4,6 +4,7 @@ import MediaPicker from '../components/MediaPicker';
 import AudioEditor from '../components/AudioEditor';
 import VideoEditor from '../components/VideoEditor';
 import ImageCropEditor from '../components/ImageCropEditor';
+import { applyQuestionDefaults, saveQuestionDefaults } from '../utils/questionDefaults';
 
 // Map an uploaded file's MIME type to a question media type.
 const mimeToType = (mime) =>
@@ -281,7 +282,7 @@ export default function QuestionManager() {
   const [filterType, setFilterType] = useState('all');
   const [filterAnswerMode, setFilterAnswerMode] = useState('all');
   const [filterKind, setFilterKind] = useState('all'); // all | standard | whoami
-  const [form, setForm] = useState(EMPTY_FORM);
+  const [form, setForm] = useState(() => applyQuestionDefaults(EMPTY_FORM));
   const [editingId, setEditingId] = useState(null);
   const [error, setError] = useState(null);
   const [csvFile, setCsvFile] = useState(null);
@@ -385,12 +386,18 @@ export default function QuestionManager() {
   };
 
   // The crop editor saved a close-up as a NEW file. Point the question at the
-  // crop (the clue); the full original stays in the Media Library.
-  const handleImageCropped = (data) => {
+  // crop (the clue); the full original stays in the Media Library. A blank
+  // Answer is filled from the source picture's name.
+  const handleImageCropped = (data, extra) => {
     setImageCropOpen(false);
     if (!data?.url) return;
     setMediaByUrl(prev => ({ ...prev, [data.url]: data }));
-    setForm(prev => ({ ...prev, media_url: data.url, type: 'image' }));
+    setForm(prev => ({
+      ...prev,
+      media_url: data.url,
+      type: 'image',
+      answer: prev.answer?.trim() ? prev.answer : (extra?.answerName || prev.answer)
+    }));
   };
 
   // Build a file object for the audio/video editor from the current selection.
@@ -482,7 +489,9 @@ export default function QuestionManager() {
 
   const newQuestion = () => {
     setEditingId(null);
-    setForm(EMPTY_FORM);
+    // Keep the last question's settings (category, type, difficulty, points…)
+    // so the next one starts pre-filled; text/answer/media stay blank.
+    setForm(applyQuestionDefaults(EMPTY_FORM));
   };
 
   const handleSubmit = async (e) => {
@@ -493,6 +502,9 @@ export default function QuestionManager() {
     if (!form.is_whoami && form.answer_mode === 'mcq' && !String(form.answer || '').trim()) {
       setError('Tick the correct option.'); return;
     }
+
+    // Remember this question's settings for the next new one.
+    saveQuestionDefaults(form);
 
     // Who/What Am I sets save straight to the question bank (no MCQ / duplicate
     // import path). Clues go in `options` as [{text,points}].
