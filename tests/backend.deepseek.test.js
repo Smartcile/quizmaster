@@ -50,6 +50,22 @@ describe('deepseek service', () => {
     expect(body.messages[0].content[1].image_url.url).toMatch(/^data:image\/jpeg;base64,/);
   });
 
+  it('asks the model to combine Name-the-Song artist and song boxes', async () => {
+    process.env.DEEPSEEK_API_KEY = 'test-key';
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: '{"answers":["Queen - Bohemian Rhapsody",""]}' } }] }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const out = await deepseek.transcribeAnswerSheet(img, 2, { nameTheSong: [1] });
+    expect(out[0]).toBe('Queen - Bohemian Rhapsody');
+
+    const prompt = JSON.parse(fetchMock.mock.calls[0][1].body).messages[0].content[0].text;
+    expect(prompt).toContain('ARTIST and SONG');
+    expect(prompt).toContain('"artist - song"');
+  });
+
   it('throws a readable error on a non-OK response', async () => {
     process.env.DEEPSEEK_API_KEY = 'test-key';
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 401, text: async () => 'bad key' }));

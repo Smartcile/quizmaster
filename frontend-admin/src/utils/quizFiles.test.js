@@ -124,6 +124,47 @@ describe('downloadAnswerSheet', () => {
   });
 });
 
+describe('downloadAnswerSheet — Name the Song', () => {
+  const audioQuiz = {
+    name: 'Songs', code: 'SONG01',
+    items: [{
+      kind: 'round', id: 9, name: 'Name that Song', style: 'standard',
+      questions: [
+        { id: 1, text: 'a', answer: 'x', type: 'audio', audio_form: 'name_the_song', media_url: '/a.mp3', points: 1 },
+        { id: 2, text: 'b', answer: 'y', type: 'audio', audio_form: 'name_the_song', media_url: '/b.mp3', points: 1 },
+        { id: 3, text: 'c', answer: 'z', type: 'audio', media_url: '/c.mp3', points: 1 },
+      ],
+    }],
+  };
+
+  it('gives each Name the Song row separate Artist and Song boxes', async () => {
+    await downloadAnswerSheet(audioQuiz);
+    const doc = h.docs.at(-1);
+
+    // Group the answer-row rectangles by y (the team/size boxes are only 15pt).
+    const rows = new Map();
+    for (const [x, y, w, h] of doc.rect.mock.calls) {
+      if (h <= 15) continue;
+      const key = Math.round(y);
+      if (!rows.has(key)) rows.set(key, []);
+      rows.get(key).push({ x, y, w, h });
+    }
+    const list = [...rows.values()].sort((a, b) => a[0].y - b[0].y);
+    expect(list).toHaveLength(3);
+
+    for (const row of list.slice(0, 2)) {
+      expect(row).toHaveLength(2);
+      expect(row[0].w).toBeCloseTo(row[1].w, 5);
+      expect(row[1].x).toBeCloseTo(row[0].x + row[0].w + 8, 5);
+    }
+    expect(list[2]).toHaveLength(1); // plain audio row keeps one box
+
+    const labels = doc.text.mock.calls.map(c => c[0]);
+    expect(labels.filter(t => t === 'ARTIST')).toHaveLength(2);
+    expect(labels.filter(t => t === 'SONG')).toHaveLength(2);
+  });
+});
+
 describe('downloadAnswerSheet — text-list images', () => {
   const imgQuiz = {
     name: 'Pic List', code: 'PIC123',

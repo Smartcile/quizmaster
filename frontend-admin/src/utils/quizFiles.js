@@ -220,6 +220,21 @@ export async function downloadAnswerSheet(quiz) {
           doc.text(String.fromCharCode(65 + oi), cx + sq + 4, cy + sq - 3);
           cx += sq + 30;
         }
+      } else if (q.audio_form === 'name_the_song') {
+        // Name the Song: separate Artist / Song boxes. The AI reads each box as
+        // its own field and combines them as "Artist - Song" for half/half
+        // marking (see transcribeAnswerSheet's nameTheSong rows).
+        const boxGap = 8;
+        const half = (boxW - boxGap) / 2;
+        doc.setDrawColor(120);
+        doc.rect(boxX, top, half, rowH);
+        doc.rect(boxX + half + boxGap, top, half, rowH);
+        if (rowH >= 26) {
+          doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(120);
+          doc.text('ARTIST', boxX + 4, top + 9);
+          doc.text('SONG', boxX + half + boxGap + 4, top + 9);
+          doc.setTextColor(0);
+        }
       } else {
         doc.setDrawColor(120); doc.rect(boxX, top, boxW, rowH);
       }

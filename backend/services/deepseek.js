@@ -22,8 +22,10 @@ function mimeFor(file) {
   }
 }
 
-function buildPrompt(count) {
-  return [
+function buildPrompt(count, options = {}) {
+  const ntsRows = (Array.isArray(options.nameTheSong) ? options.nameTheSong : [])
+    .filter(n => Number.isInteger(n) && n >= 1 && n <= count);
+  const lines = [
     'You are transcribing a hand-written pub quiz answer sheet.',
     `The sheet has ${count} numbered answer rows, in order (1 to ${count}).`,
     'The photo may be rotated or taken at an angle — mentally orient it so the numbers read left-to-right, then top-to-bottom.',
@@ -35,7 +37,15 @@ function buildPrompt(count) {
     'Reply with ONLY minified JSON in this exact shape:',
     '{"answers":["answer for 1","answer for 2", ...]}',
     `The array must contain exactly ${count} strings.`,
-  ].join(' ');
+  ];
+  if (ntsRows.length) {
+    lines.push(
+      `Rows ${ntsRows.join(', ')} are "Name the Song": they have two boxes side by side labelled ARTIST and SONG. ` +
+      'Ignore those printed labels and return the pair as a single string "artist - song" ' +
+      '(the hand-written artist, then a space, a hyphen, a space, then the hand-written song title).'
+    );
+  }
+  return lines.join(' ');
 }
 
 function extractJson(text) {
@@ -49,7 +59,7 @@ function extractJson(text) {
   throw new Error('The AI did not return valid JSON.');
 }
 
-async function transcribeAnswerSheet(imagePath, questionCount) {
+async function transcribeAnswerSheet(imagePath, questionCount, options = {}) {
   const key = process.env.DEEPSEEK_API_KEY;
   if (!key) throw new Error('AI marking is not configured (DEEPSEEK_API_KEY is unset).');
 
@@ -72,7 +82,7 @@ async function transcribeAnswerSheet(imagePath, questionCount) {
         messages: [{
           role: 'user',
           content: [
-            { type: 'text', text: buildPrompt(questionCount) },
+            { type: 'text', text: buildPrompt(questionCount, options) },
             { type: 'image_url', image_url: { url: `data:${mime};base64,${b64}` } },
           ],
         }],

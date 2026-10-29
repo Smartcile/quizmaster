@@ -87,7 +87,10 @@ async function transcribePhoto(req, res) {
     if (!photo.round_id) return res.status(400).json({ error: 'This photo is not linked to a round.' });
 
     const qr = await db.query(
-      `SELECT q.id, q.options, rq."order"
+      `SELECT q.id, q.options, rq."order",
+              CASE WHEN q.audio_form = 'both'
+                   THEN COALESCE(rq.audio_form_override, 'name_the_song')
+                   ELSE q.audio_form END AS effective_audio_form
          FROM round_questions rq
          JOIN questions q ON q.id = rq.question_id
         WHERE rq.round_id = $1
@@ -97,9 +100,16 @@ async function transcribePhoto(req, res) {
     const questions = qr.rows;
     if (!questions.length) return res.status(400).json({ error: 'That round has no questions.' });
 
+    // Name-the-Song rows print two boxes (Artist / Song); tell the model to
+    // combine them so auto-marking gets "Artist - Song".
+    const nameTheSong = questions
+      .map((q, i) => (q.effective_audio_form === 'name_the_song' ? i + 1 : 0))
+      .filter(Boolean);
+
     const texts = await deepseek.transcribeAnswerSheet(
       path.join(UPLOAD_DIR, photo.filename),
-      questions.length
+      questions.length,
+      { nameTheSong }
     );
 
     const applied = [];

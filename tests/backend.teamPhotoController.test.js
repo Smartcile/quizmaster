@@ -63,7 +63,7 @@ describe('teamPhotoController.transcribePhoto', () => {
     await transcribePhoto({ params: { photoId: '9' } }, res);
 
     expect(res.statusCode).toBe(200);
-    expect(deepseek.transcribeAnswerSheet).toHaveBeenCalledWith(expect.stringContaining('sheet.jpg'), 3);
+    expect(deepseek.transcribeAnswerSheet).toHaveBeenCalledWith(expect.stringContaining('sheet.jpg'), 3, { nameTheSong: [] });
     expect(res.body.answers).toEqual([
       { questionId: 101, answer: 'Paris', points: 1 },
       { questionId: 102, answer: 'Mercury', points: 2 }, // "B" → option 2
@@ -73,6 +73,30 @@ describe('teamPhotoController.transcribePhoto', () => {
     const events = emitSpy.mock.calls.map(c => c[0]);
     expect(events).toContain('answer_submitted');
     expect(events.filter(e => e === 'answer_marked')).toHaveLength(2);
+  });
+
+  it('tells the AI which rows are Name the Song', async () => {
+    db.query.mockImplementation(async (sql) => {
+      if (/FROM team_photos/i.test(sql)) {
+        return { rows: [{ id: 9, team_id: 7, round_id: 3, filename: 'sheet.jpg', url: '/uploads/sheet.jpg', quiz_session_id: 5 }] };
+      }
+      if (/FROM round_questions/i.test(sql)) {
+        return { rows: [
+          { id: 201, options: [], effective_audio_form: 'name_the_song' },
+          { id: 202, options: [], effective_audio_form: null },
+        ] };
+      }
+      return { rows: [] };
+    });
+    deepseek.transcribeAnswerSheet.mockResolvedValue(['Queen - Bohemian Rhapsody', '']);
+
+    const res = mockRes();
+    await transcribePhoto({ params: { photoId: '9' } }, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(deepseek.transcribeAnswerSheet).toHaveBeenCalledWith(
+      expect.stringContaining('sheet.jpg'), 2, { nameTheSong: [1] }
+    );
   });
 
   it('returns 503 with a clear message when AI is not configured', async () => {
